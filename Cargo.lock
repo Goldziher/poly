@@ -34,11 +34,11 @@ dependencies = [
 
 [[package]]
 name = "alef-component-abi"
-version = "0.122.1"
+version = "0.124.0"
 
 [[package]]
 name = "alef-component-runtime"
-version = "0.122.1"
+version = "0.124.0"
 dependencies = [
  "alef-component-abi",
  "base64",
@@ -3388,6 +3388,7 @@ dependencies = [
  "poly-config",
  "schemars 1.2.3",
  "serde",
+ "serde-saphyr",
  "serde_ignored",
  "serde_json",
  "tempfile",
@@ -3401,6 +3402,7 @@ version = "0.32.3"
 dependencies = [
  "alef-component-abi",
  "anyhow",
+ "poly-component-index",
  "poly-component-protocol",
  "poly-engine-api",
  "poly-engines-astgrep",
@@ -3427,7 +3429,6 @@ dependencies = [
  "anyhow",
  "ast-grep-config",
  "ast-grep-core",
- "blake3",
  "globset",
  "insta",
  "poly-engine-api",
@@ -3438,6 +3439,14 @@ dependencies = [
  "toml 1.1.8+spec-1.1.0",
  "tracing",
  "tree-sitter-language-pack",
+]
+
+[[package]]
+name = "poly-engines-astgrep-component"
+version = "0.32.3"
+dependencies = [
+ "alef-component-abi",
+ "poly-engines",
 ]
 
 [[package]]
@@ -3466,6 +3475,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "poly-engines-misc-component"
+version = "0.32.3"
+dependencies = [
+ "alef-component-abi",
+ "poly-engines",
+]
+
+[[package]]
 name = "poly-engines-nix"
 version = "0.32.3"
 dependencies = [
@@ -3474,6 +3491,14 @@ dependencies = [
  "insta",
  "poly-engine-api",
  "toml 1.1.8+spec-1.1.0",
+]
+
+[[package]]
+name = "poly-engines-nix-component"
+version = "0.32.3"
+dependencies = [
+ "alef-component-abi",
+ "poly-engines",
 ]
 
 [[package]]
@@ -3495,6 +3520,14 @@ dependencies = [
  "poly-engine-api",
  "toml 1.1.8+spec-1.1.0",
  "tracing",
+]
+
+[[package]]
+name = "poly-engines-php-component"
+version = "0.32.3"
+dependencies = [
+ "alef-component-abi",
+ "poly-engines",
 ]
 
 [[package]]
@@ -3525,6 +3558,14 @@ dependencies = [
  "ty_python_semantic",
  "ty_site_packages",
  "ty_vendored",
+]
+
+[[package]]
+name = "poly-engines-python-component"
+version = "0.32.3"
+dependencies = [
+ "alef-component-abi",
+ "poly-engines",
 ]
 
 [[package]]
@@ -3562,6 +3603,14 @@ dependencies = [
  "typos",
  "typos-dict",
  "unicase",
+]
+
+[[package]]
+name = "poly-engines-typos-component"
+version = "0.32.3"
+dependencies = [
+ "alef-component-abi",
+ "poly-engines",
 ]
 
 [[package]]

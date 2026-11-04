@@ -9,10 +9,22 @@ mod components;
 pub mod producer;
 
 pub use component::{ComponentCallError, PolyComponent, PolyFrontend};
+#[cfg(feature = "astgrep")]
+pub use components::AstgrepComponent;
 #[cfg(feature = "mcp")]
 pub use components::McpComponent;
+#[cfg(feature = "misc")]
+pub use components::MiscComponent;
+#[cfg(feature = "nix")]
+pub use components::NixComponent;
+#[cfg(feature = "php")]
+pub use components::PhpComponent;
+#[cfg(feature = "python")]
+pub use components::PythonComponent;
 #[cfg(feature = "sql")]
 pub use components::SqlComponent;
+#[cfg(feature = "typos")]
+pub use components::TyposComponent;
 pub use producer::Producer;
 
 #[cfg(feature = "astgrep")]

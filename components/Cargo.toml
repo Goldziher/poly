@@ -72,10 +72,10 @@ tracing = "0.1"
 lto = "thin"
 codegen-units = 1
 
-# SPIKE: alef branch crates until 0.122.1+ is published.
+# TEMP: alef v0.124.0 until its crates reach crates.io.
 [patch.crates-io]
-alef-component-abi = { path = "/Users/naamanhirschfeld/workspace/xberg-io/.worktrees/alef/feat-component-release-plan/crates/alef-component-abi" }
-alef-component-runtime = { path = "/Users/naamanhirschfeld/workspace/xberg-io/.worktrees/alef/feat-component-release-plan/crates/alef-component-runtime" }
+alef-component-abi = { path = "/Users/naamanhirschfeld/workspace/xberg-io/.worktrees/alef/pin-v0-124-0/crates/alef-component-abi" }
+alef-component-runtime = { path = "/Users/naamanhirschfeld/workspace/xberg-io/.worktrees/alef/pin-v0-124-0/crates/alef-component-runtime" }
 # oxc_formatter_yaml/toml pull `oxc_allocator` from the registry through their parsers; resolve it to
 # the same git copy as the rest of the oxc crates so the web family has a single `Allocator` type.
 oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }

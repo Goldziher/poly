@@ -66,11 +66,11 @@ dependencies = [
 
 [[package]]
 name = "alef-component-abi"
-version = "0.122.1"
+version = "0.124.0"
 
 [[package]]
 name = "alef-component-runtime"
-version = "0.122.1"
+version = "0.124.0"
 dependencies = [
  "alef-component-abi",
  "base64",
@@ -5311,6 +5311,7 @@ dependencies = [
  "poly-config",
  "schemars 1.2.3",
  "serde",
+ "serde-saphyr",
  "serde_ignored",
  "serde_json",
  "toml 1.2.0+spec-1.1.0",
@@ -5337,7 +5338,6 @@ dependencies = [
  "anyhow",
  "ast-grep-config",
  "ast-grep-core",
- "blake3",
  "globset",
  "poly-engine-api",
  "poly-grammar",

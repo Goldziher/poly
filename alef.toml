@@ -36,6 +36,90 @@ targets = [
   "x86_64-pc-windows-msvc",
 ]
 
+# The python family: ruff, and ty for project type checking.
+[[crates.components]]
+name = "python"
+provides = [{ contract = "poly", implementation = "poly_engines::PythonComponent" }]
+features = ["python"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# The php family: mago.
+[[crates.components]]
+name = "php"
+provides = [{ contract = "poly", implementation = "poly_engines::PhpComponent" }]
+features = ["php"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# The nix family: alejandra.
+[[crates.components]]
+name = "nix"
+provides = [{ contract = "poly", implementation = "poly_engines::NixComponent" }]
+features = ["nix"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# The typos family: the typos spell-checker, opt-in.
+[[crates.components]]
+name = "typos"
+provides = [{ contract = "poly", implementation = "poly_engines::TyposComponent" }]
+features = ["typos"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# The astgrep family: ast-grep and its built-in rule pack.
+[[crates.components]]
+name = "astgrep"
+provides = [{ contract = "poly", implementation = "poly_engines::AstgrepComponent" }]
+features = ["astgrep"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# The misc family: Dockerfile, dotenv, GraphQL and HCL.
+[[crates.components]]
+name = "misc"
+provides = [{ contract = "poly", implementation = "poly_engines::MiscComponent" }]
+features = ["misc"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
 # rubyfmt is a git-pinned dependency, so its family crate lives in the separate `components/`
 # workspace; alef generates and builds the producer there.
 [[crates.components]]

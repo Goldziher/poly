@@ -17,14 +17,20 @@ members = [
   "crates/poly-engine-api",
   "crates/poly-engines",
   "crates/poly-engines-astgrep",
+  "crates/poly-engines-astgrep-component",
   "crates/poly-engines-mcp-component",
   "crates/poly-engines-misc",
+  "crates/poly-engines-misc-component",
   "crates/poly-engines-nix",
+  "crates/poly-engines-nix-component",
   "crates/poly-engines-php",
+  "crates/poly-engines-php-component",
   "crates/poly-engines-python",
+  "crates/poly-engines-python-component",
   "crates/poly-engines-sql",
   "crates/poly-engines-sql-component",
   "crates/poly-engines-typos",
+  "crates/poly-engines-typos-component",
   "crates/poly-engines-uncomment",
   "crates/poly-frontend-api",
   "crates/poly-grammar",
@@ -46,8 +52,8 @@ documentation = "https://github.com/Goldziher/poly"
 
 [workspace.dependencies]
 aho-corasick = "1.1.5"
-alef-component-abi = "=0.122.1"
-alef-component-runtime = "=0.122.1"
+alef-component-abi = "=0.124.0"
+alef-component-runtime = "=0.124.0"
 # alejandra — Nix formatter (UNLICENSE, pure Rust via rnix); chosen over
 alejandra = "3.1"
 annotate-snippets = "0.12.17"
@@ -204,8 +210,8 @@ which = "8.0.6"
 zip = { version = "9.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [patch.crates-io]
-alef-component-abi = { path = "/Users/naamanhirschfeld/workspace/xberg-io/.worktrees/alef/feat-component-release-plan/crates/alef-component-abi" }
-alef-component-runtime = { path = "/Users/naamanhirschfeld/workspace/xberg-io/.worktrees/alef/feat-component-release-plan/crates/alef-component-runtime" }
+alef-component-abi = { path = "/Users/naamanhirschfeld/workspace/xberg-io/.worktrees/alef/pin-v0-124-0/crates/alef-component-abi" }
+alef-component-runtime = { path = "/Users/naamanhirschfeld/workspace/xberg-io/.worktrees/alef/pin-v0-124-0/crates/alef-component-runtime" }
 
 [profile.release]
 lto = "thin"
