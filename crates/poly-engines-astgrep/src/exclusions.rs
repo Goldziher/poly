@@ -138,10 +138,11 @@ mod host_parity {
 
     use super::*;
 
+    /// Each glob as its compiled regex, which carries `caseInsensitive` as well as the pattern.
     fn rendered(ignores: &DefaultPathIgnores) -> Vec<(String, Vec<String>)> {
         ignores
             .iter()
-            .map(|(id, globs)| (id.clone(), globs.iter().map(|g| g.glob().to_owned()).collect()))
+            .map(|(id, globs)| (id.clone(), globs.iter().map(|g| g.regex().to_owned()).collect()))
             .collect()
     }
 
@@ -233,6 +234,13 @@ mod host_parity {
             (vec![("a.yml", rule("a", "ignores: []\n"))], false),
             (vec![("a.yml", rule("a", "ignores: [\"a/**\"]\n") + "---\n")], true),
             (vec![("a-test.yml", rule("a", "ignores: [\"a/**\"]\n"))], false),
+            (
+                vec![(
+                    "a.yml",
+                    rule("a", "ignores:\n  - glob: \"A/**\"\n    caseInsensitive: true\n"),
+                )],
+                true,
+            ),
             (
                 vec![
                     ("a.yml", rule("a", "ignores: [\"a/**\"]\n")),
