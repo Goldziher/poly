@@ -7,19 +7,17 @@
 #   POLY_COMPONENT_DEV_LOCK="$PWD/target/components/components.lock.json" cargo test -p poly-component-host
 #
 # Debug build, unsigned package, file:// lock, all under target/components/. The lock has no public
-# keys, so it must never be shipped. alef is the version pinned next to alef-component-abi in Cargo.toml;
-# set ALEF to use another binary.
+# keys, so it must never be shipped. alef is the version pinned in mise.toml; set ALEF to use another binary.
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
-ALEF_VERSION="0.121.0"
 if [[ -n "${ALEF:-}" ]]; then
   alef() { "${ALEF}" "$@"; }
 else
-  alef() { mise x "github:xberg-io/alef@${ALEF_VERSION}" -- alef "$@"; }
+  alef() { mise x -- alef "$@"; }
 fi
 
 COMPONENTS=("$@")

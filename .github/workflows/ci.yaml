@@ -192,6 +192,17 @@ jobs:
       - name: Test poly-core in components mode
         run: mise run components:parity
 
+  alef-verify:
+    # The checked-in alef outputs (producer crate, host module, versions) must match alef.toml.
+    name: alef verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: xberg-io/actions/setup-mise@v1
+      - name: alef verify
+        run: mise x -- alef verify
+
   core-no-oxc:
     name: core links no oxc
     runs-on: ubuntu-latest
