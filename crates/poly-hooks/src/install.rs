@@ -8,11 +8,16 @@
 //! exec poly hooks hook-impl --hook-type=<hook-type> -- "$@"
 //! ```
 //!
-//! No absolute path is baked into the shim: it always runs whatever `poly` is
-//! current on the user's PATH, and fails loudly with an explanatory message when
+//! No absolute path is baked into the shim: it runs whatever `poly` is current
+//! on the user's PATH (or the mise-provided one, below), and fails loudly with an explanatory message when
 //! `poly` is not found rather than letting the git operation silently succeed.
 //! That message distinguishes a genuinely missing install from an install that is
 //! in flight or unreachable from this hook's `PATH` — see [`HOOK_TMPL`].
+//!
+//! When mise provides `poly` in the repository, the shim first re-execs
+//! itself under `mise exec`, so a git client started without mise activation
+//! still runs the mise-pinned `poly`, and the hook sees the repository's mise
+//! tools and `[env]`.
 //!
 //! The store/workspace/provisioning machinery, the `core.hooksPath` refusal
 //! logic, and `init_template_dir` are intentionally **not** ported — they are out of scope
@@ -36,12 +41,30 @@ const HOOK_MARKER: &str = "poly-hook-shim:v1";
 /// Shell template for an installed git-hook shim.
 ///
 /// `[HOOK_TYPE]` is replaced with the kebab-case hook name. The shim resolves
-/// `poly` from `PATH` at hook time — no absolute path is baked in, so it always
-/// runs whatever `poly` is current on the user's PATH. When `poly` is not found
+/// `poly` from `PATH` at hook time — no absolute path is baked in, so it runs
+/// whatever `poly` is current on the user's PATH, or the mise-provided one when
+/// the repository pins it (see below). When `poly` is not found
 /// it fails loudly with an explanatory message instead of letting the git
 /// operation proceed as though the hook had passed. `exec` replaces the shell
 /// process, so the hook's stdin (used by `pre-push`) and arguments are forwarded
 /// transparently.
+///
+/// Before resolving `poly`, the shim re-execs itself under `mise exec -- sh` when
+/// mise provides `poly` in the repository, so an IDE or GUI git client without
+/// mise activation gets the mise-pinned `poly` and tools instead of none or a
+/// different install; the repository's mise `[env]` then applies to the hook too.
+/// mise is found on `PATH` or at its fixed installer and Homebrew locations,
+/// which a GUI `PATH` usually lacks; none of them is specific to the install, so
+/// the no-absolute-path rule holds. The probe is `mise which poly`, which
+/// succeeds only for a trusted config pinning an installed `poly`; anywhere else
+/// the shim carries on with `poly` from `PATH`, silently unless a config at the
+/// repository root pins `poly`, in which case one line says how to fix it.
+/// Auto-install is off for the probe and the re-exec (and so for the hook's own
+/// `mise` calls), so a commit never downloads tools. The re-exec runs the shim
+/// through `sh` because `mise.exe` cannot start a shebang script on Windows.
+/// `POLY_HOOK_MISE` stops the re-exec recursing and lets a user skip mise for one
+/// git command; it is unset before the hook's own commands run, so it does not
+/// leak into them.
 ///
 /// Because the shims are installed per repository but `poly` is resolved
 /// globally, a missing `poly` blocks *every* commit on the machine — so the
@@ -105,6 +128,38 @@ poly_missing_evidence() {
         printf 'unreachable %s\n' "$unreachable"
     fi
 }
+
+# Re-exec under `mise exec` when mise provides poly here, so a git client without
+# mise activation (an IDE, a GUI) resolves the mise-pinned poly and tools. mise is
+# looked up on PATH, then at its installer and Homebrew locations, which a GUI PATH
+# often omits. `mise which poly` succeeds only when a trusted config pins an
+# installed poly, so a repository that does not pin poly never pays for the
+# re-exec. Auto-install stays off for the probe and the re-exec: a commit never
+# downloads tools. When a config at the repository root pins poly but mise cannot
+# provide it (untrusted, not installed), one line says how to fix it. Only the
+# first mise found is tried: another install would read the same config. The
+# re-exec goes through `sh` because mise.exe on Windows cannot run a shebang
+# script. POLY_HOOK_MISE guards the re-exec against recursion; set it to any value
+# to skip mise for that git command (it is unset before hook commands run).
+if [ -z "${POLY_HOOK_MISE:-}" ]; then
+    for mise in "$(command -v mise 2>/dev/null)" "${MISE_INSTALL_PATH:-}" "${HOME}/.local/bin/mise" \
+        "${HOME}/.local/bin/mise.exe" /opt/homebrew/bin/mise /usr/local/bin/mise; do
+        [ -n "$mise" ] && [ -x "$mise" ] || continue
+        if MISE_EXEC_AUTO_INSTALL=0 "$mise" which poly </dev/null >/dev/null 2>&1; then
+            POLY_HOOK_MISE=1 MISE_EXEC_AUTO_INSTALL=0 exec "$mise" exec -- sh "$0" "$@"
+        fi
+        for config in mise.toml .mise.toml mise.local.toml .mise.local.toml .config/mise.toml \
+            .config/mise/config.toml mise/config.toml; do
+            if grep -qsE 'poly"?[[:space:]]*=' "$config"; then
+                printf 'poly: %s pins poly but `%s which poly` failed here; using poly from PATH. ' "$config" "$mise" >&2
+                printf 'Run `mise trust` and `mise install`, or set POLY_HOOK_MISE=1 to skip mise.\n' >&2
+                break
+            fi
+        done
+        break
+    done
+fi
+unset POLY_HOOK_MISE
 
 if ! command -v poly >/dev/null 2>&1; then
     evidence=$(poly_missing_evidence)
@@ -408,6 +463,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn shim_re_execs_under_mise_before_resolving_poly() {
+        let shim = render_shim(HookType::PrePush);
+
+        let guard = shim
+            .find("if [ -z \"${POLY_HOOK_MISE:-}\" ]; then")
+            .expect("recursion guard");
+        let re_exec = shim
+            .find("POLY_HOOK_MISE=1 MISE_EXEC_AUTO_INSTALL=0 exec \"$mise\" exec -- sh \"$0\" \"$@\"")
+            .expect("re-exec line");
+        let poly_lookup = shim.find("if ! command -v poly").expect("poly lookup");
+        assert!(
+            guard < re_exec && re_exec < poly_lookup,
+            "mise block must precede the poly lookup:\n{shim}"
+        );
+        assert!(
+            shim.contains("MISE_EXEC_AUTO_INSTALL=0 \"$mise\" which poly </dev/null >/dev/null 2>&1"),
+            "mise must be asked for poly first, detached and without auto-install:\n{shim}"
+        );
+        assert!(
+            shim.contains("unset POLY_HOOK_MISE\n"),
+            "the guard must not leak into poly's children:\n{shim}"
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn install_sets_executable_bit() {
@@ -461,6 +541,8 @@ mod tests {
 
     /// Install the `pre-commit` shim into `hooks` and run it with a synthetic
     /// `PATH`/`HOME`, so the diagnostic branches can be exercised for real.
+    /// `POLY_HOOK_MISE` keeps the host's own mise (found at its fixed install
+    /// locations) out of the run; `tests/mise_exec.rs` covers that path.
     #[cfg(unix)]
     fn run_pre_commit_shim(hooks: &Path, fake_bin: &Path, fake_home: &Path) -> std::process::Output {
         install(hooks, &[HookType::PreCommit], false).expect("install");
@@ -469,6 +551,7 @@ mod tests {
             .env_clear()
             .env("PATH", fake_bin)
             .env("HOME", fake_home)
+            .env("POLY_HOOK_MISE", "1")
             .output()
             .expect("run shim")
     }
@@ -575,6 +658,7 @@ mod tests {
             .env_clear()
             .env("PATH", &bin)
             .env("HOME", &home)
+            .env("POLY_HOOK_MISE", "1")
             .output()
             .expect("run shim");
 

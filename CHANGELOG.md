@@ -67,6 +67,7 @@ See [Migrating to poly 2](https://goldziher.github.io/poly/guides/migrating-to-v
 ### Fixed
 
 - `--only` / `--skip` accept engines served by a component, so `poly lint --only sqruff` works on a core build instead of failing with an unknown engine name.
+- Git hooks installed by `poly hooks install` re-exec under `mise exec` when mise provides poly in the repository, so a commit from an IDE or GUI without mise activation runs the mise-pinned poly and tools instead of failing with "poly binary is not on your PATH" or running another poly. The repository's mise `[env]` applies to hooks too, and hooks never auto-install tools. When the repository pins poly but mise cannot provide it (an untrusted config, poly not installed), the hook says so in one line and uses poly from PATH; set `POLY_HOOK_MISE=1` to skip mise for a git command. Re-run `poly hooks install` to update existing hooks.
 - The generic shell formatter (used when `shfmt` is not installed) keeps the indent of a `\`-continued line that starts with a redirect instead of dedenting it to the command's level.
 
 ## [0.32.3] - 2026-11-01
