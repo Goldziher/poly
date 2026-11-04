@@ -36,6 +36,22 @@ targets = [
   "x86_64-pc-windows-msvc",
 ]
 
+# rubyfmt is a git-pinned dependency, so its family crate lives in the separate `components/`
+# workspace; alef generates and builds the producer there.
+[[crates.components]]
+name = "ruby"
+provides = [{ contract = "poly", implementation = "poly_engines_ruby::RubyComponent" }]
+source_manifest = "components/crates/poly-engines-ruby/Cargo.toml"
+producer_dir = "components/crates/poly-engines-ruby-component"
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
 # The MCP server as a frontend component: poly-mcp (rmcp, tokio) lives here instead of in the core
 # binary. It reaches the engines through the host services `poly mcp` registers.
 [[crates.components]]

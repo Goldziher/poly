@@ -1,4 +1,5 @@
 [workspace]
+exclude = ["components"]
 resolver = "3"
 members = [
   "crates/conformance",
@@ -46,8 +47,8 @@ documentation = "https://github.com/Goldziher/poly"
 [workspace.dependencies]
 adrlint = "=0.4.1"
 aho-corasick = "1.1.5"
-alef-component-abi = "=0.121.0"
-alef-component-runtime = "=0.121.0"
+alef-component-abi = "=0.122.1"
+alef-component-runtime = "=0.122.1"
 # alejandra — Nix formatter (UNLICENSE, pure Rust via rnix); chosen over
 alejandra = "3.1"
 annotate-snippets = "0.12.17"
@@ -237,8 +238,11 @@ zip = { version = "9.3", default-features = false, features = ["deflate-flate2-z
 # oxc_formatter_yaml/toml pull `oxc_allocator` from the registry through their parsers; resolve it to
 # the same git copy as the rest of the oxc crates so there is a single `Allocator` type.
 [patch.crates-io]
+alef-component-abi = { path = "/Users/naamanhirschfeld/workspace/xberg-io/.worktrees/alef/feat-component-release-plan/crates/alef-component-abi" }
+alef-component-runtime = { path = "/Users/naamanhirschfeld/workspace/xberg-io/.worktrees/alef/feat-component-release-plan/crates/alef-component-runtime" }
 oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
 
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
