@@ -2,7 +2,7 @@
 source: crates/poly-cli/tests/components_cli.rs
 expression: "Sandbox::new().stdout(&[\"components\", \"list\"])"
 ---
-flavor      bundled
+flavor      partial
 cache       <cache>
 offline     false
 lock        none (this build embeds no component lock)
@@ -11,7 +11,7 @@ python   bundled      python-types, ruff
 sql      bundled      sqruff
 php      bundled      mago
 biome    bundled      biome
-ruby     bundled      rubyfmt
+ruby     unavailable  rubyfmt  [this build embeds no component lock]
 nix      bundled      alejandra
 typos    bundled      typos  (opt-in)
 astgrep  bundled      astgrep

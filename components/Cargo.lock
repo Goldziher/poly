@@ -5132,6 +5132,8 @@ dependencies = [
  "poly-cli",
  "poly-core",
  "poly-engines-ruby",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

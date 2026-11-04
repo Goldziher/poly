@@ -355,6 +355,16 @@ fn a_native_toolchain_table_accepts_only_enabled() {
 }
 
 #[test]
+fn an_engine_of_a_component_that_is_not_linked_is_checked_from_the_index() {
+    // rubyfmt lives in the downloadable `ruby` component; its table is validated from the
+    // committed index, so a typo is reported and `enabled` is accepted without the engine linked.
+    assert!(warnings("[fmt.ruby.rubyfmt]\nenabled = false\n").is_empty());
+    let found = warnings("[fmt.ruby.rubyfmt]\nbogus_option = 1\n");
+    assert_eq!(found.len(), 1, "{:?}", titles(&found));
+    assert_eq!(found[0].code.as_deref(), Some("unknown-config-key"));
+}
+
+#[test]
 fn a_declared_key_given_an_unusable_value_is_reported_under_its_own_code() {
     // Issue #16: `as_integer` answers `None` and ruff keeps its default, so the
     // config looks enforced and is not.

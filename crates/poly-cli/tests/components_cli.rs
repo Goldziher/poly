@@ -1,5 +1,6 @@
-//! `poly components` on the default (bundled) build: every engine family is linked, so nothing is
-//! downloadable, `install` is a no-op and `list`/`status` need no lock.
+//! `poly components` on the default core build: every family but `ruby` is linked, so `ruby` is the
+//! one downloadable component, the flavor is `partial`, and with no embedded lock it is
+//! `unavailable`. The fully linked flavor is covered by the `poly-bundled` tests in `components/`.
 #![cfg(all(unix, feature = "all-engines", not(feature = "dev-lock")))]
 
 use std::path::Path;
@@ -65,7 +66,7 @@ fn list_json() {
     let json = sandbox.stdout(&["components", "list", "--format", "json"]);
     let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
     assert_eq!(value["schema"], 1);
-    assert_eq!(value["flavor"], "bundled");
+    assert_eq!(value["flavor"], "partial");
     insta::assert_snapshot!("list_json", json);
 }
 
@@ -91,14 +92,12 @@ fn toon_carries_the_schema() {
 }
 
 #[test]
-fn install_all_is_a_noop_on_the_bundled_build() {
+fn install_all_without_a_lock_fails_because_ruby_is_a_component() {
     let sandbox = Sandbox::new();
-    let json = sandbox.stdout(&["component", "install", "all", "--format", "json"]);
-    let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
-    assert_eq!(value["ok"], true);
-    let results = value["results"].as_array().expect("results");
-    assert!(!results.is_empty());
-    assert!(results.iter().all(|r| r["action"] == "bundled"), "{json}");
+    let output = sandbox.run(&["component", "install", "all", "--format", "json"]);
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("this build embeds no component lock"), "{stderr}");
     assert!(!sandbox.cache.path().join("sha256").exists());
 }
 
@@ -119,6 +118,6 @@ fn prune_without_a_lock_fails_instead_of_pretending() {
 fn doctor_json_has_a_components_section() {
     let output = Sandbox::new().run(&["doctor", "--format", "json"]);
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid json");
-    assert_eq!(value["components"]["flavor"], "bundled");
+    assert_eq!(value["components"]["flavor"], "partial");
     assert_eq!(value["components"]["needed_missing"], serde_json::json!([]));
 }

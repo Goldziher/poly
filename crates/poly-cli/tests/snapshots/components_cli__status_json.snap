@@ -1,12 +1,11 @@
 ---
 source: crates/poly-cli/tests/components_cli.rs
-assertion_line: 84
 expression: json
 ---
 {
   "schema": 1,
   "command": "status",
-  "flavor": "bundled",
+  "flavor": "partial",
   "offline": false,
   "cache_root": "<cache>",
   "lock": "this build embeds no component lock",

@@ -20,5 +20,9 @@ poly-cli.workspace = true
 poly-core.workspace = true
 poly-engines-ruby.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
+
 [lints.rust]
 unsafe_code = "forbid"

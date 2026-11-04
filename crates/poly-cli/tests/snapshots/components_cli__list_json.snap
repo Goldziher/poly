@@ -5,7 +5,7 @@ expression: json
 {
   "schema": 1,
   "command": "list",
-  "flavor": "bundled",
+  "flavor": "partial",
   "offline": false,
   "cache_root": "<cache>",
   "lock": "this build embeds no component lock",
@@ -65,11 +65,12 @@ expression: json
     {
       "name": "ruby",
       "kind": "engines",
-      "state": "bundled",
+      "state": "unavailable",
       "opt_in": false,
       "engines": [
         "rubyfmt"
-      ]
+      ],
+      "detail": "this build embeds no component lock"
     },
     {
       "name": "nix",

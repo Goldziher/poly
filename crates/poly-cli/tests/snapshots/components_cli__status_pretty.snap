@@ -1,9 +1,8 @@
 ---
 source: crates/poly-cli/tests/components_cli.rs
-assertion_line: 74
 expression: "Sandbox::new().stdout(&[\"components\", \"status\"])"
 ---
-flavor      bundled
+flavor      partial
 cache       <cache>
 offline     false
 lock        none (this build embeds no component lock)
