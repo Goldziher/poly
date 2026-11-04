@@ -14,22 +14,32 @@ pnpm = "12.16.1"
 "github:xberg-io/alef" = "0.121.0"
 
 [vars]
-# Tasks run poly built from this checkout, so they lint and format with the code under change. ~keep
-poly = "cargo run -q -p poly-cli --bin poly --"
+# Tasks run the bundled poly (core plus the web, biome and ruby engines, built from components/) from this
+# checkout, so they lint and format with the code under change. The core alone cannot handle TOML, Markdown,
+# JSON, YAML, JS/TS or CSS without a downloadable component. ~keep
+poly = "cargo run -q --manifest-path components/Cargo.toml -p poly-bundled --bin poly --"
 # ai-rulez is never pinned: every task runs its newest release on the baseline Node. ~keep
 ai_rulez = "npx -y ai-rulez@latest"
 
 [tasks.setup]
 description = "Fetch dependencies and install the git hooks"
-run = ["mise install", "cargo fetch", "{{vars.poly}} hooks install"]
+run = [
+  "mise install",
+  "cargo fetch",
+  "cargo fetch --manifest-path components/Cargo.toml",
+  "{{vars.poly}} hooks install",
+]
 
 [tasks.build]
-description = "Build the whole workspace"
-run = "cargo build --workspace --exclude conformance"
+description = "Build the root workspace and the components workspace"
+run = ["cargo build --workspace --exclude conformance", "cargo build --manifest-path components/Cargo.toml --workspace"]
 
 [tasks.test]
-description = "Run the test suite"
-run = "cargo test --workspace --exclude conformance"
+description = "Run the test suite of the root workspace and the components workspace"
+run = [
+  "cargo test --workspace --exclude conformance",
+  "cargo test --manifest-path components/Cargo.toml --workspace --no-fail-fast",
+]
 
 [tasks."test:hooks"]
 description = "Run native hook tests; cargo test arguments follow -- -- (mise run test:hooks -- -- filter -- --nocapture)"
@@ -38,17 +48,21 @@ run = 'eval "set -- ${usage_args:-}"; cargo test -p poly-hooks "$@"'
 
 [tasks.lint]
 description = "Clippy (deny warnings) plus poly's own lint over the repo"
-run = ["cargo clippy --workspace --exclude conformance --all-targets -- -D warnings", "{{vars.poly}} lint ."]
+run = [
+  "cargo clippy --workspace --exclude conformance --all-targets -- -D warnings",
+  "cargo clippy --manifest-path components/Cargo.toml --workspace --all-targets -- -D warnings",
+  "{{vars.poly}} lint .",
+]
 
 [tasks.format]
 description = "Format Rust with rustfmt and the rest of the tree with polyfmt"
 alias = ["fmt"]
-run = ["cargo fmt", "{{vars.poly}} fmt --fix ."]
+run = ["cargo fmt", "cargo fmt --manifest-path components/Cargo.toml --all", "{{vars.poly}} fmt --fix ."]
 
 [tasks."format:check"]
 description = "Verify formatting without writing changes"
 alias = ["fmt:check"]
-run = ["cargo fmt --check", "{{vars.poly}} fmt ."]
+run = ["cargo fmt --check", "cargo fmt --manifest-path components/Cargo.toml --all --check", "{{vars.poly}} fmt ."]
 
 [tasks.hooks]
 description = "Run the full pre-commit hook stage from poly.toml over all files"
@@ -88,6 +102,10 @@ run = "./scripts/components-dev.sh"
 [tasks."components:parity"]
 description = "Test poly-core in components mode (no engine-sql, dev-lock) against the dev lock from components:dev"
 run = "./scripts/components-parity.sh"
+
+[tasks."check:deps"]
+description = "Gate: no git sources in the root Cargo.lock, no allow-git in the root deny.toml"
+run = "./scripts/check-no-git-deps.sh"
 
 [tasks.check]
 description = "Full local gate (format check, lint, test) — run before pushing"
