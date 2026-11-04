@@ -99,8 +99,11 @@ fn command_v_binary(check: &str) -> Option<&str> {
 fn shell_command(command: &str) -> Command {
     #[cfg(windows)]
     let process = {
+        use std::os::windows::process::CommandExt;
+
         let mut p = Command::new("cmd");
-        p.args(["/C", command]);
+        // CMD parses a command string, not CRT argv: `arg` would escape inner quotes as `\"`. ~keep
+        p.arg("/C").raw_arg(cmd_command_line(command));
         p
     };
     #[cfg(not(windows))]
@@ -110,6 +113,13 @@ fn shell_command(command: &str) -> Command {
         p
     };
     process
+}
+
+/// The text after `cmd /C`: one outer quote pair that `cmd /C` strips, with the
+/// command's own quotes left verbatim (the same transport as the hook runner).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn cmd_command_line(command: &str) -> String {
+    format!("\"{command}\"")
 }
 
 #[cfg(test)]
@@ -122,5 +132,29 @@ mod tests {
         assert_eq!(command_v_binary("command -v"), None);
         assert_eq!(command_v_binary("command -v npx && false"), None);
         assert_eq!(command_v_binary("npx --version"), None);
+    }
+
+    #[test]
+    fn cmd_command_line_keeps_inner_quotes_verbatim_inside_one_transport_pair() {
+        let check = r#"python3 -c "import tomllib,shutil,sys; sys.exit(shutil.which('ai-rulez') is None)""#;
+        assert_eq!(
+            cmd_command_line(check),
+            r#""python3 -c "import tomllib,shutil,sys; sys.exit(shutil.which('ai-rulez') is None)"""#
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_check_with_inner_quotes_reaches_cmd_intact() {
+        let root = tempfile::tempdir().unwrap();
+        let path = |check: &str| HookPath {
+            channel: "system".to_string(),
+            check: check.to_string(),
+            run: "unused".to_string(),
+            install: None,
+        };
+        assert!(check_path(&path(r#"if "a b"=="a b" (exit /b 0) else (exit /b 1)"#), root.path()).unwrap());
+        assert!(!check_path(&path(r#"if "a b"=="a c" (exit /b 0) else (exit /b 1)"#), root.path()).unwrap());
+        assert!(check_path(&path(r#""%ComSpec%" /D /C "exit /b 0""#), root.path()).unwrap());
     }
 }

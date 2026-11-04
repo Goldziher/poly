@@ -7,6 +7,10 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- On Windows, a hook source channel `check` or `install` command containing double quotes reaches `cmd.exe` intact instead of with CRT-escaped `\"`, so `poly hooks update` no longer reports "has no eligible execution path" for a check such as `python3 -c "..."`.
+
 ## [0.32.4] - 2026-11-04
 
 ### Fixed
