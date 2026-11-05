@@ -25,6 +25,12 @@ checksum_source = "mise-versions"
 url = "https://github.com/xberg-io/alef/releases/download/v0.124.0/alef-aarch64-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/xberg-io/alef/releases/assets/710607796"
 
+[tools."github:xberg-io/alef"."platforms.macos-x64"]
+checksum = "sha256:1bde072d7eda49b1694769dfb7e7544f031ab5e65fcbadc3b54692721aa97d63"
+checksum_source = "mise-versions"
+url = "https://github.com/xberg-io/alef/releases/download/v0.124.0/alef-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/xberg-io/alef/releases/assets/710607956"
+
 [tools."github:xberg-io/alef"."platforms.windows-x64"]
 checksum = "sha256:4b0739e60900c138942637e3b812e109f4326d8f8739c33a30af54a2eb4ef206"
 checksum_source = "mise-versions"
@@ -47,6 +53,10 @@ url = "https://nodejs.org/dist/v26.13.0/node-v26.13.0-linux-x64.tar.gz"
 [tools.node."platforms.macos-arm64"]
 checksum = "sha256:d38bd5e5a2ddce6bbb5ce45e46e208337da4d51fffe611e567fd32073d6439f6"
 url = "https://nodejs.org/dist/v26.13.0/node-v26.13.0-darwin-arm64.tar.gz"
+
+[tools.node."platforms.macos-x64"]
+checksum = "sha256:525c9b29bb0263d687de60a4cec0e2a6db876a8eb032369e5795eca71e7c358e"
+url = "https://nodejs.org/dist/v26.13.0/node-v26.13.0-darwin-x64.tar.gz"
 
 [tools.node."platforms.windows-x64"]
 checksum = "sha256:dcc60d59a0746999f99064a01c020445d54d84228c691cdbf25b49ac3b59150a"
@@ -75,6 +85,12 @@ url = "https://github.com/pnpm/pnpm/releases/download/v12.16.1/pnpm-darwin-arm64
 url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/681916062"
 provenance = "github-attestations"
 
+[tools.pnpm."platforms.macos-x64"]
+checksum = "sha256:f2c52f20f631a31011a6e33e3812d136db89c4a5c1d23123b92cbe62ecec82a6"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.16.1/pnpm-darwin-x64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/681916060"
+provenance = "github-attestations"
+
 [tools.pnpm."platforms.windows-x64"]
 checksum = "sha256:253cd5caa8cdf3859a92995bdf1819d3b433690157616cc372af00d22eb0c6a4"
 url = "https://github.com/pnpm/pnpm/releases/download/v12.16.1/pnpm-win32-x64.zip"
@@ -99,6 +115,11 @@ provenance = "github-attestations"
 [tools.python."platforms.macos-arm64"]
 checksum = "sha256:1b1b03fca8aa351698403f3d100ee83db7a5d99748fc7707681ac31a6a846ad9"
 url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.15.2+20261026-aarch64-apple-darwin-install_only_stripped.tar.gz"
+provenance = "github-attestations"
+
+[tools.python."platforms.macos-x64"]
+checksum = "sha256:6ec04346b578656b5d5597144cbe0f4773acea6af6048cb8fe0cac3e92c702ac"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.15.2+20261026-x86_64-apple-darwin-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.windows-x64"]
@@ -127,6 +148,12 @@ provenance = "github-attestations"
 checksum = "sha256:60fbd5c8a1ed681845eea28d9d622fcde03c51e91a43465b64a1e17db1ed3472"
 url = "https://github.com/astral-sh/uv/releases/download/0.13.6/uv-aarch64-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/679980393"
+provenance = "github-attestations"
+
+[tools.uv."platforms.macos-x64"]
+checksum = "sha256:63ba17fdda55ad1a230d4b37fc6017ffa10c23688c83818bd3bfdf914c652a02"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.6/uv-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/679980609"
 provenance = "github-attestations"
 
 [tools.uv."platforms.windows-x64"]
