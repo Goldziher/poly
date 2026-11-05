@@ -7,7 +7,7 @@
 
 /// Declares a component type: a [`Producer`](crate::Producer) over the engines `$engines` builds.
 macro_rules! family_component {
-    ($feature:literal, $module:ident, $name:ident, $doc:literal, $engines:expr) => {
+    ($feature:literal, $module:ident, $name:ident, $doc:literal, $engines:expr $(, rules = $rules:expr)?) => {
         #[cfg(feature = $feature)]
         mod $module {
             use crate::{ComponentCallError, PolyComponent, Producer};
@@ -17,7 +17,9 @@ macro_rules! family_component {
 
             impl Default for $name {
                 fn default() -> Self {
-                    Self(Producer::new(env!("CARGO_PKG_VERSION"), $engines))
+                    let producer = Producer::new(env!("CARGO_PKG_VERSION"), $engines);
+                    $(let producer = producer.with_rules($rules);)?
+                    Self(producer)
                 }
             }
 
@@ -77,7 +79,8 @@ family_component!(
     astgrep,
     AstgrepComponent,
     "The `astgrep` component: ast-grep with the built-in rule pack.",
-    vec![Box::new(crate::astgrep::AstGrepEngine)]
+    vec![Box::new(crate::astgrep::AstGrepEngine)],
+    rules = crate::astgrep::report::rules_report
 );
 family_component!(
     "misc",

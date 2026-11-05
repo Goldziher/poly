@@ -3,8 +3,8 @@
 use std::path::{Path, PathBuf};
 
 use poly_component_protocol::{
-    PROTOCOL_VERSION, Payload, Request, WireBatchSupport, WireDiagnostic, WireError, WireFileDiagnostics,
-    WireFormatItem, WireFormatOutput, WireKind, WireLintItem, WireOptionTable, to_toml,
+    PROTOCOL_VERSION, Payload, Request, WireBatchSupport, WireDiagnostic, WireError, WireErrorKind,
+    WireFileDiagnostics, WireFormatItem, WireFormatOutput, WireKind, WireLintItem, WireOptionTable, to_toml,
 };
 use poly_engine_api::engine::{Engine, FormatOutput, ProjectEnvironment, ProjectFile, ProjectRequest};
 
@@ -204,6 +204,16 @@ impl Producer {
                 let cfg = self.config(config)?;
                 let salt = guarded(engine.name(), || Ok(engine.lint_input_salt(Path::new(&path), &cfg)))?;
                 Ok(Payload::OptString(salt))
+            }
+            Request::Rules { dirs, config, test } => {
+                let handler = self.rules.ok_or_else(|| WireError {
+                    kind: WireErrorKind::Unsupported,
+                    message: "this component hosts no rule engine".to_owned(),
+                    chain: Vec::new(),
+                })?;
+                let cfg = engine_config_from_wire(&config)?;
+                let report = guarded("rules", || handler(&dirs, &cfg, test))?;
+                Ok(Payload::Rules(report))
             }
             Request::FormatInputSalt { engine, config, path } => {
                 let engine = self.engine(&engine, None)?;

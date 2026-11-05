@@ -3435,6 +3435,7 @@ dependencies = [
  "ast-grep-core",
  "globset",
  "insta",
+ "poly-component-protocol",
  "poly-engine-api",
  "poly-grammar",
  "serde",

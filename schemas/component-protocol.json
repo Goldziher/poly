@@ -489,6 +489,35 @@
           },
           "required": ["FormatInputSalt"],
           "additionalProperties": false
+        },
+        {
+          "description": "The rule inventory (and optionally the rule-test run) of the component's rule engine.\nOnly the component that hosts the ast-grep engine answers it; any other answers\n[`WireErrorKind::Unsupported`].",
+          "type": "object",
+          "properties": {
+            "Rules": {
+              "type": "object",
+              "properties": {
+                "dirs": {
+                  "description": "Rule directories to search for user rules.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "config": {
+                  "description": "The resolved engine config of the rule engine, as in [`Request::RegisterConfig`].",
+                  "$ref": "#/$defs/WireValue"
+                },
+                "test": {
+                  "description": "Also run the user rules' `*-test.yml` snippets.",
+                  "type": "boolean"
+                }
+              },
+              "required": ["dirs", "config", "test"]
+            }
+          },
+          "required": ["Rules"],
+          "additionalProperties": false
         }
       ]
     },
@@ -901,6 +930,17 @@
           },
           "required": ["OptionKeys"],
           "additionalProperties": false
+        },
+        {
+          "description": "Answer to `Rules`.",
+          "type": "object",
+          "properties": {
+            "Rules": {
+              "$ref": "#/$defs/WireRulesReport"
+            }
+          },
+          "required": ["Rules"],
+          "additionalProperties": false
         }
       ]
     },
@@ -1139,6 +1179,11 @@
           "description": "The request was malformed or violated the protocol.",
           "type": "string",
           "const": "Protocol"
+        },
+        {
+          "description": "The component does not serve this request (for example `Rules` on a component that hosts no\nrule engine).",
+          "type": "string",
+          "const": "Unsupported"
         }
       ]
     },
@@ -1201,6 +1246,129 @@
         }
       },
       "required": ["format", "lint"]
+    },
+    "WireRulesReport": {
+      "description": "The answer to [`Request::Rules`].",
+      "type": "object",
+      "properties": {
+        "builtin_pack_enabled": {
+          "description": "Whether poly's built-in rule pack is enabled in the request's config.",
+          "type": "boolean"
+        },
+        "rules": {
+          "description": "Every resolved rule, active or not.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireRule"
+          }
+        },
+        "tests": {
+          "description": "Present only when the request asked for tests.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireRuleTests"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["builtin_pack_enabled", "rules"]
+    },
+    "WireRule": {
+      "description": "One resolved rule of a [`WireRulesReport`].",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "The rule's `id`, as reported in a diagnostic's `code`.",
+          "type": "string"
+        },
+        "language": {
+          "description": "The language name the rule targets.",
+          "type": "string"
+        },
+        "source": {
+          "description": "`builtin` or `user`.",
+          "type": "string"
+        },
+        "default_severity": {
+          "description": "The severity the rule's own YAML declares (`off` for an opt-in rule).",
+          "type": "string"
+        },
+        "severity": {
+          "description": "The severity a finding reports at under the request's config.",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "Whether the rule participates in a scan under the request's config.",
+          "type": "boolean"
+        }
+      },
+      "required": ["id", "language", "source", "default_severity", "severity", "enabled"]
+    },
+    "WireRuleTests": {
+      "description": "The result of running the rule tests.",
+      "type": "object",
+      "properties": {
+        "total_rules": {
+          "description": "Rules discovered under the searched directories.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "outcomes": {
+          "description": "Per-snippet outcomes.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireRuleTestOutcome"
+          }
+        },
+        "missing_rule_ids": {
+          "description": "Test files naming an unknown rule id.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "untested_rule_ids": {
+          "description": "Rules with no test file.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["total_rules", "outcomes", "missing_rule_ids", "untested_rule_ids"]
+    },
+    "WireRuleTestOutcome": {
+      "description": "The outcome of one rule-test snippet.",
+      "type": "object",
+      "properties": {
+        "rule_id": {
+          "description": "The rule id the snippet was checked against.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "`valid`, `invalid` or `fixed`.",
+          "type": "string"
+        },
+        "index": {
+          "description": "Index of the snippet within its list.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "passed": {
+          "description": "Whether the snippet met its expectation.",
+          "type": "boolean"
+        },
+        "detail": {
+          "description": "Failure detail, if any.",
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["rule_id", "kind", "index", "passed"]
     },
     "WireLog": {
       "description": "A log record emitted by the component during a call.",

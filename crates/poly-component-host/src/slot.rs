@@ -352,6 +352,7 @@ pub fn wire_error_to_anyhow(engine: &str, error: WireError) -> anyhow::Error {
         WireErrorKind::UnknownConfig => anyhow::anyhow!("component lost a registered config: {}", error.message),
         WireErrorKind::UnknownEngine => anyhow::anyhow!("component does not host engine '{engine}': {}", error.message),
         WireErrorKind::Protocol => anyhow::anyhow!("component protocol error: {}", error.message),
+        WireErrorKind::Unsupported => anyhow::anyhow!("component does not support the request: {}", error.message),
     }
 }
 

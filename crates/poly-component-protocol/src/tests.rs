@@ -136,6 +136,32 @@ fn error() -> WireError {
     }
 }
 
+fn rules_report(with_tests: bool) -> WireRulesReport {
+    WireRulesReport {
+        builtin_pack_enabled: true,
+        rules: vec![WireRule {
+            id: "swallowed-error".into(),
+            language: "rust".into(),
+            source: "builtin".into(),
+            default_severity: "warning".into(),
+            severity: "warning".into(),
+            enabled: true,
+        }],
+        tests: with_tests.then(|| WireRuleTests {
+            total_rules: 1,
+            outcomes: vec![WireRuleTestOutcome {
+                rule_id: "swallowed-error".into(),
+                kind: "invalid".into(),
+                index: 0,
+                passed: false,
+                detail: Some("no match".into()),
+            }],
+            missing_rule_ids: vec!["ghost".into()],
+            untested_rule_ids: vec![],
+        }),
+    }
+}
+
 fn sample_requests() -> Vec<Request> {
     let cfg = WireValue::Table(vec![("indent_width".into(), WireValue::Integer(4))]);
     vec![
@@ -219,6 +245,11 @@ fn sample_requests() -> Vec<Request> {
             config: 3,
             path: "p".into(),
         },
+        Request::Rules {
+            dirs: vec![".poly/rules".into()],
+            config: WireValue::Table(vec![("options".into(), WireValue::Table(vec![]))]),
+            test: true,
+        },
     ]
 }
 
@@ -254,6 +285,8 @@ fn sample_payloads() -> Vec<Payload> {
         }),
         Payload::OptionKeys(None),
         Payload::OptionKeys(Some(vec!["a".into()])),
+        Payload::Rules(rules_report(true)),
+        Payload::Rules(rules_report(false)),
     ]
 }
 
@@ -291,6 +324,7 @@ fn every_response_variant_round_trips() {
         WireErrorKind::UnknownConfig,
         WireErrorKind::UnknownEngine,
         WireErrorKind::Protocol,
+        WireErrorKind::Unsupported,
     ] {
         responses.push(Response {
             result: Err(WireError { kind, ..error() }),

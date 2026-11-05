@@ -613,3 +613,78 @@ fn sqruff_through_the_producer_matches_a_direct_call() {
     );
     assert_eq!(response.result, Ok(Payload::Diagnostics(direct)));
 }
+
+fn rules_request(test: bool) -> Request {
+    Request::Rules {
+        dirs: Vec::new(),
+        config: engine_config_to_wire(&cfg()),
+        test,
+    }
+}
+
+#[test]
+fn rules_are_unsupported_by_a_component_without_a_rule_engine() {
+    let producer = ready();
+    let error = send(&producer, &rules_request(false), b"").result.unwrap_err();
+    assert_eq!(error.kind, WireErrorKind::Unsupported);
+}
+
+#[test]
+fn rules_reach_the_handler_with_the_request_inputs() {
+    use poly_component_protocol::WireRulesReport;
+
+    fn handler(dirs: &[String], cfg: &EngineConfig, test: bool) -> anyhow::Result<WireRulesReport> {
+        anyhow::ensure!(dirs == ["d"], "dirs were {dirs:?}");
+        Ok(WireRulesReport {
+            builtin_pack_enabled: cfg.indent_width == 2,
+            rules: Vec::new(),
+            tests: test.then(|| poly_component_protocol::WireRuleTests {
+                total_rules: 0,
+                outcomes: Vec::new(),
+                missing_rule_ids: Vec::new(),
+                untested_rule_ids: Vec::new(),
+            }),
+        })
+    }
+
+    let producer = producer().with_rules(handler);
+    init(&producer, WireLogLevel::Info);
+    let request = |test| Request::Rules {
+        dirs: vec!["d".into()],
+        config: engine_config_to_wire(&cfg()),
+        test,
+    };
+    let Ok(Payload::Rules(plain)) = send(&producer, &request(false), b"").result else {
+        panic!("expected a rules payload");
+    };
+    assert!(plain.builtin_pack_enabled && plain.tests.is_none());
+    let Ok(Payload::Rules(tested)) = send(&producer, &request(true), b"").result else {
+        panic!("expected a rules payload");
+    };
+    assert!(tested.tests.is_some());
+    let failed = send(&producer, &rules_request(false), b"").result.unwrap_err();
+    assert_eq!(failed.kind, WireErrorKind::Error);
+    assert!(failed.message.contains("dirs were"), "{}", failed.message);
+}
+
+#[cfg(feature = "astgrep")]
+#[test]
+fn the_astgrep_component_answers_rules() {
+    let component = poly_engines::AstgrepComponent::default();
+    let call = |request: &Request| {
+        let bytes = component.call(&encode_request(request).unwrap(), b"").unwrap();
+        decode_response(&bytes).unwrap().result
+    };
+    let init_request = Request::Init {
+        protocol: PROTOCOL_VERSION,
+        host_version: "0.0.1".into(),
+        threads: 1,
+        stack_size: 16 << 20,
+        max_log_level: WireLogLevel::Info,
+    };
+    assert!(call(&init_request).is_ok());
+    let Ok(Payload::Rules(report)) = call(&rules_request(false)) else {
+        panic!("the astgrep component must answer Rules");
+    };
+    assert!(report.rules.iter().any(|rule| rule.source == "builtin"));
+}
