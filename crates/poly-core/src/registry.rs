@@ -104,8 +104,16 @@ pub(crate) fn merge_external_engines(
     if displaces_tree_sitter(external.iter().map(|engine| &**engine)) {
         engines.retain(|engine| engine.name() != TREE_SITTER_ENGINE);
     }
-    let (cross_cutting, mut language): (Vec<_>, Vec<_>) =
+    let (mut cross_cutting, mut language): (Vec<_>, Vec<_>) =
         external.into_iter().partition(|engine| engine.languages().is_empty());
+    // The bundled build appends cross-cutting engines in `CROSS_CUTTING_ENGINES` order; an unknown
+    // one keeps its arrival order after them.
+    cross_cutting.sort_by_key(|engine| {
+        CROSS_CUTTING_ENGINES
+            .iter()
+            .position(|name| *name == engine.name())
+            .unwrap_or(CROSS_CUTTING_ENGINES.len())
+    });
     // Component engines arrive in index order (by name), not the family's own: a language's
     // formatter leads its lint-only engines in every family (Markdown `[rumdl, adrlint]`, GraphQL
     // `[graphql, biome]`), so a stable sort on that restores it.
@@ -694,8 +702,9 @@ pub(crate) mod tests {
         ];
         let external: Vec<Box<dyn crate::engine::Engine>> = vec![
             Box::new(Fake("taplo", TOML, true)),
-            Box::new(Fake("typos", &[], false)),
+            // Not the bundled order: the merge must not depend on the component index's order.
             Box::new(Fake("astgrep", &[], false)),
+            Box::new(Fake("typos", &[], false)),
         ];
         let merged = super::merge_external_engines(built_in, external);
         let names: Vec<&str> = merged.iter().map(|engine| engine.name()).collect();
