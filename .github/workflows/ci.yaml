@@ -192,10 +192,20 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
       - uses: xberg-io/actions/setup-mise@v1
-      - name: Build the sql component and write the dev lock
-        run: mise run components:dev
+      - name: Build the sql and astgrep components and write the dev lock
+        run: mise run components:dev sql astgrep
       - name: Test poly-core in components mode
         run: mise run components:parity
+      # A core build serves `poly rules` from the astgrep component; these only build without the
+      # ast-grep engine family linked, so the workspace test run never reaches them.
+      - name: poly rules from the astgrep component (core build)
+        env:
+          POLY_COMPONENT_DEV_LOCK: ${{ github.workspace }}/target/components/components.lock.json
+        run: |
+          cargo test --locked -p poly-cli --no-default-features --features dev-lock --test rules_core
+          cargo test --locked -p poly-host-services --no-default-features --features dev-lock --test rules_component
+      - name: poly rules without an embedded lock (core build)
+        run: cargo test --locked -p poly-cli --no-default-features --features core --test rules_core
 
   alef-verify:
     # The checked-in alef outputs (producer crate, host module, versions) must match alef.toml.

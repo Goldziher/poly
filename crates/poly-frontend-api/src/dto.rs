@@ -91,6 +91,9 @@ pub struct RulesReport {
     /// Per-snippet test outcomes, present only when `test` was requested.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tests: Option<Vec<RuleTestOutcome>>,
+    /// Rules discovered under the searched dirs (only when `test` was requested).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_rules: Option<usize>,
     /// Test files naming an unknown rule id (only when `test` was requested).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub missing_rule_ids: Option<Vec<String>>,

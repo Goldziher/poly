@@ -20,6 +20,7 @@ anyhow.workspace = true
 ast-grep-config.workspace = true
 ast-grep-core.workspace = true
 globset.workspace = true
+poly-component-protocol.workspace = true
 poly-engine-api.workspace = true
 poly-grammar.workspace = true
 serde.workspace = true

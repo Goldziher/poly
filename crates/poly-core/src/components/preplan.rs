@@ -101,7 +101,7 @@ fn open_host(injected: Option<&ComponentInjection>) -> Hosted {
 
 /// What the index says a component's `describe()` must answer. The index carries no component
 /// version, so the slot compares only the protocol and the engines.
-fn expected_describe(component: &Component) -> Describe {
+pub(super) fn expected_describe(component: &Component) -> Describe {
     Describe {
         protocol: PROTOCOL_VERSION,
         component_version: String::new(),

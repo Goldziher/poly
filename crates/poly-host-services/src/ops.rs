@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 
 use poly_cache::{ResultCache, root_from_cwd};
 use poly_config::PolyConfig;
-use poly_core::{Config, FormatRun, LintRun, RunOptions};
+use poly_core::{Config, FormatRun, Kind, Language, LintRun, RunOptions};
 
 use poly_config::v2::{ComponentInstallPolicy, OnMissing};
 use poly_frontend_api::dto::{
@@ -210,81 +210,132 @@ pub fn cache_clean() -> anyhow::Result<CacheCleanReport> {
 /// which defaults to `[rules] dirs` from the resolved config when empty. When
 /// `test` is true the user rule-test snippets are run too.
 ///
-/// The listing goes through `poly_core::engines::astgrep::list_rules`, the same
-/// merge + selection path `lint` runs, so it reflects `[rules] builtin` and the
-/// `[lint.astgrep]` `select` / `extend_select` / `ignore` / per-rule `level`
-/// keys rather than reporting a raw on-disk inventory.
-#[cfg(feature = "engine-astgrep")]
+/// The listing goes through the ast-grep engine's own merge + selection path, the
+/// one `lint` runs, so it reflects `[rules] builtin` and the `[lint.astgrep]`
+/// `select` / `extend_select` / `ignore` / per-rule `level` keys rather than
+/// reporting a raw on-disk inventory. A build that links the engine family
+/// answers in-process; a core build asks the `astgrep` component (see
+/// [`rules_report_for`]).
 pub fn rules_report(dirs: &[String], config: Option<&str>, test: bool) -> anyhow::Result<RulesReport> {
-    use poly_core::engines::astgrep::list_rules;
-    use poly_core::engines::astgrep::test::{CaseKind, run_tests};
-    use poly_core::{Kind, Language};
-    use poly_frontend_api::dto::{RuleInfo, RuleTestOutcome};
-
     let resolved = resolve_config(config.map(Path::new))?;
-    // `astgrep`'s options table is language-agnostic (built from `[rules]` +
-    // `[lint.astgrep]`), so the language here only has to be *some* language.
+    rules_report_for(&resolved, dirs, test, None)
+}
+
+/// [`rules_report`] over an already resolved config.
+///
+/// With the ast-grep engine family linked the report is built in-process; otherwise the
+/// `astgrep` component is made available (honouring `--offline` and `[components] install`)
+/// and answers `Request::Rules`. Either way the answer is the same
+/// [`poly_component_protocol::WireRulesReport`], converted by one function, so the two
+/// flavours cannot drift. `injection` replaces the component host and index (tests).
+pub fn rules_report_for(
+    resolved: &Config,
+    dirs: &[String],
+    test: bool,
+    injection: Option<&poly_core::components::ComponentInjection>,
+) -> anyhow::Result<RulesReport> {
     let engine_config = resolved.engine_config(&Language::Other("astgrep".to_string()), "astgrep", Kind::Lint);
     let dirs = if dirs.is_empty() {
         resolved.rules_dirs.clone()
     } else {
         dirs.to_vec()
     };
+    let wire = rules_wire(resolved, &dirs, &engine_config, test, injection)?;
+    Ok(rules_report_from_wire(dirs, wire))
+}
 
-    let rules = list_rules(&dirs, &engine_config)?
+#[cfg(feature = "engine-astgrep")]
+fn rules_wire(
+    resolved: &Config,
+    dirs: &[String],
+    engine_config: &poly_core::config::EngineConfig,
+    test: bool,
+    injection: Option<&poly_core::components::ComponentInjection>,
+) -> anyhow::Result<poly_component_protocol::WireRulesReport> {
+    if injection.is_some() {
+        return rules_wire_via_component(resolved, dirs, engine_config, test, injection);
+    }
+    poly_core::engines::astgrep::report::rules_report(dirs, engine_config, test)
+}
+
+#[cfg(not(feature = "engine-astgrep"))]
+fn rules_wire(
+    resolved: &Config,
+    dirs: &[String],
+    engine_config: &poly_core::config::EngineConfig,
+    test: bool,
+    injection: Option<&poly_core::components::ComponentInjection>,
+) -> anyhow::Result<poly_component_protocol::WireRulesReport> {
+    rules_wire_via_component(resolved, dirs, engine_config, test, injection)
+}
+
+fn rules_wire_via_component(
+    resolved: &Config,
+    dirs: &[String],
+    engine_config: &poly_core::config::EngineConfig,
+    test: bool,
+    injection: Option<&poly_core::components::ComponentInjection>,
+) -> anyhow::Result<poly_component_protocol::WireRulesReport> {
+    use poly_component_protocol::{Payload, Request};
+    use poly_core::components::call_engine_component;
+
+    let request = Request::Rules {
+        dirs: dirs.to_vec(),
+        config: poly_engine_api::component_wire::engine_config_to_wire(engine_config),
+        test,
+    };
+    match call_engine_component(injection, resolved, "astgrep", &request)? {
+        Payload::Rules(report) => Ok(report),
+        other => anyhow::bail!("the astgrep component answered Rules with an unexpected payload: {other:?}"),
+    }
+}
+
+/// The one conversion from the engine's report to the frontend DTO.
+pub fn rules_report_from_wire(dirs: Vec<String>, wire: poly_component_protocol::WireRulesReport) -> RulesReport {
+    use poly_frontend_api::dto::{RuleInfo, RuleTestOutcome};
+
+    let rules = wire
+        .rules
         .into_iter()
         .map(|rule| RuleInfo {
             id: rule.id,
             language: rule.language,
-            source: rule.source.as_str().to_string(),
-            default_severity: rule.default_severity.to_string(),
-            severity: rule.severity.to_string(),
+            source: rule.source,
+            default_severity: rule.default_severity,
+            severity: rule.severity,
             enabled: rule.enabled,
         })
         .collect();
-
     let mut report = RulesReport {
-        dirs: dirs.clone(),
-        builtin_pack_enabled: resolved.rules_builtin_pack,
+        dirs,
+        builtin_pack_enabled: wire.builtin_pack_enabled,
         rules,
         tests: None,
+        total_rules: None,
         missing_rule_ids: None,
         untested_rule_ids: None,
         ok: None,
     };
-
-    if test {
-        let test_report = run_tests(&dirs)?;
-        report.ok = Some(test_report.is_ok());
+    if let Some(tests) = wire.tests {
+        report.ok = Some(tests.outcomes.iter().all(|outcome| outcome.passed) && tests.missing_rule_ids.is_empty());
+        report.total_rules = Some(tests.total_rules as usize);
         report.tests = Some(
-            test_report
+            tests
                 .outcomes
-                .iter()
+                .into_iter()
                 .map(|outcome| RuleTestOutcome {
-                    rule_id: outcome.rule_id.clone(),
-                    kind: match outcome.kind {
-                        CaseKind::Valid => "valid",
-                        CaseKind::Invalid => "invalid",
-                        CaseKind::Fixed => "fixed",
-                    }
-                    .to_string(),
-                    index: outcome.index,
+                    rule_id: outcome.rule_id,
+                    kind: outcome.kind,
+                    index: outcome.index as usize,
                     passed: outcome.passed,
-                    detail: outcome.detail.clone(),
+                    detail: outcome.detail,
                 })
                 .collect(),
         );
-        report.missing_rule_ids = Some(test_report.missing_rule_ids.clone());
-        report.untested_rule_ids = Some(test_report.untested_rule_ids.clone());
+        report.missing_rule_ids = Some(tests.missing_rule_ids);
+        report.untested_rule_ids = Some(tests.untested_rule_ids);
     }
-
-    Ok(report)
-}
-
-/// Without the ast-grep engine family there is no rule inventory to report.
-#[cfg(not(feature = "engine-astgrep"))]
-pub fn rules_report(_dirs: &[String], _config: Option<&str>, _test: bool) -> anyhow::Result<RulesReport> {
-    anyhow::bail!("this poly build does not include the ast-grep engine family, so it has no rules to list")
+    report
 }
 
 /// Summarize the effective, merged config (mirrors `poly config show`), resolved

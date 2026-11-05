@@ -62,6 +62,7 @@ pub mod exclusions;
 pub mod language;
 pub mod map;
 pub mod pack;
+pub mod report;
 pub mod rules;
 pub mod test;
 
@@ -268,7 +269,7 @@ fn load_user_rule_map(dirs: &[String], content_hash: &str) -> anyhow::Result<Opt
 /// `poly_config::RulesConfig`'s own default — so an `EngineConfig` built
 /// without going through `Config` (as in unit tests) still gets the pack
 /// unless a test opts out explicitly.
-fn builtin_pack_enabled(cfg: &EngineConfig) -> bool {
+pub(crate) fn builtin_pack_enabled(cfg: &EngineConfig) -> bool {
     cfg.options
         .get("builtin_pack_enabled")
         .and_then(|v| v.as_bool())

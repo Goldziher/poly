@@ -137,7 +137,8 @@ MCP server are linked in, it embeds no component lock, and it downloads nothing 
 other five archives (Linux gnu x86_64 and aarch64, macOS x86_64 and aarch64, Windows x86_64) are
 **core** builds with the release's signed component lock embedded. Their engines are components that poly downloads the first time a run
 needs them, so the host must reach the download origin (or a mirror), or be seeded with
-`poly components import`. `poly rules` is not available in a core build. See
+`poly components import`. `poly rules` works in a core build too, through the `astgrep`
+component. See
 [Components and offline use](/poly/guides/components/).
 
 ## As an agent plugin

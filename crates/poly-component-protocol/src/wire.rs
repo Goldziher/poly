@@ -266,6 +266,9 @@ pub enum WireErrorKind {
     UnknownEngine,
     /// The request was malformed or violated the protocol.
     Protocol,
+    /// The component does not serve this request (for example `Rules` on a component that hosts no
+    /// rule engine).
+    Unsupported,
 }
 
 /// A failed call.
@@ -427,6 +430,17 @@ pub enum Request {
         /// File path.
         path: String,
     },
+    /// The rule inventory (and optionally the rule-test run) of the component's rule engine.
+    /// Only the component that hosts the ast-grep engine answers it; any other answers
+    /// [`WireErrorKind::Unsupported`].
+    Rules {
+        /// Rule directories to search for user rules.
+        dirs: Vec<String>,
+        /// The resolved engine config of the rule engine, as in [`Request::RegisterConfig`].
+        config: WireValue,
+        /// Also run the user rules' `*-test.yml` snippets.
+        test: bool,
+    },
 }
 
 /// Names of every [`Request`] variant, in declaration order.
@@ -447,6 +461,7 @@ pub const REQUEST_VARIANTS: &[&str] = &[
     "FileContext",
     "LintInputSalt",
     "FormatInputSalt",
+    "Rules",
 ];
 
 impl Request {
@@ -469,6 +484,7 @@ impl Request {
             Request::FileContext { .. } => "FileContext",
             Request::LintInputSalt { .. } => "LintInputSalt",
             Request::FormatInputSalt { .. } => "FormatInputSalt",
+            Request::Rules { .. } => "Rules",
         }
     }
 }
@@ -509,6 +525,62 @@ pub struct WireFileDiagnostics {
     pub diagnostics: Vec<WireDiagnostic>,
 }
 
+/// One resolved rule of a [`WireRulesReport`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WireRule {
+    /// The rule's `id`, as reported in a diagnostic's `code`.
+    pub id: String,
+    /// The language name the rule targets.
+    pub language: String,
+    /// `builtin` or `user`.
+    pub source: String,
+    /// The severity the rule's own YAML declares (`off` for an opt-in rule).
+    pub default_severity: String,
+    /// The severity a finding reports at under the request's config.
+    pub severity: String,
+    /// Whether the rule participates in a scan under the request's config.
+    pub enabled: bool,
+}
+
+/// The outcome of one rule-test snippet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WireRuleTestOutcome {
+    /// The rule id the snippet was checked against.
+    pub rule_id: String,
+    /// `valid`, `invalid` or `fixed`.
+    pub kind: String,
+    /// Index of the snippet within its list.
+    pub index: u64,
+    /// Whether the snippet met its expectation.
+    pub passed: bool,
+    /// Failure detail, if any.
+    pub detail: Option<String>,
+}
+
+/// The result of running the rule tests.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WireRuleTests {
+    /// Rules discovered under the searched directories.
+    pub total_rules: u64,
+    /// Per-snippet outcomes.
+    pub outcomes: Vec<WireRuleTestOutcome>,
+    /// Test files naming an unknown rule id.
+    pub missing_rule_ids: Vec<String>,
+    /// Rules with no test file.
+    pub untested_rule_ids: Vec<String>,
+}
+
+/// The answer to [`Request::Rules`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WireRulesReport {
+    /// Whether poly's built-in rule pack is enabled in the request's config.
+    pub builtin_pack_enabled: bool,
+    /// Every resolved rule, active or not.
+    pub rules: Vec<WireRule>,
+    /// Present only when the request asked for tests.
+    pub tests: Option<WireRuleTests>,
+}
+
 /// The successful payload of a [`Response`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub enum Payload {
@@ -541,6 +613,8 @@ pub enum Payload {
     BatchSupport(WireBatchSupport),
     /// Answer to `DerivedOptionKeys`; `None` means the probe could not tell.
     OptionKeys(Option<Vec<String>>),
+    /// Answer to `Rules`.
+    Rules(WireRulesReport),
 }
 
 /// The answer to every call.

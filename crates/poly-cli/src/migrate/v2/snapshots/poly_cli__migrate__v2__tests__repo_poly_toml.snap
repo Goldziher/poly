@@ -100,6 +100,14 @@ files = "components/**/*.rs"
 workspace = true
 serial = "cargo"
 
+# components/ builds the root crates by path, so a dependency change in one of them stales
+# components/Cargo.lock without touching components/; CI's --locked builds then fail.
+[hooks.pre-commit.commands.components-lock]
+run = "mise run check:components-lock"
+files = ["crates/*/Cargo.toml", "Cargo.lock", "components/**/Cargo.toml", "components/Cargo.lock"]
+workspace = true
+serial = "cargo"
+
 [hooks.pre-commit.commands.no-git-deps]
 run = "mise run check:deps"
 files = ["Cargo.lock", "deny.toml"]

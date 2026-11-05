@@ -22,7 +22,7 @@ pub use value::{WireValue, WireValueError, to_toml};
 pub use wire::*;
 
 /// Version of this protocol; bumped on any incompatible change to the messages.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// The JSON Schema of [`ProtocolSchema`], pretty-printed with a trailing newline.
 pub fn json_schema() -> String {

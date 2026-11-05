@@ -5343,6 +5343,7 @@ dependencies = [
  "ast-grep-config",
  "ast-grep-core",
  "globset",
+ "poly-component-protocol",
  "poly-engine-api",
  "poly-grammar",
  "serde",
@@ -5633,8 +5634,10 @@ version = "0.32.3"
 dependencies = [
  "anyhow",
  "poly-cache",
+ "poly-component-protocol",
  "poly-config",
  "poly-core",
+ "poly-engine-api",
  "poly-frontend-api",
  "poly-workspace",
  "schemars 1.2.3",

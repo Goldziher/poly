@@ -16,17 +16,22 @@ name = "poly_host_services"
 path = "src/lib.rs"
 
 [features]
-# `rules.report` needs the ast-grep engine family; without it the service answers with an error.
+# Link the ast-grep engine family so `rules.report` answers in-process; without it the service asks
+# the `astgrep` component.
 engine-astgrep = ["poly-core/engine-astgrep"]
 # Every engine family, for a host that links them all (the bundled build and the tests).
 all-engines = ["poly-core/all-engines", "engine-astgrep"]
+# Forwarded dev-lock: lets a test install components from the `components:dev` lock.
+dev-lock = ["poly-core/dev-lock"]
 
 [dependencies]
 anyhow.workspace = true
 poly-cache.workspace = true
+poly-component-protocol.workspace = true
 poly-config.workspace = true
 # `schemars` feature: the `schemas.output` service publishes the lint and format document schemas.
 poly-core = { workspace = true, features = ["schemars"] }
+poly-engine-api.workspace = true
 poly-frontend-api.workspace = true
 poly-workspace.workspace = true
 schemars.workspace = true
@@ -34,4 +39,9 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+alef-component-runtime.workspace = true
+poly-component-host.workspace = true
+poly-component-index.workspace = true
+poly-engines = { workspace = true, features = ["astgrep"] }
+poly-engines-astgrep.workspace = true
 tempfile.workspace = true

@@ -8,6 +8,9 @@
 //!   the current config).
 //!
 //! With no `DIR`, both read the `[rules] dirs` from the nearest `poly.toml`.
+//! The inventory comes from `poly_host_services::ops::rules_report_for`: in-process when the
+//! ast-grep engine family is linked, otherwise from the `astgrep` component (installed on demand
+//! unless `--offline` or `[components] install = "never"`).
 //! `list` covers poly's **built-in rule pack** as well as user rules, and
 //! reflects the config that governs them: `[rules] builtin = false` removes the
 //! pack, and `[lint.astgrep]` `select` / `extend_select` / `ignore` /
@@ -18,10 +21,9 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
-use poly_config::PolyConfig;
-use poly_core::engines::astgrep::test::{CaseKind, run_tests};
-use poly_core::engines::astgrep::{RuleListing, list_rules};
-use poly_core::{Config, Kind, Language, report};
+use poly_core::{Config, report};
+use poly_frontend_api::dto::{RuleInfo, RulesReport};
+use poly_host_services::ops::rules_report_for;
 use serde::Serialize;
 
 use crate::OutputFormat;
@@ -73,7 +75,7 @@ pub struct RulesListArgs {
 struct RulesListDocument<'a> {
     dirs: &'a [String],
     builtin_pack_enabled: bool,
-    rules: &'a [RuleListing],
+    rules: &'a [RuleInfo],
 }
 
 /// Run `poly rules`, mapping any error to exit code 2.
@@ -89,87 +91,64 @@ pub fn run_rules(args: RulesArgs) -> ExitCode {
 
 fn run(args: RulesArgs) -> Result<ExitCode> {
     match args.command {
-        RulesCommand::Test(scope) => run_test(resolve_dirs(scope.dirs)?),
+        RulesCommand::Test(scope) => run_test(scope.dirs),
         RulesCommand::List(args) => run_list(args),
     }
 }
 
-/// Use the given dirs, or fall back to `[rules] dirs` from the nearest config.
-fn resolve_dirs(dirs: Vec<String>) -> Result<Vec<String>> {
-    if !dirs.is_empty() {
-        return Ok(dirs);
-    }
+/// The inventory for `dirs` (empty: `[rules] dirs`) under the nearest config.
+fn report_for(dirs: &[String], test: bool) -> Result<RulesReport> {
     let cwd = std::env::current_dir().context("failed to resolve the working directory")?;
-    let config = PolyConfig::load_with(&cwd, &crate::config_sources::resolver()?).context("failed to load config")?;
-    Ok(config.rules.dirs)
+    let config = Config::load_with(&cwd, &crate::config_sources::resolver()?).context("failed to load config")?;
+    rules_report_for(&config, dirs, test, None)
 }
 
 fn run_test(dirs: Vec<String>) -> Result<ExitCode> {
-    let report = run_tests(&dirs)?;
+    let report = report_for(&dirs, true)?;
+    let outcomes = report.tests.as_deref().unwrap_or_default();
 
-    for outcome in &report.outcomes {
-        if outcome.passed {
-            continue;
-        }
-        let (kind, expected) = match outcome.kind {
-            CaseKind::Valid => ("valid", "no match"),
-            CaseKind::Invalid => ("invalid", "a match"),
-            CaseKind::Fixed => ("fixed", "matching autofix output"),
+    for outcome in outcomes.iter().filter(|outcome| !outcome.passed) {
+        let expected = match outcome.kind.as_str() {
+            "valid" => "no match",
+            "invalid" => "a match",
+            _ => "matching autofix output",
         };
         let reason = outcome.detail.as_deref().unwrap_or(expected);
         println!(
             "FAIL  {rule} [{kind} #{index}] — expected {reason}",
             rule = outcome.rule_id,
+            kind = outcome.kind,
             index = outcome.index,
         );
     }
-    for id in &report.missing_rule_ids {
+    for id in report.missing_rule_ids.iter().flatten() {
         println!("ERROR test references unknown rule id `{id}`");
     }
-    for id in &report.untested_rule_ids {
+    for id in report.untested_rule_ids.iter().flatten() {
         println!("warn  rule `{id}` has no test file");
     }
 
+    let passed = outcomes.iter().filter(|outcome| outcome.passed).count();
     println!(
         "\n{passed} passed, {failed} failed across {rules} in {dirs}",
-        passed = report.passed(),
-        failed = report.failed(),
-        rules = poly_core::report::rules(report.total_rules),
-        dirs = dirs.join(", "),
+        failed = outcomes.len() - passed,
+        rules = poly_core::report::rules(report.total_rules.unwrap_or_default()),
+        dirs = report.dirs.join(", "),
     );
 
-    if report.is_ok() {
+    if report.ok == Some(true) {
         Ok(ExitCode::SUCCESS)
     } else {
         Ok(ExitCode::from(1))
     }
 }
 
-/// Resolve what `poly rules list` should list: the user rule dirs (explicit
-/// argument, else `[rules] dirs`) and the resolved `astgrep` engine config that
-/// governs the built-in pack and rule selection.
-fn listing_inputs(dirs: Vec<String>) -> Result<(Vec<String>, bool, poly_core::config::EngineConfig)> {
-    let cwd = std::env::current_dir().context("failed to resolve the working directory")?;
-    let config = Config::load_with(&cwd, &crate::config_sources::resolver()?).context("failed to load config")?;
-    // `astgrep`'s options table is language-agnostic — `Config::engine_config`
-    // builds it from `[rules]` + `[lint.astgrep]`, never from a per-language
-    // table — so the language passed here only has to be *some* language.
-    let engine_config = config.engine_config(&Language::Other("astgrep".to_string()), "astgrep", Kind::Lint);
-    let dirs = if dirs.is_empty() {
-        config.rules_dirs.clone()
-    } else {
-        dirs
-    };
-    Ok((dirs, config.rules_builtin_pack, engine_config))
-}
-
 fn run_list(args: RulesListArgs) -> Result<ExitCode> {
-    let (dirs, builtin_pack_enabled, engine_config) = listing_inputs(args.dirs)?;
-    let rules = list_rules(&dirs, &engine_config)?;
+    let report = report_for(&args.dirs, false)?;
     let document = RulesListDocument {
-        dirs: &dirs,
-        builtin_pack_enabled,
-        rules: &rules,
+        dirs: &report.dirs,
+        builtin_pack_enabled: report.builtin_pack_enabled,
+        rules: &report.rules,
     };
 
     let rendered = match args.format {
@@ -230,17 +209,13 @@ fn print_pretty(document: &RulesListDocument<'_>) {
             "{id:<id_width$}  {lang:<lang_width$}  {source:<7}  {severity:<8}  {default}",
             id = rule.id,
             lang = rule.language,
-            source = rule.source.as_str(),
+            source = rule.source,
             severity = rule.severity,
             default = rule.default_severity,
         );
     }
 
-    let builtin = document
-        .rules
-        .iter()
-        .filter(|rule| rule.source == poly_core::engines::astgrep::RuleSource::Builtin)
-        .count();
+    let builtin = document.rules.iter().filter(|rule| rule.source == "builtin").count();
     let enabled = document.rules.iter().filter(|rule| rule.enabled).count();
     println!(
         "\n{total}: {builtin} built-in, {user} user (from {dirs}); {enabled} enabled",

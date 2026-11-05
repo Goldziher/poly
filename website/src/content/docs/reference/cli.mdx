@@ -495,9 +495,10 @@ poly rules list [DIR]...          # list every resolved rule (built-in pack + us
 poly rules list --format json     # same rows as JSON (also: --format toon)
 ```
 
-`poly rules` needs the ast-grep engine linked in, so only the bundled binary (the
-`x86_64-unknown-linux-musl` release, or a default `cargo build`) has it; a core binary serves
-ast-grep as a component and does not.
+A bundled binary (the `x86_64-unknown-linux-musl` release, or a default `cargo build`) answers
+in-process. A core binary installs the `astgrep` component on first use and asks it, so the
+output is identical; `--offline` or `[components] install = "never"` without the component
+cached makes the command exit 2.
 
 `poly rules list` prints one row per rule — id, language, `builtin` or `user`, the severity it
 reports at under the current config, and the rule's own declared default (`off` for an opt-in

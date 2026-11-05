@@ -17,7 +17,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, PoisonError, RwLock};
 
 use poly_component_protocol::{
-    ConfigId, Response, WireError, WireErrorKind, WireLogLevel, decode_request, encode_describe, encode_response,
+    ConfigId, Response, WireError, WireErrorKind, WireLogLevel, WireRulesReport, decode_request, encode_describe,
+    encode_response,
 };
 use poly_engine_api::config::EngineConfig;
 use poly_engine_api::engine::Engine;
@@ -42,8 +43,13 @@ pub struct InitState {
     pub max_log_level: WireLogLevel,
 }
 
+/// Answers `Request::Rules` for a component that hosts a rule engine: the rule directories, the
+/// engine's resolved config and whether to run the rule tests.
+pub type RulesHandler = fn(&[String], &EngineConfig, bool) -> anyhow::Result<WireRulesReport>;
+
 /// A [`PolyComponent`] over a fixed set of engines.
 pub struct Producer {
+    rules: Option<RulesHandler>,
     engines: Vec<Box<dyn Engine>>,
     component_version: String,
     configs: RwLock<HashMap<ConfigId, Arc<EngineConfig>>>,
@@ -54,11 +60,20 @@ impl Producer {
     /// A producer hosting `engines`, reporting `component_version` from `describe()`.
     pub fn new(component_version: impl Into<String>, engines: Vec<Box<dyn Engine>>) -> Self {
         Self {
+            rules: None,
             engines,
             component_version: component_version.into(),
             configs: RwLock::new(HashMap::new()),
             init: OnceLock::new(),
         }
+    }
+
+    /// Let this producer answer `Request::Rules` with `handler`. Without it the request is
+    /// refused as unsupported, so only the component that owns the rule engine serves it.
+    #[must_use]
+    pub fn with_rules(mut self, handler: RulesHandler) -> Self {
+        self.rules = Some(handler);
+        self
     }
 
     /// What the host passed to `Init`; `None` before the first `Init` call.
