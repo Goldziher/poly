@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Release build of the downloadable components on alef's content-addressed plan (previous-lock, plan, build, package, lock)"
-#USAGE arg "<step>" help="Release step" { choices "previous-lock" "fetch-alef" "fetch-mise" "plan" "build" "package" "lock"; }
+#USAGE arg "<step>" help="Release step" { choices "previous-lock" "fetch-alef" "fetch-mise" "fetch-jq" "plan" "build" "package" "lock"; }
 #USAGE arg "[args]..." help="plan, build and package take <triple>; lock takes <plans> <records> <out>"
 # Release build of the downloadable components, on alef's content-addressed plan:
 #
@@ -9,6 +9,7 @@
 #                                                              binary (for the manylinux container); prints its path
 #   mise run components:release fetch-mise                     download and checksum-verify the musl mise release
 #                                                              binary (for the manylinux container); prints its path
+#   mise run components:release fetch-jq                       download and checksum-verify a static jq (for the container)
 #   mise run components:release plan    <triple>               fingerprint each component's inputs; mark each
 #                                                              build or reuse against that lock
 #   mise run components:release build   <triple>               compile the rows marked build (thin LTO, stripped)
@@ -51,13 +52,13 @@ export CARGO_PROFILE_RELEASE_LTO=thin
 # hash differently from the plan. RUSTFLAGS and CARGO_PROFILE_* are fingerprinted from the environment.
 EXTRA=(--extra "key-id=${KEY_ID}" --extra "image=${BUILD_IMAGE:-host}")
 
-STEP="${1:?usage: mise run components:release previous-lock|fetch-alef|fetch-mise|plan|build|package|lock ...}"
+STEP="${1:?usage: mise run components:release previous-lock|fetch-alef|fetch-mise|fetch-jq|plan|build|package|lock ...}"
 
 COMPONENTS_OUT="${ROOT_DIR}/target/components-release"
 PREVIOUS_LOCK="${COMPONENTS_OUT}/previous-lock.json"
 
 usage() {
-  echo "usage: mise run components:release previous-lock | fetch-alef | fetch-mise | plan|build|package <triple> | lock <plans> <records> <out>" >&2
+  echo "usage: mise run components:release previous-lock | fetch-alef | fetch-mise | fetch-jq | plan|build|package <triple> | lock <plans> <records> <out>" >&2
   exit 1
 }
 
@@ -141,6 +142,31 @@ fetch_mise() {
     exit 1
   }
   echo "${dir}/mise"
+}
+
+# jq, which the release steps read plans with and the manylinux image does not ship. jq's release binaries
+# are static, so the host fetches and verifies one and the containers (the package one holds the signing key)
+# run it from the mount rather than installing a package. Bump the version deliberately.
+JQ_VERSION="1.8.2"
+fetch_jq() {
+  local arch asset dir file
+  case "$(uname -m)" in
+  x86_64) arch="amd64" ;;
+  aarch64 | arm64) arch="arm64" ;;
+  *)
+    echo "components-release: no static jq release for $(uname -m)" >&2
+    exit 1
+    ;;
+  esac
+  asset="jq-linux-${arch}"
+  dir="${COMPONENTS_OUT}/tools/jq-${JQ_VERSION}-linux-${arch}"
+  file="$(download_verified jqlang/jq "jq-${JQ_VERSION}" "${asset}")"
+  rm -rf "${dir}"
+  mkdir -p "${dir}"
+  mv "${file}" "${dir}/jq"
+  rm -rf "$(dirname "${file}")"
+  chmod 0755 "${dir}/jq"
+  echo "${dir}/jq"
 }
 
 sha256_of() {
@@ -227,6 +253,11 @@ fi
 
 if [[ "${STEP}" == "fetch-mise" ]]; then
   fetch_mise
+  exit 0
+fi
+
+if [[ "${STEP}" == "fetch-jq" ]]; then
+  fetch_jq
   exit 0
 fi
 

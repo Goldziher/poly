@@ -254,22 +254,26 @@ jobs:
           echo '{}' > target/components-release/previous-lock.json
           alef="$(mise run components:release fetch-alef)"
           mise_bin="$(mise run components:release fetch-mise)"
-          echo "ALEF_IN_CONTAINER=/work/${alef#"$PWD"/}" >> "$GITHUB_ENV"
-          echo "MISE_IN_CONTAINER=/work/${mise_bin#"$PWD"/}" >> "$GITHUB_ENV"
+          jq_bin="$(mise run components:release fetch-jq)"
+          {
+            echo "ALEF_IN_CONTAINER=/work/${alef#"$PWD"/}"
+            echo "MISE_IN_CONTAINER=/work/${mise_bin#"$PWD"/}"
+            echo "JQ_IN_CONTAINER=/work/${jq_bin#"$PWD"/}"
+          } >> "$GITHUB_ENV"
       - name: Plan components in the container
         shell: bash
         run: |
           set -euo pipefail
           docker run --rm -v "$PWD":/work -w /work \
             -e TARGET -e RUST_TOOLCHAIN -e BUILD_IMAGE -e ALEF="$ALEF_IN_CONTAINER" \
-            -e MISE_IN_CONTAINER -e MISE_TASK_RUN_AUTO_INSTALL=false -e MISE_AUTO_INSTALL=false -e MISE_YES=1 \
+            -e MISE_IN_CONTAINER -e JQ_IN_CONTAINER -e MISE_TASK_RUN_AUTO_INSTALL=false -e MISE_AUTO_INSTALL=false -e MISE_YES=1 \
             -e MISE_TRUSTED_CONFIG_PATHS=/work \
             -e CARGO_HOME=/work/target/components-release/toolchain/cargo \
             -e RUSTUP_HOME=/work/target/components-release/toolchain/rustup \
             "$BUILD_IMAGE" bash -euo pipefail -c '
               git config --global --add safe.directory /work
               curl -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --target "$TARGET"
-              export PATH="$CARGO_HOME/bin:$(dirname "$MISE_IN_CONTAINER"):$PATH"
+              export PATH="$CARGO_HOME/bin:$(dirname "$MISE_IN_CONTAINER"):$(dirname "$JQ_IN_CONTAINER"):$PATH"
               mise run components:release plan "$TARGET"
             '
           rows="$(jq '[.rows[] | select(.action == "build")] | length' "target/components-release/$TARGET/plan/plan.json")"
