@@ -182,11 +182,11 @@ jobs:
           tag="${{ steps.version.outputs.tag }}"
           release_assets_exist=false
 
-          if gh release view "$tag" >/dev/null 2>&1; then
-            count="$(gh release view "$tag" --json assets --jq '.assets | length')"
-            if [ "${count:-0}" -gt 0 ]; then
-              release_assets_exist=true
-            fi
+          # Complete means sha256sums.txt is uploaded, which happens only after every binary is. A
+          # draft left with partial assets by a failed run must be rebuilt, not skipped.
+          if gh release view "$tag" >/dev/null 2>&1 &&
+            gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx 'sha256sums.txt'; then
+            release_assets_exist=true
           fi
 
           echo "release_assets_exist=$release_assets_exist" >> "$GITHUB_OUTPUT"
