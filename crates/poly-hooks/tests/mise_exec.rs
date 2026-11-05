@@ -13,6 +13,8 @@ use poly_hooks::HookType;
 use poly_hooks::install::{InstallOptions, install_with};
 use tempfile::TempDir;
 
+mod support;
+
 fn script(path: &Path, body: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, format!("#!/bin/sh\n{body}")).unwrap();
@@ -98,17 +100,17 @@ impl Repo {
     /// does: `sh .git/hooks/pre-push` with a relative `$0`.
     fn run_pre_push(&self, stdin: &str) -> Output {
         install_with(&self.hooks(), &[HookType::PrePush], InstallOptions::default()).unwrap();
-        let mut child = Command::new(".git/hooks/pre-push")
-            .args(["origin", "url"])
-            .current_dir(self.root())
-            .env_clear()
-            .env("PATH", self.path())
-            .env("HOME", self.root().join("home"))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let mut child = support::spawn(
+            Command::new(".git/hooks/pre-push")
+                .args(["origin", "url"])
+                .current_dir(self.root())
+                .env_clear()
+                .env("PATH", self.path())
+                .env("HOME", self.root().join("home"))
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped()),
+        );
         child.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
         child.wait_with_output().unwrap()
     }
@@ -164,14 +166,14 @@ fn the_shim_finds_mise_in_the_installer_default_when_it_is_off_path() {
     let hooks = dir.path().join("hooks");
     install_with(&hooks, &[HookType::PrePush], InstallOptions::default()).unwrap();
 
-    let output = Command::new(hooks.join("pre-push"))
-        .current_dir(dir.path())
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin")
-        .env("HOME", &home)
-        .stdin(Stdio::null())
-        .output()
-        .unwrap();
+    let output = support::output(
+        Command::new(hooks.join("pre-push"))
+            .current_dir(dir.path())
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("HOME", &home)
+            .stdin(Stdio::null()),
+    );
 
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     assert!(stdout(&output).starts_with("pinned "));
@@ -261,15 +263,15 @@ fn a_set_guard_skips_mise() {
     fake_poly(&repo.bin().join("poly"), "path");
     install_with(&repo.hooks(), &[HookType::PrePush], InstallOptions::default()).unwrap();
 
-    let output = Command::new(".git/hooks/pre-push")
-        .current_dir(repo.root())
-        .env_clear()
-        .env("PATH", repo.path())
-        .env("HOME", repo.root())
-        .env("POLY_HOOK_MISE", "1")
-        .stdin(Stdio::null())
-        .output()
-        .unwrap();
+    let output = support::output(
+        Command::new(".git/hooks/pre-push")
+            .current_dir(repo.root())
+            .env_clear()
+            .env("PATH", repo.path())
+            .env("HOME", repo.root())
+            .env("POLY_HOOK_MISE", "1")
+            .stdin(Stdio::null()),
+    );
 
     assert_eq!(output.status.code(), Some(0));
     assert!(stdout(&output).starts_with("path "));
