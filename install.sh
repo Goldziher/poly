@@ -201,6 +201,10 @@ fi
 staged=""
 
 info "Installed poly (and the polylint alias) → ${INSTALL_DIR}"
+case "$target" in
+*-linux-musl) ;; # the bundled build: every engine is linked in
+*) info "Engines download as signed components on first use; run 'poly components sync' in a repository to fetch them ahead (offline or CI)." ;;
+esac
 
 add_path_line='export PATH="'"${INSTALL_DIR}"':$PATH"'
 case ":${PATH}:" in
