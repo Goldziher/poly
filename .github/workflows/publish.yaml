@@ -119,6 +119,13 @@ jobs:
             exit 1
           fi
 
+          # The components workspace versions the musl bundled binary and every component archive.
+          components_version="$(grep -E '^version = "' components/Cargo.toml | head -1 | cut -d'"' -f2)"
+          if [ "$components_version" != "$target_version" ]; then
+            echo "::error::components/Cargo.toml version mismatch: expected $target_version, got $components_version"
+            exit 1
+          fi
+
           plugin_version="$(jq -r '.version' plugin/package.json)"
           if [ "$plugin_version" != "$target_version" ]; then
             echo "::error::Agent plugin version mismatch: expected $target_version, got $plugin_version"
@@ -495,8 +502,11 @@ jobs:
           plan=target/components-release/plan.json
           total="$(jq '.rows | length' "$plan")"
           to_build="$(jq '[.rows[] | select(.action == "build")] | length' "$plan")"
-          [ "$total" -gt 0 ] || {
-            echo "::error::the merged plan has no rows"
+          # Every configured component on every configured target, so a triple or component that
+          # silently dropped out of the matrix or the plan fails here rather than at a user's first run.
+          expected="$(python3 -c 'import tomllib; d = tomllib.load(open("alef.toml", "rb")); print(sum(len(c.get("targets", [])) for crate in d["crates"] for c in crate.get("components", [])))')"
+          [ "$total" -gt 0 ] && [ "$total" -eq "$expected" ] || {
+            echo "::error::the merged plan has $total rows; alef.toml configures $expected component builds"
             exit 1
           }
           [ "$REBUILD_COMPONENTS" != "true" ] || [ "$to_build" -eq "$total" ] || {
@@ -691,6 +701,68 @@ jobs:
             [ "$found" -eq "$total" ] || { echo "::error::$bin embeds $found of $total component artifact URLs"; exit 1; }
             echo "component lock embedded in $bin ($found of $total URLs)"
           fi
+        shell: bash
+
+      - name: Smoke-test the core binary against this release's components
+        # Runs the binary users get: it installs every component of its triple through the embedded,
+        # signed lock (assets fetched from the draft release into a localhost mirror, so each lock
+        # URL keeps its path) and lints and formats one file per component language. A wrong signing
+        # key, a component that does not load, or an engine that errors fails the release here.
+        if: ${{ matrix.alpine != true }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          bin="$PWD/target/${{ matrix.triple }}/release/poly"
+          case "${{ matrix.triple }}" in *windows*) bin="$bin.exe" ;; esac
+          lock=components-lock/poly-components.lock.json
+          mirror="$RUNNER_TEMP/component-mirror"
+          rows=0
+          while IFS= read -r url; do
+            path="${url#https://github.com/}"
+            tag="$(echo "$path" | cut -d/ -f5)"
+            dir="$mirror/$(dirname "$path")"
+            mkdir -p "$dir"
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$(basename "$path")" --dir "$dir" --clobber
+            rows=$((rows + 1))
+          done < <(jq -er --arg t "${{ matrix.triple }}" '.artifacts[] | select(.identity.target == $t) | .url' "$lock")
+          [ "$rows" -gt 0 ] || { echo "::error::the lock has no components for ${{ matrix.triple }}"; exit 1; }
+          py="$(command -v python3 || command -v python)"
+          (cd "$mirror" && "$py" -m http.server 8765 --bind 127.0.0.1 >/dev/null 2>&1 &)
+          for _ in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:8765/ && break; sleep 1; done
+          export POLY_COMPONENT_MIRROR=http://127.0.0.1:8765 POLY_COMPONENT_CACHE="$RUNNER_TEMP/component-cache"
+          "$bin" components install all
+          fixture="$RUNNER_TEMP/smoke"
+          mkdir -p "$fixture"
+          printf 'import os\n' > "$fixture/a.py"
+          printf 'const a = 1;\n' > "$fixture/a.ts"
+          printf 'select 1\n' > "$fixture/a.sql"
+          printf '<?php\necho 1;\n' > "$fixture/a.php"
+          printf '{ a = 1; }\n' > "$fixture/a.nix"
+          printf 'puts 1\n' > "$fixture/a.rb"
+          printf 'a { color: red; }\n' > "$fixture/a.css"
+          printf 'query { a }\n' > "$fixture/a.graphql"
+          printf 'FROM alpine\n' > "$fixture/Dockerfile"
+          printf 'a = 1\n' > "$fixture/a.toml"
+          printf '# a\n' > "$fixture/a.md"
+          files="$(find "$fixture" -type f | wc -l | tr -d ' ')"
+          for mode in lint fmt; do
+            set +e
+            if [ "$mode" = lint ]; then
+              "$bin" lint --workspace never --no-cache --format json "$fixture" > "$RUNNER_TEMP/$mode.json"
+            else
+              "$bin" fmt --no-cache --format json "$fixture" > "$RUNNER_TEMP/$mode.json"
+            fi
+            code=$?
+            set -e
+            [ "$code" -le 1 ] || { cat "$RUNNER_TEMP/$mode.json"; echo "::error::poly $mode exited $code"; exit 1; }
+            # Lint skips a.nix (alejandra formats only); every other file must be checked, none errored.
+            jq -e --argjson n "$files" --arg mode "$mode" '
+              .summary.errored == 0 and (.errors | length) == 0
+              and (if $mode == "lint" then .summary.checked + .summary.skipped == $n else .summary.checked == $n end)' \
+              "$RUNNER_TEMP/$mode.json" > /dev/null || { cat "$RUNNER_TEMP/$mode.json"; echo "::error::poly $mode did not check all $files files cleanly"; exit 1; }
+            echo "poly $mode: $(jq -c .summary "$RUNNER_TEMP/$mode.json")"
+          done
         shell: bash
 
       - name: Create release artifacts
