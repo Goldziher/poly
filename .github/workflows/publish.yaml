@@ -691,7 +691,9 @@ jobs:
           total="$(jq -er '.artifacts | length' "$lock")"
           [ "$total" -gt 0 ] || { echo "::error::the component lock lists no artifacts"; exit 1; }
           found=0
+          # jq.exe on Windows ends lines in CRLF; a URL keeping its \r matches nothing in the binary.
           while IFS= read -r url; do
+            url="${url%$'\r'}"
             if grep -aqF "$url" "$bin"; then found=$((found + 1)); fi
           done < <(jq -er '.artifacts[].url' "$lock")
           if [ "${{ matrix.alpine }}" = "true" ]; then
@@ -719,6 +721,7 @@ jobs:
           mirror="$RUNNER_TEMP/component-mirror"
           rows=0
           while IFS= read -r url; do
+            url="${url%$'\r'}"
             path="${url#https://github.com/}"
             tag="$(echo "$path" | cut -d/ -f5)"
             dir="$mirror/$(dirname "$path")"
