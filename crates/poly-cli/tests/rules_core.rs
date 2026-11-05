@@ -2,7 +2,7 @@
 //! inventory comes from the `astgrep` component.
 //!
 //! Run with `cargo test -p poly-cli --no-default-features --features dev-lock --test rules_core`;
-//! the installed-component test also needs `./scripts/components-dev.sh astgrep` and
+//! the installed-component test also needs `mise run components:dev astgrep` and
 //! `POLY_COMPONENT_DEV_LOCK` pointing at the lock it prints.
 #![cfg(all(unix, not(feature = "engine-astgrep")))]
 

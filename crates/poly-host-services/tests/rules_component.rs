@@ -6,7 +6,7 @@
 //! `components:dev` lock names and runs only in a core-flavour build with `dev-lock`:
 //!
 //! ```text
-//! ./scripts/components-dev.sh astgrep
+//! mise run components:dev astgrep
 //! POLY_COMPONENT_DEV_LOCK=$PWD/target/components/components.lock.json \
 //!   cargo test -p poly-host-services --no-default-features --features dev-lock --test rules_component
 //! ```
