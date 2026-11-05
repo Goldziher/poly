@@ -1,0 +1,141 @@
+"""Verify real registry archives and reject missing bytes or false release success."""
+
+import importlib.util
+import io
+import json
+import re
+import subprocess
+import tarfile
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+from types import ModuleType
+
+
+def load_helper(name: str) -> ModuleType:
+    """Load the shipping CLI helper rather than reimplementing its checks."""
+    path = Path(__file__).resolve().parents[1] / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name.replace("/", "_").replace("-", "_"), path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class RegistryArchiveTests(unittest.TestCase):
+    """Build the actual wheel and npm tarball once in isolated output storage."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Exercise the same package builders that release CI runs."""
+        temporary = tempfile.TemporaryDirectory(prefix="poly-registry-contract-")
+        cls.addClassCleanup(temporary.cleanup)
+        cls.directory = Path(temporary.name)
+        cls.helper = load_helper("verify/plugin-distribution")
+        root = Path(__file__).resolve().parents[2]
+        subprocess.run(
+            ["uv", "build", "--wheel", "--out-dir", temporary.name, "plugin/.hermes/package"],
+            cwd=root,
+            capture_output=True,
+            check=True,
+        )
+        packed = subprocess.run(
+            ["pnpm", "--dir", "plugin", "pack", "--json", "--pack-destination", temporary.name],
+            cwd=root,
+            capture_output=True,
+            check=True,
+        )
+        cls.npm = cls.directory / json.loads(packed.stdout)["filename"]
+        wheels = list(cls.directory.glob("*.whl"))
+        assert len(wheels) == 1
+        cls.wheel = wheels[0]
+
+    def test_should_verify_all_real_registry_runtime_resources(self) -> None:
+        """Both builders include their exact generated skill, prompt and adapter bytes."""
+        self.assertEqual(self.helper.verify_wheel(self.wheel), 15)
+        self.assertEqual(self.helper.verify_npm(self.npm), 28)
+
+    def test_should_reject_changed_runtime_dependencies_in_an_npm_archive(self) -> None:
+        """A valid identity cannot mask the stale SDK dependency from Poly47."""
+        target = self.directory / "stale-sdk.tgz"
+        with tarfile.open(self.npm) as source, tarfile.open(target, "w:gz") as output:
+            for member in source:
+                if not member.isfile():
+                    output.addfile(member)
+                    continue
+                data = source.extractfile(member).read()
+                if member.name == "package/package.json":
+                    manifest = json.loads(data)
+                    manifest["dependencies"] = {"@opencode/plugin": "^2.0.26"}
+                    data = json.dumps(manifest).encode()
+                member.size = len(data)
+                output.addfile(member, io.BytesIO(data))
+        with self.assertRaisesRegex(ValueError, "npm package manifest mismatch"):
+            self.helper.verify_npm(target)
+
+    def test_should_reject_an_npm_archive_missing_an_adapter_dependency(self) -> None:
+        """The OpenCode entry point imports this sibling module at runtime."""
+        target = self.directory / "missing-opencode-content.tgz"
+        with tarfile.open(self.npm) as source, tarfile.open(target, "w:gz") as output:
+            for member in source:
+                if member.name != "package/.opencode/ai-rulez-content.js":
+                    output.addfile(member, source.extractfile(member) if member.isfile() else None)
+        with self.assertRaisesRegex(ValueError, "Missing bundled resource: .opencode/ai-rulez-content.js"):
+            self.helper.verify_npm(target)
+
+    def test_should_reject_a_wheel_missing_a_public_skill(self) -> None:
+        """A valid package identity cannot mask a dropped runtime resource."""
+        target = self.directory / "missing-skill.whl"
+        with zipfile.ZipFile(self.wheel) as source, zipfile.ZipFile(target, "w") as output:
+            missing = next(name for name in source.namelist() if name.endswith("/SKILL.md"))
+            for name in source.namelist():
+                if name != missing:
+                    output.writestr(name, source.read(name))
+        with self.assertRaisesRegex(ValueError, "Missing bundled resource"):
+            self.helper.verify_wheel(target)
+
+    def test_should_reject_a_wheel_carrying_the_wrong_version(self) -> None:
+        """Registry idempotency must use the actual wheel metadata identity."""
+        target = self.directory / "wrong-version.whl"
+        with zipfile.ZipFile(self.wheel) as source, zipfile.ZipFile(target, "w") as output:
+            for name in source.namelist():
+                data = source.read(name)
+                if name.endswith(".dist-info/METADATA"):
+                    data = re.sub(rb"(?m)^Version: .*", b"Version: 0.0.0", data)
+                output.writestr(name, data)
+        with self.assertRaisesRegex(ValueError, "package name or version mismatch"):
+            self.helper.verify_wheel(target)
+
+
+class PluginReleaseResultTests(unittest.TestCase):
+    """Every required publication must run and succeed before the report goes green."""
+
+    def setUp(self) -> None:
+        """Use the production verdict helper with exactly three expected jobs."""
+        self.helper = load_helper("verify/plugin-release-results")
+        self.results = {
+            name: {"result": "success"}
+            for name in ["publish_plugin_artifacts", "publish_plugin_npm", "publish_plugin_hermes"]
+        }
+
+    def test_should_accept_exactly_three_successful_jobs(self) -> None:
+        """An idempotent publication succeeds after its artifact gates have run."""
+        self.assertEqual(self.helper.verify_results(self.results), 3)
+
+    def test_should_reject_skipped_required_publication(self) -> None:
+        """A skipped registry job cannot count as successful distribution."""
+        self.results["publish_plugin_npm"]["result"] = "skipped"
+        with self.assertRaisesRegex(ValueError, "Incomplete plugin distribution: publish_plugin_npm"):
+            self.helper.verify_results(self.results)
+
+    def test_should_reject_failed_required_publication(self) -> None:
+        """A green core release cannot hide a failed plugin wheel job."""
+        self.results["publish_plugin_hermes"]["result"] = "failure"
+        with self.assertRaisesRegex(ValueError, "Incomplete plugin distribution: publish_plugin_hermes"):
+            self.helper.verify_results(self.results)
+
+    def test_should_reject_a_report_that_omits_a_job(self) -> None:
+        """Assert the expected count to prevent a zero-work or partial pass."""
+        del self.results["publish_plugin_artifacts"]
+        with self.assertRaisesRegex(ValueError, "Expected exactly three"):
+            self.helper.verify_results(self.results)

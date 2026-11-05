@@ -11,7 +11,7 @@ use crate::config::EngineConfig;
 use crate::engine::OptionType;
 
 /// Default `file-too-long` threshold (lines). Matches the retired
-/// `scripts/hooks/rust-max-lines.sh` cap.
+/// `mise run hooks:rust-max-lines` cap.
 pub const DEFAULT_FILE_TOO_LONG: i64 = 1000;
 /// Default `function-too-long` threshold (lines).
 pub const DEFAULT_FUNCTION_TOO_LONG: i64 = 80;

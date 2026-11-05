@@ -2,7 +2,7 @@
 //! lock, against the same engines linked in-process.
 //!
 //! Runs only when `POLY_COMPONENT_DEV_LOCK` names a lock written by
-//! `scripts/components-dev.sh biome`; otherwise it reports that it skipped and passes.
+//! `mise run components:dev biome`; otherwise it reports that it skipped and passes.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -42,7 +42,7 @@ fn the_biome_component_lints_like_the_in_process_engines() {
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("skipped: {DEV_LOCK_ENV} is not set; run `scripts/components-dev.sh biome` first");
+        eprintln!("skipped: {DEV_LOCK_ENV} is not set; run `mise run components:dev biome` first");
         return;
     };
     let lock = std::fs::read_to_string(&lock).unwrap_or_else(|e| panic!("reading {lock}: {e}"));

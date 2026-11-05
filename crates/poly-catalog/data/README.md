@@ -34,5 +34,5 @@ The overlay also corrects mdsf's classification where it is wrong. `pydocstyle`,
 carries no write flag) that mdsf files under `formatter`; the overlay re-declares
 them as `linter`, so `poly lint` surfaces their findings instead of the format path
 reading a failing exit as "unchanged" (Goldziher/poly#36).
-`scripts/gen-catalog-md.py` reads `catalog.json` only, so re-running it reverts
+`mise run catalog:gen-md` reads `catalog.json` only, so re-running it reverts
 those rows in the website's catalog table; fix them by hand afterwards.

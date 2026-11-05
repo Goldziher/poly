@@ -30,7 +30,7 @@ fn options(no_cache: bool) -> RunOptions {
     }
 }
 
-/// The configuration every measurement runs under: `scripts/harden/poly.toml`,
+/// The configuration every measurement runs under: `tests/harden/data/poly.toml`,
 /// or its `poly.native-tools.toml` sibling when `POLY_HARDEN_NATIVE_TOOLS` asks
 /// for the non-gating leg.
 ///
@@ -60,7 +60,7 @@ fn measurement_config_path() -> PathBuf {
         "poly.toml"
     };
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../scripts/harden")
+        .join("tests/harden/data")
         .join(file)
 }
 

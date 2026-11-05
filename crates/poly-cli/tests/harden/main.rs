@@ -6,7 +6,7 @@
 //! formatting converge, does the cache ever serve a wrong answer, and how many
 //! findings does a rule actually produce on code nobody wrote for us.
 //!
-//! Driven by `scripts/harden.sh`, one process per root, which is what keeps a
+//! Driven by `mise run harden`, one process per root, which is what keeps a
 //! panic in one repository from taking the rest of the run with it:
 //!
 //! ```sh
@@ -46,10 +46,10 @@ fn ceiling_ms(root: &str) -> u128 {
 }
 
 #[test]
-#[ignore = "real-code hardening harness; invoke via scripts/harden.sh"]
+#[ignore = "real-code hardening harness; invoke via mise run harden"]
 fn harden_root() {
     let Some(root) = corpus::from_env() else {
-        panic!("POLY_HARDEN_ROOT_PATH is unset; this test is driven by scripts/harden.sh");
+        panic!("POLY_HARDEN_ROOT_PATH is unset; this test is driven by mise run harden");
     };
     assert!(
         root.path.is_dir(),
