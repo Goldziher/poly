@@ -12,6 +12,8 @@ use poly_hooks::HookType;
 use poly_hooks::install::{InstallOptions, Preserved, install_with};
 use tempfile::TempDir;
 
+mod support;
+
 fn script(path: &Path, body: &str) {
     std::fs::write(path, format!("#!/bin/sh\n{body}")).unwrap();
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -82,14 +84,14 @@ fn replace_lefthook_still_preserves_a_foreign_hook() {
 /// log both programs append to and the shim's exit code. `POLY_HOOK_MISE` keeps
 /// the host's mise out of the run (`mise_exec.rs` covers that path).
 fn run_shim(hooks: &Path, bin: &Path, log: &Path, stdin: &str) -> i32 {
-    let mut child = Command::new(hooks.join("pre-push"))
-        .args(["origin", "url"])
-        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
-        .env("LOG", log)
-        .env("POLY_HOOK_MISE", "1")
-        .stdin(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut child = support::spawn(
+        Command::new(hooks.join("pre-push"))
+            .args(["origin", "url"])
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .env("LOG", log)
+            .env("POLY_HOOK_MISE", "1")
+            .stdin(Stdio::piped()),
+    );
     child.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
     child.wait().unwrap().code().unwrap()
 }
