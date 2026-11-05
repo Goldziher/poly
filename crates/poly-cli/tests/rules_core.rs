@@ -32,6 +32,14 @@ fn the_subcommand_exists_and_fails_closed_without_the_component() {
         stderr.starts_with("poly rules: "),
         "an unknown subcommand would not say this: {stderr}"
     );
+    // The component path names the `astgrep` component: offline with a dev lock, or no embedded lock
+    // without one. The removed gate said the build lacked "the ast-grep engine family" instead.
+    let reached_component = stderr.contains("component not installed: astgrep (offline)")
+        || stderr.contains("this build embeds no component lock, so `astgrep` cannot be fetched");
+    assert!(
+        reached_component,
+        "poly rules did not ask the astgrep component: {stderr}"
+    );
 }
 
 #[cfg(feature = "dev-lock")]
