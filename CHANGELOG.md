@@ -29,6 +29,14 @@ See [Migrating to poly 2](https://goldziher.github.io/poly/guides/migrating-to-v
   `[workspace] root`; `[workspace] run = "auto|always|never"` replaces `[lint] workspace`;
   `per_file_ignores` replaces `per-file-ignores`. The loader reads both schemas and rejects a file
   that mixes them; `poly migrate --to-v2 --write` rewrites a v1 file and keeps its comments.
+- **`scripts/` is gone; every repository script is a mise task.** Run `mise run <task>` (`mise tasks`
+  lists them, `mise run <task> --help` documents one) instead of `scripts/*.sh`, `scripts/hooks/*.sh`
+  and `scripts/*.py`: `components:{dev,generate,parity,release}`, `check:{deps,core-no-oxc}`,
+  `release:{bump,homebrew-formula,scoop-manifest}`, `hooks:{rust-max-lines,rustdoc-lint,components-check}`,
+  `plugin:{sync-version,sync-skills}`, `verify:{plugin-distribution,plugin-release-results,registry-payload}`,
+  `harden`, `measure:core-size`, `crates-io:watch` and `catalog:gen-md`. `mise run set-version` is now
+  `mise run release:bump`. The harden corpus data moved to `crates/poly-cli/tests/harden/data/`. No
+  compatibility wrappers remain.
 - **A needed engine component that is not installed fails the run** with exit `2` (or skips its
   files under `--on-missing skip` / `[components] on_missing = "skip"`); poly never falls back to
   the tree-sitter tier for it.

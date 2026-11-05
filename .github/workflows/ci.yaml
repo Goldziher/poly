@@ -70,13 +70,18 @@ jobs:
             .
             components
       - run: cargo clippy --workspace --exclude conformance --all-targets -- -D warnings
+      - uses: xberg-io/actions/setup-mise@v1
       - name: clippy (components workspace)
         shell: bash
-        run: scripts/hooks/components-check.sh clippy
-      # Linux only: rustdoc output does not vary by host, and the hook runs the same script.
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run hooks:components-check clippy
+      # Linux only: rustdoc output does not vary by host, and the hook runs the same task.
       - name: rustdoc lint (components workspace)
         if: runner.os == 'Linux'
-        run: scripts/hooks/components-check.sh rustdoc
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run hooks:components-check rustdoc
 
   test:
     name: test / ${{ matrix.os }}
@@ -213,11 +218,67 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
-      - run: scripts/check-core-no-oxc.sh
+      - uses: xberg-io/actions/setup-mise@v1
+      - run: mise run check:core-no-oxc
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
       - name: the released core flavour builds warning-free
         run: cargo clippy --locked -p poly-cli --no-default-features --features core -- -D warnings
       - name: no git dependencies in the root workspace
-        run: scripts/check-no-git-deps.sh
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run check:deps
+
+  # The release builds linux gnu components in this container through `mise run components:release`, with a
+  # musl mise and alef the host fetched; the plan step runs the same path without compiling, so a broken
+  # container invocation fails here rather than in a release. Keep the image in step with publish.yaml.
+  component-release-container:
+    name: component release (manylinux plan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TARGET: x86_64-unknown-linux-gnu
+      RUST_TOOLCHAIN: "1.99.1"
+      BUILD_IMAGE: quay.io/pypa/manylinux_2_28_x86_64:2026.11.01-2@sha256:7e41b1c7fd64dfc69703a1124b43c404382973ee06ec5d764b85c34d2221fded
+    steps:
+      - uses: actions/checkout@v7
+      - uses: xberg-io/actions/setup-mise@v1
+      - name: Fetch alef and mise for the container
+        shell: bash
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: |
+          set -euo pipefail
+          mkdir -p target/components-release
+          echo '{}' > target/components-release/previous-lock.json
+          alef="$(mise run components:release fetch-alef)"
+          mise_bin="$(mise run components:release fetch-mise)"
+          jq_bin="$(mise run components:release fetch-jq)"
+          {
+            echo "ALEF_IN_CONTAINER=/work/${alef#"$PWD"/}"
+            echo "MISE_IN_CONTAINER=/work/${mise_bin#"$PWD"/}"
+            echo "JQ_IN_CONTAINER=/work/${jq_bin#"$PWD"/}"
+          } >> "$GITHUB_ENV"
+      - name: Plan components in the container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD":/work -w /work \
+            -e TARGET -e RUST_TOOLCHAIN -e BUILD_IMAGE -e ALEF="$ALEF_IN_CONTAINER" \
+            -e MISE_IN_CONTAINER -e JQ_IN_CONTAINER -e MISE_TASK_RUN_AUTO_INSTALL=false -e MISE_AUTO_INSTALL=false -e MISE_YES=1 \
+            -e MISE_TRUSTED_CONFIG_PATHS=/work \
+            -e CARGO_HOME=/work/target/components-release/toolchain/cargo \
+            -e RUSTUP_HOME=/work/target/components-release/toolchain/rustup \
+            "$BUILD_IMAGE" bash -euo pipefail -c '
+              git config --global --add safe.directory /work
+              curl -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --target "$TARGET"
+              export PATH="$CARGO_HOME/bin:$(dirname "$MISE_IN_CONTAINER"):$(dirname "$JQ_IN_CONTAINER"):$PATH"
+              mise run components:release plan "$TARGET"
+            '
+          rows="$(jq '[.rows[] | select(.action == "build")] | length' "target/components-release/$TARGET/plan/plan.json")"
+          echo "planned builds: $rows"
+          [[ "$rows" -gt 0 ]]
 
   deny:
     name: cargo-deny

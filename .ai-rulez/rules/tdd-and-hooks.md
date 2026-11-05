@@ -31,7 +31,7 @@ x-ai-rulez:
     pure-Rust file-safety checks, cargo clippy / sort / machete / deny, rustdoc-lint, and
     rust-max-lines (the 1000-line cap). `poly hooks install` wires the git-hook shims so this
     runs automatically on `git commit`.
-  - `mise run harden` (`scripts/harden.sh`, `docs/harden-corpus.md`) runs poly over real
+  - `mise run harden` (`docs/harden-corpus.md`) runs poly over real
     third-party repositories instead of fixtures; its per-rule counts feed a
     ship-this-rule-on-by-default decision. It is **not** a CI job — run it deliberately,
     before a release or when a rule's severity is in question.
@@ -39,7 +39,7 @@ x-ai-rulez:
 ## What a green `cargo fmt` + `cargo clippy` does NOT prove
 
 Both pass with broken rustdoc links present, so they are **not** evidence the commit will land.
-The pre-commit stage also runs `scripts/hooks/rustdoc-lint.sh`, which is:
+The pre-commit stage also runs `mise run hooks:rustdoc-lint`, which is:
 
 ```sh
 RUSTDOCFLAGS="-D missing-docs -D rustdoc::broken_intra_doc_links" \

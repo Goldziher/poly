@@ -23,7 +23,7 @@ on:
 # repository secret POLY_COMPONENT_SIGNING_KEY (PKCS#8 PEM, or base64 of the PKCS#8 DER or a raw
 # 32-byte seed). Its public half is `poly-release-1` in alef.toml
 # ([crates.component_distribution.public_keys]); rotate by adding a second key id there and changing
-# KEY_ID in scripts/components-release.sh. A missing secret fails the release.
+# KEY_ID in mise-tasks/components/release.sh. A missing secret fails the release.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -125,7 +125,7 @@ jobs:
             exit 1
           fi
 
-          # The wrapper packages ship in lock-step (scripts/release-bump.sh moves
+          # The wrapper packages ship in lock-step (mise run release:bump moves
           # them with Cargo.toml). Check them here too: a package publishing the
           # wrong version is not recoverable — npm and PyPI both refuse to
           # overwrite a released version.
@@ -234,13 +234,17 @@ jobs:
             gh release create "$tag" --title "$tag" --notes "Release $tag" --verify-tag --draft $prerelease
           fi
 
+      - name: Setup mise
+        uses: xberg-io/actions/setup-mise@v1
+
       # Fetched once so every build leg plans against, and the lock reuses from, the same lock.
       - name: Fetch the previous release's component lock
         env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
           RELEASE_TAG: ${{ needs.meta.outputs.tag }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REBUILD_COMPONENTS: ${{ github.event.inputs.rebuild_components || 'false' }}
-        run: scripts/components-release.sh previous-lock
+        run: mise run components:release previous-lock
 
       - name: Save the previous component lock
         uses: actions/upload-artifact@v7
@@ -319,17 +323,26 @@ jobs:
           name: component-previous-lock
           path: target/components-release
 
-      # The musl alef is fetched and checksum-verified here, on the host, and mounted into the
-      # container. The signing key reaches only the package container; rustup, plan and build run
-      # in one without it. Both containers share image, mounts and environment, so the package
-      # step recomputes the fingerprint the plan recorded.
-      - name: Fetch alef for the manylinux_2_28 container
+      # The musl alef and the musl mise are fetched and checksum-verified here, on the host, and
+      # reached through the /work mount. The container has an old glibc and no mise, so it runs the
+      # same `mise run components:release` task with the static binary and installs no tools
+      # (MISE_TASK_RUN_AUTO_INSTALL=false): alef comes from ALEF, cargo and rustc from rustup. The
+      # signing key reaches only the package container; rustup, plan and build run in one without
+      # it. Both containers share image, mounts and environment, so the package step recomputes the
+      # fingerprint the plan recorded.
+      - name: Fetch alef and mise for the manylinux_2_28 container
         if: ${{ matrix.image }}
         shell: bash
         run: |
           set -euo pipefail
-          alef="$(scripts/components-release.sh fetch-alef)"
-          echo "ALEF_IN_CONTAINER=/work/${alef#"$PWD"/}" >> "$GITHUB_ENV"
+          alef="$(mise run components:release fetch-alef)"
+          mise_bin="$(mise run components:release fetch-mise)"
+          jq_bin="$(mise run components:release fetch-jq)"
+          {
+            echo "ALEF_IN_CONTAINER=/work/${alef#"$PWD"/}"
+            echo "MISE_IN_CONTAINER=/work/${mise_bin#"$PWD"/}"
+            echo "JQ_IN_CONTAINER=/work/${jq_bin#"$PWD"/}"
+          } >> "$GITHUB_ENV"
 
       # rustup installs into CARGO_HOME/RUSTUP_HOME under the workspace, in the keyless container;
       # the package container reuses them offline. Both get the same paths.
@@ -340,15 +353,17 @@ jobs:
           set -euo pipefail
           docker run --rm -v "$PWD":/work -w /work \
             -e TARGET="${{ matrix.triple }}" -e RUST_TOOLCHAIN -e BUILD_IMAGE -e ALEF="$ALEF_IN_CONTAINER" \
+            -e MISE_IN_CONTAINER -e JQ_IN_CONTAINER -e MISE_TASK_RUN_AUTO_INSTALL=false -e MISE_AUTO_INSTALL=false -e MISE_YES=1 \
+            -e MISE_TRUSTED_CONFIG_PATHS=/work \
             -e CARGO_HOME=/work/target/components-release/toolchain/cargo \
             -e RUSTUP_HOME=/work/target/components-release/toolchain/rustup \
             -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
             "${{ matrix.image }}" bash -euo pipefail -c '
               git config --global --add safe.directory /work
               curl -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --target "$TARGET"
-              export PATH="$CARGO_HOME/bin:$PATH"
-              scripts/components-release.sh plan "$TARGET"
-              scripts/components-release.sh build "$TARGET"
+              export PATH="$CARGO_HOME/bin:$(dirname "$MISE_IN_CONTAINER"):$(dirname "$JQ_IN_CONTAINER"):$PATH"
+              mise run components:release plan "$TARGET"
+              mise run components:release build "$TARGET"
               chown -R "$HOST_UID:$HOST_GID" target
             '
 
@@ -371,13 +386,15 @@ jobs:
           set -euo pipefail
           docker run --rm -v "$PWD":/work -v "$RUNNER_TEMP/poly-key":/run/poly-key:ro -w /work \
             -e TARGET="${{ matrix.triple }}" -e RUST_TOOLCHAIN -e BUILD_IMAGE -e ALEF="$ALEF_IN_CONTAINER" \
+            -e MISE_IN_CONTAINER -e JQ_IN_CONTAINER -e MISE_TASK_RUN_AUTO_INSTALL=false -e MISE_AUTO_INSTALL=false -e MISE_YES=1 \
+            -e MISE_TRUSTED_CONFIG_PATHS=/work \
             -e CARGO_HOME=/work/target/components-release/toolchain/cargo \
             -e RUSTUP_HOME=/work/target/components-release/toolchain/rustup \
             -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
             "${{ matrix.image }}" bash -euo pipefail -c '
               git config --global --add safe.directory /work
-              export PATH="$CARGO_HOME/bin:$PATH"
-              POLY_COMPONENT_SIGNING_KEY="$(cat /run/poly-key)" scripts/components-release.sh package "$TARGET"
+              export PATH="$CARGO_HOME/bin:$(dirname "$MISE_IN_CONTAINER"):$(dirname "$JQ_IN_CONTAINER"):$PATH"
+              POLY_COMPONENT_SIGNING_KEY="$(cat /run/poly-key)" mise run components:release package "$TARGET"
               chown -R "$HOST_UID:$HOST_GID" target
             '
 
@@ -389,19 +406,19 @@ jobs:
       - name: Plan components (input hashes, reuse against the previous lock)
         if: ${{ !matrix.image }}
         shell: bash
-        run: scripts/components-release.sh plan "${{ matrix.triple }}"
+        run: mise run components:release plan "${{ matrix.triple }}"
 
       - name: Build components
         if: ${{ !matrix.image }}
         shell: bash
-        run: scripts/components-release.sh build "${{ matrix.triple }}"
+        run: mise run components:release build "${{ matrix.triple }}"
 
       - name: Sign and package components
         if: ${{ !matrix.image }}
         shell: bash
         env:
           POLY_COMPONENT_SIGNING_KEY: ${{ secrets.POLY_COMPONENT_SIGNING_KEY }}
-        run: scripts/components-release.sh package "${{ matrix.triple }}"
+        run: mise run components:release package "${{ matrix.triple }}"
 
       - name: Upload component assets to the release
         shell: bash
@@ -467,7 +484,7 @@ jobs:
           path: target/components-release
 
       - name: Merge into one signed lock (reused entries carried over)
-        run: scripts/components-release.sh lock plans components poly-components.lock.json
+        run: mise run components:release lock plans components poly-components.lock.json
 
       - name: Assert the lock is complete and signed
         env:
@@ -924,8 +941,12 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
 
+      - name: Setup mise
+        uses: xberg-io/actions/setup-mise@v1
+
       - name: Update tap formula
         env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
           GH_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
           HOMEBREW_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -956,7 +977,7 @@ jobs:
           # that declare no source build, so this needs nothing on the tap side.
           GH_TOKEN="$GITHUB_TOKEN" gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
             --pattern 'sha256sums.txt' --dir sums --clobber
-          ./scripts/update-homebrew-formula.sh "$version" sums/sha256sums.txt "$GITHUB_REPOSITORY" > poly.rb
+          mise run release:homebrew-formula "$version" sums/sha256sums.txt "$GITHUB_REPOSITORY" > poly.rb
 
           git clone --depth 1 "https://x-access-token:${HOMEBREW_TOKEN}@github.com/Goldziher/homebrew-tap.git" tap
           cp poly.rb tap/Formula/poly.rb
@@ -995,8 +1016,12 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
 
+      - name: Setup mise
+        uses: xberg-io/actions/setup-mise@v1
+
       - name: Update the bucket manifest
         env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # The same PAT the Homebrew tap step uses; its access covers
           # Goldziher/scoop-bucket as well, so there is one credential and one
@@ -1019,7 +1044,7 @@ jobs:
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern 'sha256sums.txt' --dir sums --clobber
 
           git clone --depth 1 "https://x-access-token:${HOMEBREW_TOKEN}@github.com/Goldziher/scoop-bucket.git" bucket
-          ./scripts/update-scoop-manifest.sh "$version" sums/sha256sums.txt bucket/bucket/poly.json "$GITHUB_REPOSITORY" > poly.json
+          mise run release:scoop-manifest "$version" sums/sha256sums.txt bucket/bucket/poly.json "$GITHUB_REPOSITORY" > poly.json
           cp poly.json bucket/bucket/poly.json
 
           cd bucket
@@ -1060,11 +1085,14 @@ jobs:
           set -euo pipefail
           git fetch --no-tags --no-write-fetch-head origin "$CONTROLLER_SHA"
           controller="$(mktemp -d "$RUNNER_TEMP/poly-registry-controller.XXXXXX")"
-          for helper in verify_registry_payload.py registry_archive.py; do
-            git show "$CONTROLLER_SHA:scripts/$helper" > "$controller/$helper"
+          # The guard must come from the workflow's own commit, not from the ref under release, so it
+          # is extracted rather than run through `mise run` against the checked-out tree. These are
+          # the files of the verify:registry-payload task.
+          for helper in registry-payload.py registry_archive.py; do
+            git show "$CONTROLLER_SHA:mise-tasks/verify/$helper" > "$controller/$helper"
             test -s "$controller/$helper"
           done
-          echo "POLY_REGISTRY_GUARD=$controller/verify_registry_payload.py" >> "$GITHUB_ENV"
+          echo "POLY_REGISTRY_GUARD=$controller/registry-payload.py" >> "$GITHUB_ENV"
 
       - name: Setup Node.js and pnpm
         uses: xberg-io/actions/setup-mise@v1
@@ -1166,18 +1194,20 @@ jobs:
       - name: Install reviewed ai-rulez
         uses: xberg-io/actions/setup-ai-rulez@v1
 
-      - name: Verify generated product bundles and public skills
-        run: |
-          ai-rulez verify --plugin
-          python3 scripts/sync_public_skills.py --check
-          python3 scripts/sync_plugin_version.py --check
-
       - name: Setup Node.js and pnpm
         uses: xberg-io/actions/setup-mise@v1
         with:
           # A dispatched tag can predate mise.toml; restore the config from the workflow's commit. ~keep
           config-ref: ${{ github.sha }}
           tools: node pnpm
+
+      - name: Verify generated product bundles and public skills
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: |
+          ai-rulez verify --plugin
+          mise run plugin:sync-skills --check
+          mise run plugin:sync-version --check
 
       - name: Verify packed Pi and OpenCode resources
         run: |
@@ -1195,10 +1225,12 @@ jobs:
           JS
 
       - name: Verify exact packaged Pi and OpenCode resource bytes
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
         run: |
           archive="$(jq -r '.filename' "$RUNNER_TEMP/plugin-pack.json")"
           case "$archive" in /*) ;; *) archive="$RUNNER_TEMP/$archive" ;; esac
-          python3 scripts/verify_plugin_distribution.py npm "$archive"
+          mise run verify:plugin-distribution npm "$archive"
 
       - name: Check the exact npm plugin payload
         id: npm-version
@@ -1235,15 +1267,23 @@ jobs:
           fetch-depth: 0
       - name: Install ai-rulez
         uses: xberg-io/actions/setup-ai-rulez@v1
+      - name: Setup mise
+        uses: xberg-io/actions/setup-mise@v1
+        with:
+          # A dispatched tag can predate mise.toml; restore the config from the workflow's commit. ~keep
+          config-ref: ${{ github.sha }}
+          tools: python
       - name: Verify public skill exports
-        run: python3 scripts/sync_public_skills.py --check
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run plugin:sync-skills --check
       - name: Package all supported plugin runtimes
         uses: xberg-io/actions/package-ai-rulez-plugin@v1
         with:
           cursor-marketplace: "true"
           tag: ${{ needs.meta.outputs.tag }}
           config-directory: .ai-rulez
-          version-sync-script: scripts/sync_plugin_version.py
+          version-sync-script: mise-tasks/plugin/sync-version.py
       - name: Archive verified runtime bundles and marketplace indexes
         shell: bash
         env:
@@ -1284,20 +1324,21 @@ jobs:
 
       - name: Install ai-rulez
         uses: xberg-io/actions/setup-ai-rulez@v1
-      - name: Verify plugin versions and generated resources before publishing
-        env:
-          VERSION: ${{ needs.plugin-meta.outputs.version || needs.meta.outputs.version }}
-        run: |
-          set -euo pipefail
-          python3 scripts/sync_plugin_version.py --expect "$VERSION"
-          python3 scripts/sync_public_skills.py --check
-          ai-rulez verify --plugin
       - name: Setup Python and uv
         uses: xberg-io/actions/setup-mise@v1
         with:
           # A dispatched tag can predate mise.toml; restore the config from the workflow's commit. ~keep
           config-ref: ${{ github.sha }}
           tools: python uv
+      - name: Verify plugin versions and generated resources before publishing
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+          VERSION: ${{ needs.plugin-meta.outputs.version || needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          mise run plugin:sync-version --expect "$VERSION"
+          mise run plugin:sync-skills --check
+          ai-rulez verify --plugin
       - name: Read the verified Hermes package version
         id: wheel-version
         run: |
@@ -1315,7 +1356,9 @@ jobs:
       - name: Build Hermes wheel
         run: uv build --wheel --out-dir dist-hermes plugin/.hermes/package
       - name: Verify every packaged Hermes runtime resource
-        run: python3 scripts/verify_plugin_distribution.py wheel dist-hermes/*.whl
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run verify:plugin-distribution wheel dist-hermes/*.whl
       - name: Verify immutable Hermes registry payloads
         run: python3 "$POLY_REGISTRY_GUARD" wheel --expected-count 1 dist-hermes/*.whl
       - name: Publish verified Hermes wheel

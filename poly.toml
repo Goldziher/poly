@@ -61,52 +61,42 @@ file_safety = { exclude = ["crates/poly-cli/src/hooks/checks.rs"] }
 
 cargo = true
 
-[hooks.pre-commit.scripts.rust-max-lines]
-script = "scripts/hooks/rust-max-lines.sh"
-runner = "bash"
-args = ["--max=1000"]
+[hooks.pre-commit.commands.rust-max-lines]
+run = "mise run hooks:rust-max-lines --max=1000"
 files = "**/*.rs"
 exclude = "**/identify/tags.rs"
 
-[hooks.pre-commit.scripts.rustdoc-lint]
-script = "scripts/hooks/rustdoc-lint.sh"
-runner = "bash"
+[hooks.pre-commit.commands.rustdoc-lint]
+run = "mise run hooks:rustdoc-lint"
 files = "**/*.rs"
 workspace = true
-# The script runs `cargo doc --workspace`, which takes cargo's build-directory
-# lock — poly cannot see inside a script, so the set is named here.
+# The task runs `cargo doc --workspace`, which takes cargo's build-directory
+# lock — poly cannot see inside a task, so the set is named here.
 serial = "cargo"
 
 # The components/ workspace is excluded from the root cargo workspace, so `[hooks.builtin] cargo` (which has no
 # manifest option) never sees it. These run its clippy, cargo-deny and rustdoc gates; sort and machete are not
 # mirrored. Each runs only when a file under components/ is staged.
-[hooks.pre-commit.scripts.components-clippy]
-script = "scripts/hooks/components-check.sh"
-runner = "bash"
-args = ["clippy"]
+[hooks.pre-commit.commands.components-clippy]
+run = "mise run hooks:components-check clippy"
 files = "components/**"
 workspace = true
 serial = "cargo"
 
-[hooks.pre-commit.scripts.components-deny]
-script = "scripts/hooks/components-check.sh"
-runner = "bash"
-args = ["deny"]
+[hooks.pre-commit.commands.components-deny]
+run = "mise run hooks:components-check deny"
 files = "components/**"
 workspace = true
 serial = "cargo"
 
-[hooks.pre-commit.scripts.components-rustdoc]
-script = "scripts/hooks/components-check.sh"
-runner = "bash"
-args = ["rustdoc"]
+[hooks.pre-commit.commands.components-rustdoc]
+run = "mise run hooks:components-check rustdoc"
 files = "components/**/*.rs"
 workspace = true
 serial = "cargo"
 
-[hooks.pre-commit.scripts.no-git-deps]
-script = "scripts/check-no-git-deps.sh"
-runner = "bash"
+[hooks.pre-commit.commands.no-git-deps]
+run = "mise run check:deps"
 files = ["Cargo.lock", "deny.toml"]
 workspace = true
 

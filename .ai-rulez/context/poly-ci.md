@@ -17,7 +17,12 @@ matrix; `dogfood`, which runs the binary against poly's own repo (`poly lint --w
 then `poly fmt .`) on Linux and Windows; and `cargo-deny check`.
 `.github/workflows/publish.yaml` builds and uploads the release artifacts.
 
-The hardening harness (`mise run harden`, `scripts/harden.sh`) is **not** a CI job. It clones large
+Every repository script is a mise file task under `mise-tasks/` (`mise tasks` lists them; `mise run
+<task> --help` documents one). CI, git hooks (`poly.toml`) and docs call `mise run <task>`, never a script
+path. `publish.yaml` runs the `components:release` task in the manylinux container through a
+checksum-verified musl mise (`components:release fetch-mise`) with tool installs disabled.
+
+The hardening harness (`mise run harden`) is **not** a CI job. It clones large
 third-party trees and its per-rule counts inform a decision rather than pass or fail a commit, so
 it is run deliberately — before a release, or when a rule's severity is in question.
 

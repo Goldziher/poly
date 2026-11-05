@@ -53,7 +53,7 @@ lock-step surface, not a separately tracked version. So do the wrapper packages:
   then uploads `sha256sums.txt` and un-drafts the release. The installers and the GitHub Action
   fetch the archive matching the host.
 - **Homebrew installs the prebuilt archives, like every other channel.**
-  `scripts/update-homebrew-formula.sh` emits a **binary** formula — `version` plus
+  `mise run release:homebrew-formula` emits a **binary** formula — `version` plus
   `on_macos`/`on_linux` x `on_arm`/`on_intel` blocks naming the four archives Homebrew can use
   (macOS and Linux, arm64 and x86_64), then `bin.install "poly"` and the `polylint` symlink. The
   hashes are read from the release's own `sha256sums.txt` and never recomputed, for the same
@@ -85,7 +85,7 @@ lock-step surface, not a separately tracked version. So do the wrapper packages:
   depending on them — a not-yet-configured registry shows as a red job on a green run and
   cannot put the GitHub release back into draft. `publish_homebrew` is the deliberate exception
   and still fails hard on a missing token.
-- **Scoop mirrors the Homebrew shape.** `scripts/update-scoop-manifest.sh` rewrites only
+- **Scoop mirrors the Homebrew shape.** `mise run release:scoop-manifest` rewrites only
   `version`, the 64-bit `url` and the 64-bit `hash` in `Goldziher/scoop-bucket`'s
   `bucket/poly.json`, taking the hash from the release's `sha256sums.txt` rather than
   recomputing it, and asserts that `bin` / `checkver` / `autoupdate` came through untouched —
@@ -94,7 +94,7 @@ lock-step surface, not a separately tracked version. So do the wrapper packages:
 - We do not publish to crates.io; the prebuilt binary is the only thing any channel ships.
 - Commit `Cargo.lock` and pin git-dependency `rev`s (all crates from one monorepo share a `rev`)
   so a tagged build is reproducible.
-- `scripts/release-bump.sh <version>` bumps `Cargo.toml`, the npm and PyPI manifests, and
+- `mise run release:bump <version>` bumps `Cargo.toml`, the npm and PyPI manifests, and
   `.ai-rulez/config.toml [plugin] version` together, refreshes `Cargo.lock`, regenerates the
   plugin outputs, and asserts every substitution actually landed — including that the npm
   `optionalDependencies` pins and the `platforms/` directories describe the same package set —

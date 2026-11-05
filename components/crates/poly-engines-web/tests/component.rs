@@ -2,7 +2,7 @@
 //! against the same engine linked in-process.
 //!
 //! Runs only when `POLY_COMPONENT_DEV_LOCK` names a lock written by
-//! `scripts/components-dev.sh web`; otherwise it reports that it skipped and passes.
+//! `mise run components:dev web`; otherwise it reports that it skipped and passes.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -44,7 +44,7 @@ fn the_web_component_formats_like_the_in_process_engine() {
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("skipped: {DEV_LOCK_ENV} is not set; run `scripts/components-dev.sh web` first");
+        eprintln!("skipped: {DEV_LOCK_ENV} is not set; run `mise run components:dev web` first");
         return;
     };
     let lock = std::fs::read_to_string(&lock).unwrap_or_else(|e| panic!("reading {lock}: {e}"));

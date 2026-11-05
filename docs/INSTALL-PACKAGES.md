@@ -142,7 +142,7 @@ umbrella on `latest` whose pinned binaries do not exist installs cleanly and the
 `bucket/poly.json`. The push reuses the existing `HOMEBREW_TOKEN` secret, whose access
 covers that repository as well as the tap; there is no separate Scoop credential.
 
-`scripts/update-scoop-manifest.sh` rewrites only `version`, the 64-bit `url`, and the
+`mise run release:scoop-manifest` rewrites only `version`, the 64-bit `url`, and the
 64-bit `hash` (read out of the release's own `sha256sums.txt`), and asserts that `bin`,
 `checkver`, `autoupdate`, `description`, `license` and `homepage` came through untouched.
 The `bin` array is what creates both the `poly` and `polylint` shims, so losing it would
@@ -150,7 +150,7 @@ be silent — `scoop install` would still succeed and produce no command.
 
 ### Version lock-step
 
-`scripts/release-bump.sh <version>` moves every surface at once: `Cargo.toml`, the npm
+`mise run release:bump <version>` moves every surface at once: `Cargo.toml`, the npm
 umbrella package **and each of its six exact `optionalDependencies` pins**, the six
 platform `package.json` files, `pip-package/pyproject.toml`,
 `pip-package/polylint/__init__.py`, and `plugin/.ai-rulez/config.plugins.toml`. It then asserts each

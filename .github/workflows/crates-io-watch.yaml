@@ -14,5 +14,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      - uses: xberg-io/actions/setup-mise@v1
       - name: Check blocked crates
-        run: python3 -I scripts/crates_io_watch.py
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run crates-io:watch

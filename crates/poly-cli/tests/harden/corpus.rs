@@ -16,7 +16,7 @@ pub struct Root {
     pub tree_state: Option<String>,
 }
 
-/// Read the root to measure out of the environment, the way `scripts/harden.sh`
+/// Read the root to measure out of the environment, the way `mise run harden`
 /// hands it over.
 ///
 /// Returns `None` when the variables are absent, which is how the ignored test

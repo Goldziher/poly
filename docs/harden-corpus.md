@@ -9,7 +9,7 @@ or whether a lint rule can be on by default:
 - does the cache ever serve a **wrong** answer?
 - how many findings does a rule actually produce on code we did not write?
 
-`scripts/harden.sh` answers those against real code. This document is about
+`mise run harden` answers those against real code. This document is about
 _which_ real code, and why the three corpora are allowed to assert different
 things.
 
@@ -44,7 +44,7 @@ takes the invariants with it.
 
 ## A — the local siblings
 
-Enumerated by `scripts/harden/enumerate-local.sh`, which emits the manifest the
+Enumerated by `mise run harden:enumerate-local`, which emits the manifest the
 records quote verbatim: "what did you actually measure" is the first question
 anyone asks of a corpus number, and a list is the only honest answer.
 
@@ -69,7 +69,7 @@ cache is redirected under `POLY_HARDEN_ROOT`.
 
 ## B — pinned third-party trees
 
-`scripts/harden/repos.b.tsv`. Fetched at depth 1 at an exact ref — poly reads no
+`crates/poly-cli/tests/harden/data/repos.b.tsv`. Fetched at depth 1 at an exact ref — poly reads no
 git history, so depth is pure cost — and **pinned to a commit**, because this is
 the only corpus whose counts may gate. Bumping a sha is a deliberate
 re-baselining commit, which is the review moment where a change in the numbers
@@ -93,7 +93,7 @@ audited against the population least likely to trip it.
 
 ## C — generated code
 
-`scripts/harden/repos.c.tsv` currently holds **codegen** output: SDKs and clients
+`crates/poly-cli/tests/harden/data/repos.c.tsv` currently holds **codegen** output: SDKs and clients
 emitted by a generator. That is directly relevant to the path-exclusion question
 (issue #21) — it is the `frb_generated.rs` failure mode at scale — and it says
 close to nothing about LLM-authored _application_ code, which is what issues #23
@@ -143,10 +143,10 @@ exercise — and the record marks it, so the two can never be compared by accide
 ## Running it
 
 ```sh
-./scripts/harden.sh                        # corpus B, core tier
-POLY_HARDEN_CORPUS=a ./scripts/harden.sh   # the local siblings, read-only
-POLY_HARDEN_TIER=extended ./scripts/harden.sh
-./scripts/harden.sh django ripgrep         # named roots only
+mise run harden                      # corpus B, core tier
+mise run harden --corpus a           # the local siblings, read-only (mise run harden:local)
+mise run harden --tier extended
+mise run harden django ripgrep       # named roots only
 ```
 
 One process per root, so a panic in one repository cannot take the rest of the

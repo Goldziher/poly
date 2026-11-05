@@ -11,10 +11,10 @@ x-ai-rulez:
 # Module Size Cap
 
 - **Every `*.rs` file in the repository** is capped at **1000 lines** by the `rust-max-lines`
-  hook (`poly.toml` → `[hooks.pre-commit.scripts.rust-max-lines]`, `files = "**/*.rs"`,
-  `args = ["--max=1000"]`). The scope is not limited to `crates/**/src/**`.
+  hook (`poly.toml` → `[hooks.pre-commit.commands.rust-max-lines]`, `files = "**/*.rs"`,
+  `run = "mise run hooks:rust-max-lines --max=1000"`). The scope is not limited to `crates/**/src/**`.
 - Exemptions, as the hook actually implements them
-  (`scripts/hooks/rust-max-lines.sh`): a path under a `tests/` directory at any depth, and a
+  (`mise-tasks/hooks/rust-max-lines.sh`): a path under a `tests/` directory at any depth, and a
   file named `tests.rs`. `poly.toml` additionally excludes the generated
   `crates/poly-hooks/src/identify/tags.rs`. Nothing else is exempt.
 - When a file approaches the cap, refactor by extracting helpers, types, or submodules — **do
