@@ -45,12 +45,16 @@ if ! grep -qxF "version = \"$VERSION\"" components/Cargo.toml; then
   exit 1
 fi
 
-# Refresh the workspace lockfile so the tagged build is reproducible. Optional here to keep
-# the bump offline-friendly — drop the guard to force it.
+# The alef-generated component crates pin their own version and their poly-engines dependency, so
+# regenerate them before resolving: otherwise neither lockfile can resolve the bumped workspace.
+# Then refresh both lockfiles so the tagged build is reproducible. A failure here is fatal: a stale
+# lock fails every --locked release build. SKIP_CARGO_UPDATE=1 skips both (the task's own tests).
 if [[ "${SKIP_CARGO_UPDATE:-0}" != "1" ]]; then
-  cargo update --workspace >/dev/null 2>&1 || echo "warn: cargo update --workspace skipped/failed (offline?)"
-  cargo update --workspace --manifest-path components/Cargo.toml >/dev/null 2>&1 ||
-    echo "warn: cargo update --workspace (components) skipped/failed (offline?)"
+  echo "→ alef component crates → $VERSION"
+  "${ALEF:-alef}" generate --skip-compile >/dev/null
+  echo "→ Cargo.lock and components/Cargo.lock"
+  cargo update --workspace --quiet
+  cargo update --workspace --manifest-path components/Cargo.toml --quiet
 fi
 
 echo "→ npm-package → $VERSION"
