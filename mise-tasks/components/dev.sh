@@ -16,7 +16,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
 
-alef() { "${ALEF:-alef}" "$@"; }
+# `command` so an unset ALEF reaches the alef binary rather than recursing into this function.
+alef() { command "${ALEF:-alef}" "$@"; }
 
 COMPONENTS=("$@")
 [[ ${#COMPONENTS[@]} -gt 0 ]] || COMPONENTS=(sql)
