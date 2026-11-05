@@ -97,8 +97,8 @@ and the `poly mcp` `workspace_lint` tools.
 
 Public plugin content lives in `plugin/.ai-rulez/`, contributor content in the root `.ai-rulez/`.
 `ai-rulez generate --plugin` emits the runtime profiles under `plugin/`;
-`scripts/sync_public_skills.py` mirrors the public skills to `skills/`; versions follow
-`scripts/release-bump.sh`.
+`mise run plugin:sync-skills` mirrors the public skills to `skills/`; versions follow
+`mise run release:bump`.
 
 ## Configuration
 

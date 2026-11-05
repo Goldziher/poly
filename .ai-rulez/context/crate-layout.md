@@ -76,5 +76,5 @@ an installer (see release-versioning).
   Generated `CLAUDE.md` / `AGENTS.md`, repository marketplace indexes, and manifests under
   `plugin/` must never be hand-edited. Root indexes resolve the public member bundle and
   keep maintainer content out of installs.
-  `scripts/release-bump.sh <version>` bumps the workspace and plugin versions together,
+  `mise run release:bump <version>` bumps the workspace and plugin versions together,
   regenerates the plugin outputs, and asserts the generated manifests match before finishing.

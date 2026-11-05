@@ -9,7 +9,7 @@ SHA-NI.
 - The engine families are cargo features of `poly-core` (`engine-python`, `engine-php`, …,
   `all-engines` is the default). `poly-cli --no-default-features` builds the **core-only** binary:
   no engine family and no `poly mcp` (`poly-mcp` pulls every engine).
-- `scripts/measure-core-size.sh` builds the core once, then the core plus one feature at a time,
+- `mise run measure:core-size` builds the core once, then the core plus one feature at a time,
   with the size profile below, and prints the stripped size and the delta over the core.
 - Per-crate attribution of the fat binary comes from `nm -S --size-sort -C` summed by the leading
   path segment of each symbol (`cargo bloat` runs out of memory on the 135 MB binary).
@@ -137,5 +137,5 @@ so the verified stamp (xberg-io/alef#833, shipped) must be on in poly's host.
   - dockerfile, dotenv, hcl and the graphql formatter form a `misc` component (1.2 MB together).
 - **sqruff** is 25% of today's binary. Its dialects are the target if `sql` needs to shrink.
 
-Reproduce with `scripts/measure-core-size.sh` (about 2-3 minutes per build; each feature build
+Reproduce with `mise run measure:core-size` (about 2-3 minutes per build; each feature build
 needs several GB of free disk under `CARGO_TARGET_DIR`).

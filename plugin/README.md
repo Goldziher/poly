@@ -50,7 +50,7 @@ mutating tools (`lint_fix`, `format_write`, `cache_clean`, `components_install`,
 `components_uninstall`, `workspace_lint_fix`) modify files or caches and should only be used when the current task authorizes those changes.
 
 Public skills install independently with `npx skills add Goldziher/poly --skill poly-mcp`.
-Their source is `plugin/.ai-rulez/skills`; `scripts/sync_public_skills.py --check` verifies the
+Their source is `plugin/.ai-rulez/skills`; `mise run plugin:sync-skills --check` verifies the
 repository's `skills/` mirror, including resource bytes, namespaces and ownership.
 
 Generation and verification use the latest ai-rulez release, in tasks and in CI.

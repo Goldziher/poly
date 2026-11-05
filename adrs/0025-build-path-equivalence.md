@@ -15,7 +15,7 @@
    `Goldziher/poly` GitHub Action download. (The Action shells out to this repo's `install.sh`,
    so it is a *consumer* of path 3, not a build path of its own.)
 4. **`cargo install --locked --path crates/poly-cli`** — the Homebrew formula emitted by
-   `scripts/update-homebrew-formula.sh`, which is a **source build** (the tap bottles it
+   `mise run release:homebrew-formula`, which is a **source build** (the tap bottles it
    afterwards), run against the GitHub source tarball for the tag.
 
 Two builds of the same clean tree were measured as producing different binaries:
@@ -136,7 +136,7 @@ not set it.
    cargo, which restores `channel() == Release`, the `release/<version>` cache identity, and an
    honest `poly --version` for every tap user.
 
-Decisions 2 and 3 change release and packaging surfaces (`scripts/update-homebrew-formula.sh`,
+Decisions 2 and 3 change release and packaging surfaces (`mise run release:homebrew-formula`,
 the README's install instructions) and are therefore recorded here as **Proposed**, pending a
 human decision — not applied unilaterally by the investigation that found them.
 

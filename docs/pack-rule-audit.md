@@ -7,7 +7,7 @@ measurement nobody can find gets redone badly or not at all.
 Five candidate rules were drafted, validated with `poly rules test` (161
 assertions, 0 failures), and measured against a ten-repository corpus at pinned
 SHAs. Four of the ten have LLM-authored histories by commit trailer and two are
-human-authored controls; the corpus is now `scripts/harden/repos.c.tsv`'s C2
+human-authored controls; the corpus is now `crates/poly-cli/tests/harden/data/repos.c.tsv`'s C2
 section, so the numbers below can be reproduced and the selection procedure
 re-run.
 
@@ -594,7 +594,7 @@ Of the 22 selectors poly enables, `PERF` is present and its rules are
 (`"a" "b"`, `"a" + "b"`), not a variable accumulator. Verified by running poly's
 ruff backend over the shape: it reports nothing.
 
-Run: `poly lint --only astgrep --config scripts/harden/poly.toml --no-workspace
+Run: `poly lint --only astgrep --config crates/poly-cli/tests/harden/data/poly.toml --no-workspace
 --no-cache --format json <repo>`, with the rule woken by the harden config's
 `[lint.astgrep] extend_select`. Denominators are Python files under the pinned
 checkout (excluding `.venv`, `node_modules`, `site-packages`).
@@ -678,7 +678,7 @@ Four have LLM-authored histories by commit trailer — `spec-kit` 42/50 (84%),
 co-authored commits on the JS/TS side. Seven commit a `CLAUDE.md` or
 `AGENTS.md`. `astro` and `vercel-ai` are the mainstream, largely
 human-authored controls. Full table with URLs, SHAs and licences in
-`scripts/harden/repos.c.tsv`.
+`crates/poly-cli/tests/harden/data/repos.c.tsv`.
 
 Runs used `poly lint --no-workspace --no-cache --config <measure-poly.toml>
 --format json`, with `[rules] dirs` pointed at the draft directory, `[rules] builtin

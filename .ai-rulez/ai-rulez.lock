@@ -4,7 +4,7 @@
 version = 1
 ai_rulez_version = '5.10.0'
 scope = 'all'
-tree = 'sha256:3fd3b4f0eb9409e54bff8a02d848598395ec4f62813144f43bbe89aa4d84383f'
+tree = 'sha256:c8de4124e4944b2f67eb287d2b7a6c01ddb8a3c31fa2f80fe88cb540d5acb134'
 
 [[served]]
 name = 'adr-workflow'
@@ -124,7 +124,7 @@ digest = 'sha256:021fc58cf5f25175c50318a3f8a4d53551bbcfd9b0c91dff79c95411a6afcb3
 kind = 'context'
 id = 'crate-layout'
 path = 'context/crate-layout.md'
-digest = 'sha256:0ab8bf3f7fe189eb6ca0a5b09625bf06bd981ff6ebc371f627783d42c94010bc'
+digest = 'sha256:5df95fc4192a3a1833a866c5cc5af750f896166f6a2aed7d0afec7d270812451'
 
 [[item]]
 kind = 'context'
@@ -136,13 +136,13 @@ digest = 'sha256:f805ea4203ac36a7fc3c707b12720cad6c62219c6652e3312fc8373d18415f7
 kind = 'context'
 id = 'poly'
 path = 'context/poly.md'
-digest = 'sha256:2cce90c67d3b3265a08fd69ecedfa648b0c86a3675b121c5bf6dc55faa136444'
+digest = 'sha256:ea84dfa3dafef029daa10509bee4e90a7a70e189a16c81294631beb411c62644'
 
 [[item]]
 kind = 'context'
 id = 'poly-ci'
 path = 'context/poly-ci.md'
-digest = 'sha256:f6a3a80d33dfc4b8f34dafee2f1be77c26a7c02ea38e0c74f0b403428b793a5b'
+digest = 'sha256:a990db02a0f705e889a3ef936125dcbd64c74cea4a95d38163d464e781c9e30b'
 
 [[item]]
 kind = 'context'
@@ -160,7 +160,7 @@ digest = 'sha256:fc06976e79113321574826fc8b13568a02e3e1471cd09014d58db3c67b6aaa4
 kind = 'rule'
 id = 'module-size-cap'
 path = 'rules/module-size-cap.md'
-digest = 'sha256:b9970bb22af15c0076a4e0901c068cfc0c3e6ed54cd0a9229b52784182f2c6ae'
+digest = 'sha256:a18e51d1e08fe3bccde01f314bd3553780736acd7706e4e1e618b94095ce4a92'
 
 [[item]]
 kind = 'rule'
@@ -172,13 +172,13 @@ digest = 'sha256:c7332e641d1edc0a2d39fed803765c3e8c841e91979a5d086b796ab7ee3de22
 kind = 'rule'
 id = 'release-versioning'
 path = 'rules/release-versioning.md'
-digest = 'sha256:4d3c72ca2471fd880b35322b8971dc86a782ff2fc4aba20211e9fd3a1a009e1c'
+digest = 'sha256:57742c44fed6dbd04e63f081d45e5b675f93232c17eb533cba41682ef312be08'
 
 [[item]]
 kind = 'rule'
 id = 'tdd-and-hooks'
 path = 'rules/tdd-and-hooks.md'
-digest = 'sha256:28e212e96c90230ca8550fdd47436326f9f589a7d7680ac6f479c2ab734c118e'
+digest = 'sha256:d338e695560d649056e31eba18bea5d57a956e9e3ac7c7d812cbc52e2e96d69c'
 
 [[item]]
 kind = 'settings'
