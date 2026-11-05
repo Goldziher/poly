@@ -56,7 +56,8 @@ See [Migrating to poly 2](https://goldziher.github.io/poly/guides/migrating-to-v
   five release targets ship a core binary (`--no-default-features --features core`, linking only
   the quality, uncomment and ini engines) with a signed component lock embedded. `python`, `php`,
   `nix`, `typos`, `astgrep` and `misc` are now downloadable components, alongside `web`, `sql`,
-  `biome`, `ruby` and `mcp`. `poly rules` is not available in a core binary.
+  `biome`, `ruby` and `mcp`. `poly rules` and the MCP `rules` tool work in a core binary by
+  asking the `astgrep` component (protocol version 2, `Request::Rules`).
 - **`poly config validate`**, which checks a config against the compiled component index without
   downloading anything, and a `components` section in `poly doctor`.
 - **`required_version`** in `poly.toml`, a semver requirement on the running poly.

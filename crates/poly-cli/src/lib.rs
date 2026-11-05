@@ -23,7 +23,6 @@ pub mod migrate;
 pub mod polylock;
 pub mod progress;
 pub mod remote;
-#[cfg(feature = "engine-astgrep")]
 pub mod rules_cmd;
 pub mod workspace_coverage;
 
@@ -36,7 +35,6 @@ pub use hooks::{HooksArgs, run_hooks};
 pub use lock_cmd::{LockArgs, run_lock};
 pub use mcp_cmd::run_mcp;
 pub use migrate::{MigrateArgs, run_migrate};
-#[cfg(feature = "engine-astgrep")]
 pub use rules_cmd::{RulesArgs, run_rules};
 
 /// Install the process-wide `tracing` subscriber for the CLI binaries at the

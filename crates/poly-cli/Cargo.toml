@@ -39,7 +39,8 @@ all-engines = ["poly-core/all-engines", "poly-host-services/all-engines", "engin
 core = ["poly-core/core"]
 # Forwarded dev-lock: lets a local build install components from the `components:dev` lock.
 dev-lock = ["poly-core/dev-lock"]
-# `poly rules` drives the ast-grep engine directly, so the subcommand needs the family.
+# Link the ast-grep engine family so `poly rules` answers in-process; without it the `astgrep`
+# component answers.
 engine-astgrep = ["poly-core/engine-astgrep", "poly-host-services/engine-astgrep"]
 
 [dependencies]

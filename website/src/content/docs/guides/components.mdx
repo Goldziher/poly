@@ -21,7 +21,8 @@ only decides where an engine's code lives.
 `x86_64-unknown-linux-musl` is the only release archive that is a bundled build: it embeds no
 component lock and downloads nothing. The other five (Linux gnu x86_64 and aarch64, macOS x86_64
 and aarch64, Windows x86_64) are core builds with the release's signed component lock embedded.
-`poly rules` is not available in a core build, because it needs the ast-grep engine linked in.
+`poly rules` and the MCP `rules` tool work in a core build by installing the `astgrep` component on
+demand; `--offline` and `[components] install = "never"` stop that download, and the command then fails.
 `poly doctor` has a `components` section with the flavor, the cache root and what the current
 directory needs.
 

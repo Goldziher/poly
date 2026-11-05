@@ -10,10 +10,9 @@ use std::process::ExitCode;
 
 use crate::{
     CacheArgs, ComponentsArgs, ConfigArgs, DoctorArgs, FmtArgs, GlobalArgs, HooksArgs, LintArgs, LockArgs, MigrateArgs,
-    run_cache, run_components, run_config, run_doctor, run_fmt, run_hooks, run_lint, run_lock, run_migrate,
+    RulesArgs, run_cache, run_components, run_config, run_doctor, run_fmt, run_hooks, run_lint, run_lock, run_migrate,
+    run_rules,
 };
-#[cfg(feature = "engine-astgrep")]
-use crate::{RulesArgs, run_rules};
 use clap::{Parser, Subcommand};
 
 /// The `doctor` subcommand, which reports PATH conflicts itself and so is
@@ -58,7 +57,6 @@ enum Command {
     /// Inspect and maintain the result cache (stats / gc / clean).
     Cache(CacheArgs),
     /// Inspect and test custom ast-grep rule packs (test / list).
-    #[cfg(feature = "engine-astgrep")]
     Rules(RulesArgs),
     /// Inspect and manage downloadable engine components (list / status / install / sync / prune).
     #[command(alias = "component")]
@@ -117,7 +115,6 @@ pub fn main() -> ExitCode {
             crate::init_logging_with(debug);
             run_cache(args)
         }
-        #[cfg(feature = "engine-astgrep")]
         Command::Rules(args) => {
             crate::init_logging_with(debug);
             run_rules(args)

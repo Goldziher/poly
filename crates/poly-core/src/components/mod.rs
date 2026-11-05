@@ -13,6 +13,7 @@
 //! with [`register_linked_features`]. With every needed family linked, [`resolve`] finds nothing to do
 //! and never builds a host.
 
+mod call;
 #[cfg(not(feature = "dev-lock"))]
 mod embedded;
 mod needed;
@@ -21,6 +22,7 @@ mod report;
 mod seam;
 mod select;
 
+pub use call::call_engine_component;
 pub use needed::register_linked_features;
 pub(crate) use preplan::resolve;
 pub use report::{ComponentsReport, MissingComponent};

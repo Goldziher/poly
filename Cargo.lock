@@ -3687,10 +3687,17 @@ dependencies = [
 name = "poly-host-services"
 version = "0.32.3"
 dependencies = [
+ "alef-component-runtime",
  "anyhow",
  "poly-cache",
+ "poly-component-host",
+ "poly-component-index",
+ "poly-component-protocol",
  "poly-config",
  "poly-core",
+ "poly-engine-api",
+ "poly-engines",
+ "poly-engines-astgrep",
  "poly-frontend-api",
  "poly-workspace",
  "schemars 1.2.3",
