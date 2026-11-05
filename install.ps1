@@ -159,6 +159,7 @@ try {
     }
     Install-Alias (Join-Path $InstallDir "poly.exe") (Join-Path $InstallDir "polylint.exe")
     Info "Installed poly (and the polylint alias) -> $InstallDir"
+    Info "Engines download as signed components on first use; run 'poly components sync' in a repository to fetch them ahead (offline or CI)."
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
