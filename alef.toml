@@ -194,7 +194,7 @@ url_template = "https://github.com/Goldziher/poly/releases/download/v{version}/{
 artifact_name_template = "poly-component-{component}-{version}-{target}-{fh16}-{ch16}.tar.gz"
 
 [crates.component_distribution.public_keys]
-poly-release-1 = "MCowBQYDK2VwAyEAYsuzY1XKROcD4zvNJga55ojbCvMHKkzxx4O/Cz/ANBU="
+poly-release-1 = "MCowBQYDK2VwAyEAmv5BXWnmk2dddU9Uv74gMjlYP5urPfJVFbm3thZB/xk="
 
 [crates.component_host]
 output = "crates/poly-component-host/src/components_gen.rs"
