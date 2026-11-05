@@ -63,7 +63,7 @@ pub(super) fn component_lock() -> anyhow::Result<String> {
         .ok_or_else(|| anyhow::anyhow!("this build embeds no component lock"))
 }
 
-/// The lock a development build reads from `LOCK_ENV`, since none is embedded yet.
+/// The lock a development build reads from `LOCK_ENV` in place of an embedded one.
 #[cfg(feature = "dev-lock")]
 pub(super) fn component_lock() -> anyhow::Result<String> {
     let path = std::env::var_os(LOCK_ENV).ok_or_else(|| {
