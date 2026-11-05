@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.33.1] - 2026-11-05
+
+### Fixed
+
+- **Release.** v0.33.0 was never published: its x86_64-apple-darwin component build failed because
+  `mise.lock` had no macos-x64 entries. 0.33.1 ships the 0.33.0 changes below with that fixed.
+
 ## [0.33.0] - 2026-11-05
 
 ### Breaking changes
