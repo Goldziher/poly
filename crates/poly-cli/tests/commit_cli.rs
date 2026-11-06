@@ -16,6 +16,9 @@ fn poly_commit(dir: &Path, args: &[&str]) -> Output {
         .args(args)
         .current_dir(dir)
         .env("POLY_OFFLINE", "1")
+        // cargo puts a second `poly` under target/*/deps on PATH on Windows, and the shadow
+        // warning it triggers would land in the stderr these tests assert on.
+        .env("POLY_NO_SHADOW_WARN", "1")
         .output()
         .expect("run poly commit")
 }
@@ -134,6 +137,7 @@ fn with_stdin(dir: &Path, args: &[&str], input: &str) -> Output {
         .args(args)
         .current_dir(dir)
         .env("POLY_OFFLINE", "1")
+        .env("POLY_NO_SHADOW_WARN", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
