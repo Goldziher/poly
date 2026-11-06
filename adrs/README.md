@@ -55,6 +55,7 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0038](0038-poly-toml-v2-and-cli-surface.md) | poly.toml v2 and the CLI Surface | Accepted |
 | [0039](0039-downloadable-engine-components.md) | Downloadable Engine Components | Accepted |
 | [0040](0040-git-pins-in-components-workspace.md) | Git Pins Live in the Components Workspace | Accepted |
+| [0041](0041-adrlint-tree-wide-rules-as-project-check.md) | adrlint Tree-Wide Rules as a Project Check | Accepted |
 
 ## Conventions
 

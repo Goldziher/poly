@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Added
+
+- **adrlint tree-wide rules.** The `adrlint` engine now runs `MADR41a`, `MADR41b`, `MADR42`, `MADR43`,
+  `MADR44` and the immutability lock rules `ADR50`/`ADR51` as a project check over the ADR log
+  (`dir`, default `docs/adr`, or `paths`; `adrlint.lock` is read by the host). The result is cached
+  on every ADR and the lock. Bumps adrlint to 0.5.0; see
+  [ADR 0041](adrs/0041-adrlint-tree-wide-rules-as-project-check.md).
+
 ## [0.33.1] - 2026-11-05
 
 ### Fixed

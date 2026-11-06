@@ -59,7 +59,7 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
             "core_options.rs",
         ],
     ),
-    ("adrlint", &["adrlint.rs"]),
+    ("adrlint", &["adrlint.rs", "adrlint/project.rs"]),
 ];
 
 /// Languages whose engines together cover every web engine.

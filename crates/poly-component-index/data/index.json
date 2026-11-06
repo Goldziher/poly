@@ -14,9 +14,9 @@
             "lint": true,
             "format": false,
             "fix": true,
-            "project": false
+            "project": true
           },
-          "version": "adrlint-0.4.1+poly1",
+          "version": "adrlint-0.5.0+poly2",
           "option_keys": [
             {
               "table": "Lint",
@@ -37,6 +37,30 @@
                 {
                   "name": "ignore",
                   "types": 16
+                },
+                {
+                  "name": "dir",
+                  "types": 8
+                },
+                {
+                  "name": "paths",
+                  "types": 16
+                },
+                {
+                  "name": "recursive",
+                  "types": 1
+                },
+                {
+                  "name": "start",
+                  "types": 2
+                },
+                {
+                  "name": "allow_gaps",
+                  "types": 1
+                },
+                {
+                  "name": "lock",
+                  "types": 8
                 }
               ],
               "rule_selection": false,

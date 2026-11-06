@@ -322,13 +322,15 @@ enabled = true
 # Optional: narrow or extend the rule set. Codes match by prefix, so MADR07 covers MADR07a/b.
 # select = ["MADR01", "MADR05", "MADR06", "MADR31"]
 # ignore = ["MADR12"]
+# dir = "docs/adr"   # the ADR log for the tree-wide rules; lock = "adrlint.lock"
 ```
 
-It is **off by default**, because an existing log may follow a different template. It also deliberately leaves the
-log-level rules to the `adrlint` CLI: directory numbering and file names (`MADR41`–`MADR44`) need the whole
-directory, the immutability lock (`ADR50`/`ADR51`) needs `adrlint.lock`, and link-target existence (`MADR12a`/`c`)
-and external links (`MADR11`) need the tree or the network — none of which a per-file, content-hash-cached engine
-can model honestly. See [ADR 0037](adrs/0037-adrlint-madr-linting.md).
+It is **off by default**, because an existing log may follow a different template. The tree-wide rules run as a
+project check over the whole log: directory numbering and file names (`MADR41`–`MADR44`) and the immutability lock
+(`ADR50`/`ADR51`, read from `adrlint.lock`). Point it at the log with `dir` (default `docs/adr`) or `paths`. Link-target
+existence (`MADR12a`/`c`) and external links (`MADR11`) stay in the `adrlint` CLI, since they need the tree or the
+network. See [ADR 0037](adrs/0037-adrlint-madr-linting.md) and
+[ADR 0041](adrs/0041-adrlint-tree-wide-rules-as-project-check.md).
 
 ---
 

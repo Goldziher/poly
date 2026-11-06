@@ -345,7 +345,20 @@ pub(crate) const OPT_IN_ENGINES: &[&str] = &["typos"];
 /// `backend`, so a Python project that never mentions it pays nothing.
 ///
 /// Not feature-gated: the `python` component serves `python-types` to a core build.
-pub(crate) const GATED_PROJECT_ENGINES: &[(&str, &str)] = &[("python-types", "backend")];
+///
+/// `adrlint` is switched on by its `enabled` key, which it already needs for the per-file rules.
+pub(crate) const GATED_PROJECT_ENGINES: &[(&str, &str)] = &[("python-types", "backend"), ("adrlint", "enabled")];
+
+/// Project-check engines that also depend on one file outside the language set they serve, paired
+/// as `(engine, option key, default file name)`.
+///
+/// The host reads the file (the option names a path relative to the project root, else the default
+/// name) and hands it to the engine as one more [`ProjectFile`](crate::engine::ProjectFile) of
+/// language [`Language::Other`], so a component never touches the filesystem and the file's bytes
+/// fold into the project-check cache key like any other input. A missing file is not an error: the
+/// engine receives no such file and reads that as "not configured". `adrlint` takes its
+/// `adrlint.lock` this way.
+pub(crate) const PROJECT_SIDE_INPUTS: &[(&str, &str, &str)] = &[("adrlint", "lock", "adrlint.lock")];
 
 /// Every concrete (non-[`Language::Other`]) [`Language`] variant, used to
 /// walk every arm of [`engines_for`]. Kept from silently narrowing by
