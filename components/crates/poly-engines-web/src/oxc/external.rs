@@ -301,12 +301,47 @@ mod tests {
     use poly_engine_api::config::GlobalDefaults;
     use poly_engine_api::language::Language;
 
+    /// Set by [`wait_until_executable`] so a script exits before its body runs.
+    const PROBE_ENV: &str = "POLY_TEST_SCRIPT_PROBE";
+
+    /// `ETXTBSY`, the same value on Linux and macOS.
+    const TEXT_FILE_BUSY: i32 = 26;
+
     fn script(dir: &Path, name: &str, body: &str) -> PathBuf {
         std::fs::create_dir_all(dir).unwrap();
         let path = dir.join(name);
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::write(&path, format!("#!/bin/sh\n[ -n \"${PROBE_ENV}\" ] && exit 0\n{body}\n")).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        wait_until_executable(&path);
         path
+    }
+
+    /// Block until `path` can be executed.
+    ///
+    /// A test thread that forks while another holds a just-written script open for writing passes
+    /// that descriptor to its child until the child execs, and executing the script meanwhile fails
+    /// with `ETXTBSY`. The code under test treats a spawn failure as "no external tool" and falls
+    /// back to the in-process formatter, so the race shows up as a wrong formatting result.
+    fn wait_until_executable(path: &Path) {
+        for _ in 0..200 {
+            match Command::new(path)
+                .env(PROBE_ENV, "1")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+            {
+                Ok(status) => {
+                    assert!(status.success(), "{} probe exited with {status}", path.display());
+                    return;
+                }
+                Err(err) if err.raw_os_error() == Some(TEXT_FILE_BUSY) => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(err) => panic!("cannot run {}: {err}", path.display()),
+            }
+        }
+        panic!("{} stayed busy", path.display());
     }
 
     fn source(path: &Path) -> SourceFile {
