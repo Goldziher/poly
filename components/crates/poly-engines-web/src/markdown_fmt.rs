@@ -113,6 +113,19 @@ mod tests {
     }
 
     #[test]
+    fn one_sided_code_span_padding_is_preserved() {
+        for input in [
+            "Remove the `# ` prefix.\n",
+            "Remove the ` #` prefix.\n",
+            "Use ` a` here.\n",
+            "Use `a ` here.\n",
+        ] {
+            assert_eq!(run(input), input);
+        }
+        assert_eq!(run("Use ` a ` here.\n"), "Use `a` here.\n");
+    }
+
+    #[test]
     fn fenced_javascript_is_formatted() {
         assert_eq!(run("```js\nconst a={b:1}\n```\n"), "```js\nconst a = { b: 1 };\n```\n");
     }
