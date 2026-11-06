@@ -70,13 +70,11 @@ pub struct CommitArgs {
     #[arg(long = "cleanup-pattern", value_name = "REGEX")]
     pub cleanup_pattern: Option<String>,
 
-    // A doc comment would become clap `--help` text, which `poly commit` has never shown for this flag.
-    #[allow(missing_docs)]
+    /// Replacement text for `--cleanup-pattern` (defaults to empty).
     #[arg(long = "cleanup-replacement", value_name = "TEXT", requires = "cleanup_pattern")]
     pub cleanup_replacement: Option<String>,
 
-    // A doc comment would become clap `--help` text, which `poly commit` has never shown for this flag.
-    #[allow(missing_docs)]
+    /// Description shown when `--cleanup-pattern` rewrites a message.
     #[arg(long = "cleanup-description", value_name = "TEXT", requires = "cleanup_pattern")]
     pub cleanup_description: Option<String>,
 
