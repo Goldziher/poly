@@ -632,7 +632,7 @@ impl PruneRecorder {
 /// tree-sitter language pack's path detection for the long tail (mapped to
 /// [`Language::Other`] so the generic tier handles it). Files neither can
 /// identify are skipped.
-fn detect(path: &std::path::Path) -> Option<Language> {
+pub(crate) fn detect(path: &std::path::Path) -> Option<Language> {
     if let Some(language) = Language::from_path(path) {
         return Some(language);
     }
@@ -770,11 +770,11 @@ pub fn discover_reporting(
 
 /// Every file directly in `dir` (or beneath it when `recursive`), under the rules a discovery walk
 /// applies: `.gitignore`, the built-in pruned directories and the governing `[discovery] exclude`
-/// globs. Unlike [`discover`] it keeps files of any type, since the caller wants names, not
-/// languages. Sorted.
-pub(crate) fn list_files(dir: &Path, configs: &ConfigSet, recursive: bool) -> Vec<PathBuf> {
+/// globs plus `extra` (the run's `--exclude`). Unlike [`discover`] it keeps files of any type,
+/// since the caller wants names, not languages. Sorted.
+pub(crate) fn list_files(dir: &Path, configs: &ConfigSet, recursive: bool, extra: &[String]) -> Vec<PathBuf> {
     let frame = configs.match_frame(dir);
-    let exclude = configs.excludes_in_frame(&frame, &[], true);
+    let exclude = configs.excludes_in_frame(&frame, extra, true);
     let matcher = ExcludeMatcher::new(dir, &exclude);
     let policy = PrunePolicy::new(dir, configs.no_prune());
     let mut builder = WalkBuilder::new(dir);

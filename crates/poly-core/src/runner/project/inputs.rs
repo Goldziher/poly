@@ -1,32 +1,73 @@
 //! What a project-check engine declared in [`Engine::project_inputs`](crate::engine::Engine::project_inputs),
-//! resolved against one project: which of its served files are in scope, its side files, and the
-//! listing of files it does not serve.
+//! resolved against one project: the files it serves under its declared directories, its side
+//! files, and the listing of the files it does not serve.
 //!
 //! The engine states the option keys; this module reads the option values, so no engine name
 //! appears here. Everything is handed over as content (a listing entry has none), because a
 //! component reads nothing itself and the cache key digests exactly what it is given.
+//!
+//! An engine that declares directories is handed the whole tree under them, walked here, never the
+//! run's own file set: what the run was asked to lint decides which findings are reported
+//! ([`super::scope`]), not what the engine sees, so a verdict about a log does not change with the
+//! paths named on the command line and the cache key is the same either way.
 
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use rayon::prelude::*;
 
-use super::ProjectPlan;
-use crate::discover::{DiscoveredFile, list_files};
+use super::{ProjectPlan, RunInputs, load_files};
+use crate::discover::{DiscoveredFile, detect, list_files};
 use crate::engine::{ProjectDirs, ProjectFile};
 use crate::filter::is_generated_source;
 use crate::language::Language;
 use crate::resolve::ConfigSet;
+use poly_engine_api::project::LISTING_LANGUAGE;
 
-/// The language id of a listing entry: a file the engine does not serve, named without content.
-pub const LISTING_LANGUAGE: &str = "listing";
+/// How much of a listed file is read to tell whether it is generated: the marker sits in the
+/// header, so the rest is not worth a read per file in a directory the engine only wants names from.
+/// A file whose front matter alone is longer than this reads as hand-written, which only matters for
+/// a generated, unserved file that carries a very long front matter block before its marker.
+const GENERATED_PREFIX_BYTES: u64 = 16 * 1024;
 
 /// The directories an engine's options resolve to.
-struct ResolvedDirs {
+#[derive(Debug)]
+pub(super) struct ResolvedDirs {
     /// Relative to the project root; `.` is stripped.
     dirs: Vec<PathBuf>,
     recursive: bool,
     list_unserved: bool,
+}
+
+/// Where a path stands against the project root.
+enum Placement {
+    Inside,
+    Missing,
+    /// A symlink, or a path that resolves outside the root: never followed.
+    Unsafe,
+}
+
+/// Whether `path` exists and stays inside `root` once symlinks are resolved. A path that is itself
+/// a symlink is refused outright, even when its target is inside, so what is read is what the
+/// configuration names.
+fn check_inside(root: &Path, path: &Path) -> Placement {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return Placement::Missing;
+    };
+    if metadata.file_type().is_symlink() {
+        tracing::warn!(path = %path.display(), "project check: symlinks are not followed");
+        return Placement::Unsafe;
+    }
+    let (Ok(root), Ok(resolved)) = (std::fs::canonicalize(root), std::fs::canonicalize(path)) else {
+        return Placement::Missing;
+    };
+    if resolved.starts_with(&root) {
+        Placement::Inside
+    } else {
+        tracing::warn!(path = %path.display(), "project check: path resolves outside the project root");
+        Placement::Unsafe
+    }
 }
 
 /// A path from configuration that stays inside the project root.
@@ -42,70 +83,76 @@ fn inside_root(path: &str) -> Option<PathBuf> {
     Some(path.components().filter(|part| *part != Component::CurDir).collect())
 }
 
-fn resolve_dirs(declared: &ProjectDirs, options: &toml::Table) -> ResolvedDirs {
-    let named: Vec<&str> = declared
-        .paths_key
-        .as_deref()
-        .and_then(|key| options.get(key))
-        .and_then(toml::Value::as_array)
-        .map(|list| list.iter().filter_map(toml::Value::as_str).collect())
-        .unwrap_or_default();
-    let named = if named.is_empty() {
-        let dir = options
-            .get(&declared.dir_key)
-            .and_then(toml::Value::as_str)
-            .unwrap_or(&declared.dir_default);
-        vec![dir]
-    } else {
-        named
-    };
-    ResolvedDirs {
-        dirs: named
-            .into_iter()
-            .filter_map(|dir| {
-                let resolved = inside_root(dir);
-                if resolved.is_none() {
-                    tracing::warn!(path = dir, "project check: directory must stay inside the project root");
-                }
-                resolved
-            })
-            .collect(),
-        recursive: declared
-            .recursive_key
-            .as_deref()
-            .and_then(|key| options.get(key))
-            .and_then(toml::Value::as_bool)
-            .unwrap_or(false),
-        list_unserved: declared.list_unserved,
+fn typed<'a, T>(
+    options: &'a toml::Table,
+    key: &str,
+    expected: &str,
+    read: impl FnOnce(&'a toml::Value) -> Option<T>,
+) -> Result<Option<T>, String> {
+    match options.get(key) {
+        None => Ok(None),
+        Some(value) => read(value)
+            .map(Some)
+            .ok_or_else(|| format!("option `{key}` must be {expected}, found {}", value.type_str())),
     }
+}
+
+/// Read the engine's directory options. A key of the wrong type is an error naming it, never a
+/// silent fall back to the default directory, which would judge the wrong tree.
+pub(super) fn resolve_dirs(declared: &ProjectDirs, options: &toml::Table) -> Result<ResolvedDirs, String> {
+    let mut named: Vec<&str> = Vec::new();
+    if let Some(key) = declared.paths_key.as_deref() {
+        let list = typed(options, key, "an array of strings", |value| value.as_array())?;
+        for entry in list.into_iter().flatten() {
+            named.push(
+                entry
+                    .as_str()
+                    .ok_or_else(|| format!("option `{key}` must hold only strings, found {}", entry.type_str()))?,
+            );
+        }
+    }
+    if named.is_empty() {
+        let dir = typed(options, &declared.dir_key, "a string", toml::Value::as_str)?.unwrap_or(&declared.dir_default);
+        named.push(dir);
+    }
+    let recursive = match declared.recursive_key.as_deref() {
+        Some(key) => typed(options, key, "a boolean", toml::Value::as_bool)?.unwrap_or(false),
+        None => false,
+    };
+    let mut dirs: Vec<PathBuf> = named
+        .into_iter()
+        .filter_map(|dir| {
+            let resolved = inside_root(dir);
+            if resolved.is_none() {
+                tracing::warn!(path = dir, "project check: directory must stay inside the project root");
+            }
+            resolved
+        })
+        .collect();
+    dirs.sort();
+    dirs.dedup();
+    Ok(ResolvedDirs {
+        dirs,
+        recursive,
+        list_unserved: declared.list_unserved,
+    })
+}
+
+/// The directories `plan`'s engine declared, resolved, or `None` when it declared none.
+pub(super) fn plan_dirs(plan: &ProjectPlan) -> Result<Option<ResolvedDirs>, String> {
+    plan.engine
+        .project_inputs()
+        .dirs
+        .map(|declared| resolve_dirs(&declared, &plan.config.options))
+        .transpose()
 }
 
 impl ResolvedDirs {
-    fn contains(&self, relative: &Path) -> bool {
-        let Some(parent) = relative.parent() else {
-            return false;
-        };
-        self.dirs.iter().any(|dir| {
-            if self.recursive {
-                parent.starts_with(dir)
-            } else {
-                parent == dir
-            }
-        })
+    /// The absolute directories, for asking whether a run reaches them.
+    pub(super) fn absolute(&self, root: &Path) -> impl Iterator<Item = PathBuf> + '_ {
+        let root = root.to_path_buf();
+        self.dirs.iter().map(move |dir| root.join(dir))
     }
-}
-
-/// The served files `plan`'s engine is in scope for: all of them, or only those under its
-/// declared directories, so a Markdown file elsewhere in the repository is never even read.
-pub(super) fn in_scope<'a>(plan: &ProjectPlan, root: &Path, files: Vec<&'a DiscoveredFile>) -> Vec<&'a DiscoveredFile> {
-    let Some(declared) = plan.engine.project_inputs().dirs else {
-        return files;
-    };
-    let dirs = resolve_dirs(&declared, &plan.config.options);
-    files
-        .into_iter()
-        .filter(|file| dirs.contains(file.path.strip_prefix(root).unwrap_or(&file.path)))
-        .collect()
 }
 
 /// Read a side file: the path comes from the engine's option (else its default) and must stay
@@ -120,6 +167,9 @@ fn side_file(root: &Path, option: Option<&str>, default: &str) -> Option<Project
         return None;
     };
     let path = root.join(&relative);
+    if !matches!(check_inside(root, &path), Placement::Inside) {
+        return None;
+    }
     let content = std::fs::read_to_string(&path).ok()?;
     let name = relative.file_name()?.to_string_lossy().into_owned();
     Some(ProjectFile {
@@ -129,37 +179,80 @@ fn side_file(root: &Path, option: Option<&str>, default: &str) -> Option<Project
     })
 }
 
-/// The listing of files the engine does not serve, under its declared directories: names only,
-/// every file type, skipping what discovery skips (`.gitignore`, pruned directories, excludes) and,
-/// unless the run acts on generated sources, generated files.
-fn listing(
-    dirs: &ResolvedDirs,
-    root: &Path,
-    configs: &ConfigSet,
-    config_id: usize,
-    act_on_generated: &[bool],
-    known: &[ProjectFile],
-) -> Vec<ProjectFile> {
-    let mut listed: Vec<PathBuf> = dirs
-        .dirs
+/// Where `plan`'s engine keeps its side files, whether or not they exist.
+fn side_paths(plan: &ProjectPlan, root: &Path) -> Vec<PathBuf> {
+    plan.engine
+        .project_inputs()
+        .files
         .iter()
-        .map(|dir| root.join(dir))
-        .filter(|dir| dir.is_dir())
-        .flat_map(|dir| list_files(&dir, configs, dirs.recursive))
-        .filter(|path| !known.iter().any(|file| file.path == *path))
-        .collect();
-    listed.sort();
-    listed.dedup();
-    if !act_on_generated[config_id] {
-        listed = listed
-            .into_par_iter()
-            .filter(|path| {
-                !std::fs::read(path).is_ok_and(|bytes| is_generated_source(&String::from_utf8_lossy(&bytes)))
-            })
-            .collect();
+        .filter_map(|file| {
+            let option = plan.config.options.get(&file.option_key).and_then(toml::Value::as_str);
+            inside_root(option.unwrap_or(&file.default_path))
+        })
+        .map(|relative| root.join(relative))
+        .collect()
+}
+
+/// Whether the head of `path` announces a generated file. Only a bounded prefix is read.
+fn head_is_generated(path: &Path) -> bool {
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut head = Vec::new();
+    if file.take(GENERATED_PREFIX_BYTES).read_to_end(&mut head).is_err() {
+        return false;
     }
-    listed
-        .into_iter()
+    is_generated_source(&String::from_utf8_lossy(&head))
+}
+
+/// The files under `dirs`, split by whether `plan`'s engine serves them: the served ones to load
+/// with content, the rest to list by name. Both honor what discovery honors (`.gitignore`, pruned
+/// directories, `[discovery] exclude` and the run's `--exclude`) and stay in `plan`'s config scope.
+fn walk(
+    plan: &ProjectPlan,
+    root: &Path,
+    dirs: &ResolvedDirs,
+    configs: &ConfigSet,
+    exclude: &[String],
+) -> (Vec<DiscoveredFile>, Vec<PathBuf>) {
+    let served = plan.engine.languages();
+    let mut owned: Vec<DiscoveredFile> = Vec::new();
+    let mut unserved: Vec<PathBuf> = Vec::new();
+    for dir in dirs.absolute(root) {
+        match check_inside(root, &dir) {
+            Placement::Inside if dir.is_dir() => {}
+            _ => continue,
+        }
+        for path in list_files(&dir, configs, dirs.recursive, exclude) {
+            if configs.config_id_for(&path) != plan.config_id {
+                continue;
+            }
+            match detect(&path) {
+                Some(language) if served.is_empty() || served.contains(&language) => owned.push(DiscoveredFile {
+                    path,
+                    language,
+                    config_id: plan.config_id,
+                }),
+                _ => unserved.push(path),
+            }
+        }
+    }
+    owned.sort_by(|a, b| a.path.cmp(&b.path));
+    owned.dedup_by(|a, b| a.path == b.path);
+    unserved.sort();
+    unserved.dedup();
+    (owned, unserved)
+}
+
+/// The name-only entries for `unserved`: not a side file of the engine, and unless the run acts on
+/// generated sources, not generated.
+fn listing(unserved: Vec<PathBuf>, sides: &[PathBuf], act_on_generated: bool) -> Vec<ProjectFile> {
+    let kept: Vec<PathBuf> = unserved
+        .into_par_iter()
+        .filter(|path| !sides.contains(path))
+        .filter(|path| act_on_generated || !head_is_generated(path))
+        .collect();
+    kept.into_iter()
         .map(|path| ProjectFile {
             path,
             language: Language::Other(LISTING_LANGUAGE.to_owned()),
@@ -168,30 +261,42 @@ fn listing(
         .collect()
 }
 
-/// Add what `plan`'s engine declared beyond its served files — its side files and the listing —
-/// to `loaded`, then re-sort so the cache key does not depend on where they landed.
-pub(super) fn add_declared_inputs(
+/// Everything `plan`'s engine is handed: its served files (the run's own when it declared no
+/// directories, else the tree under them), its side files and the listing, sorted by path so the
+/// cache key does not depend on where anything landed.
+pub(super) fn load(
     plan: &ProjectPlan,
     root: &Path,
-    configs: &ConfigSet,
-    act_on_generated: &[bool],
-    loaded: &mut Vec<ProjectFile>,
-) {
-    let declared = plan.engine.project_inputs();
-    for file in &declared.files {
+    dirs: Option<&ResolvedDirs>,
+    scoped: &[&DiscoveredFile],
+    run: &RunInputs<'_>,
+) -> Vec<ProjectFile> {
+    let (mut loaded, unserved) = match dirs {
+        Some(dirs) => {
+            let (owned, unserved) = walk(plan, root, dirs, run.configs, run.exclude);
+            let refs: Vec<&DiscoveredFile> = owned.iter().collect();
+            (load_files(&refs, run.act_on_generated), unserved)
+        }
+        None => (load_files(scoped, run.act_on_generated), Vec::new()),
+    };
+    let sides = side_paths(plan, root);
+    for file in &plan.engine.project_inputs().files {
         let option = plan.config.options.get(&file.option_key).and_then(toml::Value::as_str);
-        if let Some(side) = side_file(root, option, &file.default_path) {
-            loaded.push(side);
-        }
+        loaded.extend(side_file(root, option, &file.default_path));
     }
-    if let Some(dirs) = declared.dirs.filter(|dirs| dirs.list_unserved) {
-        let dirs = resolve_dirs(&dirs, &plan.config.options);
-        if dirs.list_unserved {
-            let extra = listing(&dirs, root, configs, plan.config_id, act_on_generated, loaded);
-            loaded.extend(extra);
-        }
+    if dirs.is_some_and(|dirs| dirs.list_unserved) {
+        loaded.extend(listing(unserved, &sides, run.act_on_generated[plan.config_id]));
     }
     loaded.sort_by(|a, b| a.path.cmp(&b.path));
+    loaded
+}
+
+/// Whether `loaded` holds anything but listing entries: a served file or a side file. A listing
+/// alone is names with nothing to judge them against.
+pub(super) fn has_substance(loaded: &[ProjectFile]) -> bool {
+    loaded
+        .iter()
+        .any(|file| !matches!(&file.language, Language::Other(name) if name == LISTING_LANGUAGE))
 }
 
 #[cfg(test)]
@@ -212,6 +317,10 @@ mod tests {
         toml::from_str(text).expect("toml")
     }
 
+    fn dirs_of(text: &str) -> Vec<PathBuf> {
+        resolve_dirs(&declared(), &table(text)).expect("resolves").dirs
+    }
+
     #[test]
     fn a_path_leaving_the_root_is_refused() {
         assert_eq!(inside_root("./docs/adr"), Some(PathBuf::from("docs/adr")));
@@ -221,28 +330,125 @@ mod tests {
     }
 
     #[test]
-    fn the_default_directory_applies_and_only_its_direct_children_are_in_scope() {
-        let dirs = resolve_dirs(&declared(), &table(""));
-        assert!(dirs.contains(Path::new("docs/adr/0001-x.md")));
-        assert!(!dirs.contains(Path::new("docs/adr/sub/0001-x.md")));
-        assert!(!dirs.contains(Path::new("docs/other/0001-x.md")));
-        assert!(!dirs.contains(Path::new("0001-x.md")));
+    fn the_default_directory_applies_when_nothing_is_set() {
+        assert_eq!(dirs_of(""), [PathBuf::from("docs/adr")]);
     }
 
     #[test]
-    fn recursive_takes_subdirectories_and_paths_replace_dir() {
-        let dirs = resolve_dirs(
+    fn paths_replace_dir_and_recursive_is_read() {
+        let resolved = resolve_dirs(
             &declared(),
-            &table("recursive = true\npaths = [\"a\", \"b/c\"]\ndir = \"ignored\""),
-        );
-        assert!(dirs.contains(Path::new("a/x/y.md")));
-        assert!(dirs.contains(Path::new("b/c/y.md")));
-        assert!(!dirs.contains(Path::new("ignored/y.md")));
+            &table("recursive = true\npaths = [\"b/c\", \"a\", \"./a\"]\ndir = \"ignored\""),
+        )
+        .expect("resolves");
+        assert_eq!(resolved.dirs, [PathBuf::from("a"), PathBuf::from("b/c")]);
+        assert!(resolved.recursive);
     }
 
     #[test]
-    fn a_directory_leaving_the_root_leaves_nothing_in_scope() {
-        let dirs = resolve_dirs(&declared(), &table("dir = \"../outside\""));
-        assert!(!dirs.contains(Path::new("../outside/0001-x.md")));
+    fn a_directory_leaving_the_root_leaves_nothing_to_read() {
+        assert!(dirs_of("dir = \"../outside\"").is_empty());
+    }
+
+    #[test]
+    fn an_option_of_the_wrong_type_is_an_error_naming_it() {
+        for (text, key) in [
+            ("dir = 3", "dir"),
+            ("paths = \"docs\"", "paths"),
+            ("paths = [\"a\", 1]", "paths"),
+            ("recursive = \"yes\"", "recursive"),
+        ] {
+            let error = resolve_dirs(&declared(), &table(text)).expect_err(text);
+            assert!(error.contains(&format!("`{key}`")), "{text}: {error}");
+        }
+    }
+
+    #[test]
+    fn the_side_file_reads_inside_the_root_and_ignores_the_dot_prefix() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("a.lock"), "locked").unwrap();
+        let side = side_file(root.path(), Some("./a.lock"), "default.lock").expect("read");
+        assert_eq!(side.path, root.path().join("a.lock"));
+        assert_eq!(side.language, Language::Other("a.lock".to_owned()));
+        assert!(side_file(root.path(), Some("../a.lock"), "default.lock").is_none());
+        assert!(side_file(root.path(), None, "missing.lock").is_none());
+        assert_eq!(
+            side_file(root.path(), None, "a.lock")
+                .expect("default")
+                .content
+                .as_ref(),
+            "locked"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_side_file_is_not_read() {
+        let outside = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret"), "x").unwrap();
+        std::os::unix::fs::symlink(outside.path().join("secret"), root.path().join("a.lock")).unwrap();
+        assert!(side_file(root.path(), None, "a.lock").is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_directory_is_refused_and_a_plain_one_is_not() {
+        let outside = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("real")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("link")).unwrap();
+        assert!(matches!(
+            check_inside(root.path(), &root.path().join("real")),
+            Placement::Inside
+        ));
+        assert!(matches!(
+            check_inside(root.path(), &root.path().join("link")),
+            Placement::Unsafe
+        ));
+        assert!(matches!(
+            check_inside(root.path(), &root.path().join("nope")),
+            Placement::Missing
+        ));
+    }
+
+    #[test]
+    fn a_listing_skips_side_files_and_generated_files_and_reads_only_a_prefix() {
+        let root = tempfile::tempdir().unwrap();
+        let write = |name: &str, text: &str| {
+            let path = root.path().join(name);
+            std::fs::write(&path, text).unwrap();
+            path
+        };
+        let plain = write("notes.txt", "scratch\n");
+        let generated = write("gen.txt", "// Code generated by tool. DO NOT EDIT.\n");
+        let lock = write("adrlint.lock", "x");
+        let late = write(
+            "late.txt",
+            &format!("{}\n// Code generated by tool. DO NOT EDIT.\n", "x".repeat(20_000)),
+        );
+        let paths = vec![plain.clone(), generated.clone(), lock.clone(), late.clone()];
+        let names = |listed: Vec<ProjectFile>| -> Vec<PathBuf> { listed.into_iter().map(|f| f.path).collect() };
+
+        let mut kept = names(listing(paths.clone(), std::slice::from_ref(&lock), false));
+        kept.sort();
+        assert_eq!(kept, [late.clone(), plain.clone()], "generated and side files drop out");
+        let everything = names(listing(paths, std::slice::from_ref(&lock), true));
+        assert_eq!(everything.len(), 3, "a run acting on generated files lists them");
+        assert!(listing(vec![plain], &[], false).iter().all(|f| f.content.is_empty()));
+    }
+
+    #[test]
+    fn only_served_files_and_side_files_count_as_substance() {
+        let entry = |language| ProjectFile {
+            path: PathBuf::from("x"),
+            language,
+            content: Arc::from(""),
+        };
+        let listed = entry(Language::Other(LISTING_LANGUAGE.to_owned()));
+        assert!(!has_substance(&[]));
+        assert!(!has_substance(std::slice::from_ref(&listed)));
+        assert!(has_substance(&[listed.clone(), entry(Language::Markdown)]));
+        assert!(has_substance(&[listed, entry(Language::Other("a.lock".to_owned()))]));
     }
 }

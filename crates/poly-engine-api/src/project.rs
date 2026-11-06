@@ -96,6 +96,10 @@ pub struct ProjectRequest<'a> {
     pub environment: &'a ProjectEnvironment,
 }
 
+/// The language id of a listing entry: a file under a declared directory that the engine does not
+/// serve, handed over by name with empty content (see [`ProjectDirs::list_unserved`]).
+pub const LISTING_LANGUAGE: &str = "listing";
+
 /// A file a project check reads besides the files it serves, named by an engine option.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectSideFile {
