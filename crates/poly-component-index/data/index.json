@@ -832,7 +832,7 @@
           "supersedes_generic_formatter": false,
           "batch_shard_floor": 2,
           "project_inputs": {
-            "gate_key": null,
+            "gate_key": "backend",
             "files": [],
             "dirs": null
           }
