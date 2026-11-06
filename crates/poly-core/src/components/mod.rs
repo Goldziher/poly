@@ -30,7 +30,7 @@ pub use seam::ComponentInjection;
 #[cfg(feature = "dev-lock")]
 pub use seam::LOCK_ENV;
 pub(crate) use seam::run_index;
-pub use select::{component_is_linked, default_cache_root, host_options, needed_component_names};
+pub use select::{component_is_linked, default_cache_root, host_options, needed_component_names, sidecar_names};
 
 pub(crate) use needed::{feature_is_linked, needed_components, selected_components};
 

@@ -315,6 +315,41 @@ mod real {
         }
     }
 
+    /// The archive `alef component package --library` makes, installed and spawned through the real
+    /// manager: the sidecar reads the identity it answers the handshake with from the `component.json`
+    /// alef installed next to it. `POLY_SH_SIDECAR_LOCK` names the lock `alef component lock` wrote.
+    #[test]
+    fn an_alef_packaged_archive_passes_the_manifest_handshake() {
+        let Some(path) = std::env::var_os("POLY_SH_SIDECAR_LOCK") else {
+            assert!(
+                std::env::var_os("POLY_REQUIRE_SIDECAR").is_none(),
+                "POLY_REQUIRE_SIDECAR is set but POLY_SH_SIDECAR_LOCK is not: the packaged archive was not tested"
+            );
+            eprintln!("skipped: POLY_SH_SIDECAR_LOCK is not set");
+            return;
+        };
+        let lock = std::fs::read_to_string(&path).unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let mut options = HostOptions::new(lock, cache.path());
+        options.sidecars = vec![COMPONENT.to_owned()];
+        options.sidecar_timeout = Some(Duration::from_secs(20));
+        let host = ComponentHost::new(options).unwrap();
+        let available = host.ensure(COMPONENT, true);
+        assert!(available.is_usable(), "{available:?}");
+        let transport = AlefConnector::with_sidecars([COMPONENT.to_owned()])
+            .connect(host.manager(), COMPONENT)
+            .unwrap();
+        let describe = decode_describe(&transport.describe().unwrap()).unwrap();
+        assert_eq!(describe.engines[0].name, "shfmt");
+        let committed = poly_component_index::index()
+            .component("sh")
+            .expect("the index lists sh");
+        assert_eq!(
+            describe.engines, committed.engines,
+            "the sidecar's describe() must equal its entry in the component index"
+        );
+    }
+
     #[test]
     fn describes_one_format_only_shfmt_engine() {
         let Some(real) = start() else { return };

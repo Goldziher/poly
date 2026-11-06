@@ -3277,6 +3277,7 @@ dependencies = [
  "anyhow",
  "flate2",
  "hex",
+ "poly-component-index",
  "poly-component-protocol",
  "poly-config",
  "poly-engine-api",

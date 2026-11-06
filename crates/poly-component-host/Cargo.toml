@@ -28,6 +28,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 flate2.workspace = true
+poly-component-index.workspace = true
 hex.workspace = true
 sha2.workspace = true
 tar.workspace = true

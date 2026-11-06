@@ -331,7 +331,12 @@ pub(super) fn plan_engines(
 /// When one of them formats the language it displaces the tier-2 reindenter, as a linked tier-1
 /// engine does by being registered instead of it: otherwise a component that is missing would
 /// silently leave the language formatted at lower fidelity instead of skipped.
-fn with_component_engines(engines: Vec<Box<dyn Engine>>, components: &[ComponentEngine]) -> Vec<Box<dyn Engine>> {
+///
+/// A component engine takes the place of a built-in engine of the same name: the `sh` component's
+/// `shfmt` replaces the host-tool `shfmt` (`[components] disable = ["sh"]` brings the host tool
+/// back), and a missing component stands in for it rather than letting the host tool answer.
+fn with_component_engines(mut engines: Vec<Box<dyn Engine>>, components: &[ComponentEngine]) -> Vec<Box<dyn Engine>> {
+    engines.retain(|built_in| components.iter().all(|engine| engine.name() != built_in.name()));
     merge_external_engines(
         engines,
         components

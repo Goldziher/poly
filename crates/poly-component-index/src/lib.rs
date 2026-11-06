@@ -24,6 +24,19 @@ pub enum ComponentKind {
     Engines,
     /// A front end (such as the MCP server) that hosts no engines.
     Frontend,
+    /// Hosts engines from an executable that speaks poly's protocol over alef's framed stdio
+    /// instead of a dylib (a component written in Go, say). Everything but how it is loaded is as
+    /// for [`ComponentKind::Engines`].
+    Sidecar,
+}
+
+impl ComponentKind {
+    /// Whether components of this kind host engines the planner can select: dylib components and
+    /// sidecars, not front ends.
+    #[must_use]
+    pub const fn hosts_engines(self) -> bool {
+        matches!(self, Self::Engines | Self::Sidecar)
+    }
 }
 
 /// One downloadable component.
