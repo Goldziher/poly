@@ -22,7 +22,14 @@ The `adrlint` engine in the `web` component declares `capabilities.project` and 
 
 - **The ADR log** is `dir` (default `docs/adr`, adrlint's default) or `paths`, with `recursive`,
   `start` and `allow_gaps` as in adrlint's `[adr]` table. The host hands over only the Markdown
-  under it, so no other Markdown file in the repository is read.
+  under it, so no other Markdown file in the repository is read. A `dir`, `paths` or `recursive` of
+  the wrong type is an error naming the option, not a fall back to the default directory.
+- **The tree is judged whole, whatever the run names.** For an engine that declares directories the
+  host walks them itself instead of handing over the run's file set, so `poly lint docs/adr/0003-x.md`
+  (what a pre-commit hook does) gives the same verdict as `poly lint .`, with the same cache key. The
+  run's paths then only narrow what is reported: a finding is kept when it is in a named file or under
+  a named directory. A run that names nothing in or above the declared directories does not read the
+  tree, and an engine with nothing to judge (no served file and no side file) is not run.
 - **The engine declares what it needs.** `Engine::project_inputs` (carried in the engine description
   and the component index, `WireEngineDesc.project_inputs`) names the gating option, the side files
   as (option, default path) and the directories with their options. The host reads that, not a
@@ -31,12 +38,17 @@ The `adrlint` engine in the `web` component declares `capabilities.project` and 
 - **`MADR42` through a listing.** For the declared directories (the subdirectories too under
   `recursive`) the host also passes the files the engine does not serve: every file type, names
   only, empty content, language `Other("listing")`, honoring `.gitignore`, the pruned directories,
-  `[discovery] exclude` and the generated-file rule. The listing is part of the cache key, so a stray
-  file appearing or going away re-runs the check.
+  `[discovery] exclude` (and `--exclude`) and the generated-file rule. A file the engine serves is
+  loaded with content, never listed, and the side files are not listed. The listing is part of the
+  cache key, so a stray file appearing or going away re-runs the check. Whether an unserved file is
+  generated is read from its first 16 KiB only, since a listing reads every file; the one divergence
+  from the per-file rule is a generated unserved file whose front matter alone exceeds 16 KiB.
 - **The lock is host input.** `adrlint.lock` (or the `lock` option's path, which must stay inside the
   project root) is read by the host and appended to the request as a file of language
-  `Other("adrlint.lock")`; the component reads nothing. A missing lock means no enforcement, a
-  malformed one is an error.
+  `Other("<file name>")`; the component takes the one such file that is not a listing entry as the
+  manifest and reads nothing itself. A missing lock means no enforcement, a malformed one is an
+  error. A lock or a directory that is a symlink, or that resolves outside the project root, is not
+  read.
 - **The cache key needs nothing new.** The project-check key already folds in the digest of every
   file handed over, so editing, adding or removing an ADR, or changing the lock, re-runs the check.
 - **Gated on `enabled`.** The engine declares `enabled` as its gate, as the per-file rules already

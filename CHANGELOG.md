@@ -13,7 +13,7 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   `MADR44` and the immutability lock rules `ADR50`/`ADR51` as a project check over the ADR log
   (`dir`, default `docs/adr`, or `paths`; `adrlint.lock` is read by the host). The result is cached
   on every ADR, the lock and a listing of the other files in the log (`MADR42`). Engines declare their
-  project-check inputs (`Engine::project_inputs`) instead of the core keeping a table by engine name. Bumps adrlint to 0.5.0; see
+  project-check inputs (`Engine::project_inputs`) instead of the core keeping a table by engine name. Naming a single file reports on it without changing the verdict about the log. Bumps adrlint to 0.5.0; see
   [ADR 0041](adrs/0041-adrlint-tree-wide-rules-as-project-check.md).
 
 ## [0.33.1] - 2026-11-05
