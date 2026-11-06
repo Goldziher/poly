@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Changed
+
+- **Dependencies.** ruff 0.17.4 (`ruff_*` 0.0.21), ty 0.0.21, biome v2.6.5 and rubyfmt v0.14.2-38;
+  alef 0.127.2 for the component build.
+- **`python-types` (ty).** ty renamed the diagnostic `unresolved-import` to `import-not-found`;
+  update any `poly: allow[unresolved-import]` suppression or `[lint.python.python-types]` rule
+  selection that names the old code.
+
 ## [0.33.1] - 2026-11-05
 
 ### Fixed
