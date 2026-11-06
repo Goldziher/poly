@@ -47,9 +47,6 @@
           "type": "object",
           "description": "Backends that handle javascript files.",
           "properties": {
-            "oxc": {
-              "$ref": "#/$defs/lint_oxc"
-            },
             "typos": {
               "$ref": "#/$defs/lint_typos"
             },
@@ -61,6 +58,9 @@
             },
             "quality": {
               "$ref": "#/$defs/lint_quality"
+            },
+            "oxc": {
+              "$ref": "#/$defs/lint_oxc"
             }
           },
           "additionalProperties": true
@@ -69,9 +69,6 @@
           "type": "object",
           "description": "Backends that handle typescript files.",
           "properties": {
-            "oxc": {
-              "$ref": "#/$defs/lint_oxc"
-            },
             "typos": {
               "$ref": "#/$defs/lint_typos"
             },
@@ -83,6 +80,9 @@
             },
             "quality": {
               "$ref": "#/$defs/lint_quality"
+            },
+            "oxc": {
+              "$ref": "#/$defs/lint_oxc"
             }
           },
           "additionalProperties": true
@@ -91,9 +91,6 @@
           "type": "object",
           "description": "Backends that handle jsx files.",
           "properties": {
-            "oxc": {
-              "$ref": "#/$defs/lint_oxc"
-            },
             "typos": {
               "$ref": "#/$defs/lint_typos"
             },
@@ -105,6 +102,9 @@
             },
             "quality": {
               "$ref": "#/$defs/lint_quality"
+            },
+            "oxc": {
+              "$ref": "#/$defs/lint_oxc"
             }
           },
           "additionalProperties": true
@@ -113,9 +113,6 @@
           "type": "object",
           "description": "Backends that handle tsx files.",
           "properties": {
-            "oxc": {
-              "$ref": "#/$defs/lint_oxc"
-            },
             "typos": {
               "$ref": "#/$defs/lint_typos"
             },
@@ -127,6 +124,9 @@
             },
             "quality": {
               "$ref": "#/$defs/lint_quality"
+            },
+            "oxc": {
+              "$ref": "#/$defs/lint_oxc"
             }
           },
           "additionalProperties": true
@@ -135,9 +135,6 @@
           "type": "object",
           "description": "Backends that handle json files.",
           "properties": {
-            "oxc": {
-              "$ref": "#/$defs/lint_oxc"
-            },
             "typos": {
               "$ref": "#/$defs/lint_typos"
             },
@@ -149,6 +146,9 @@
             },
             "quality": {
               "$ref": "#/$defs/lint_quality"
+            },
+            "oxc": {
+              "$ref": "#/$defs/lint_oxc"
             }
           },
           "additionalProperties": true
@@ -157,9 +157,6 @@
           "type": "object",
           "description": "Backends that handle jsonc files.",
           "properties": {
-            "oxc": {
-              "$ref": "#/$defs/lint_oxc"
-            },
             "typos": {
               "$ref": "#/$defs/lint_typos"
             },
@@ -171,6 +168,9 @@
             },
             "quality": {
               "$ref": "#/$defs/lint_quality"
+            },
+            "oxc": {
+              "$ref": "#/$defs/lint_oxc"
             }
           },
           "additionalProperties": true
@@ -179,9 +179,6 @@
           "type": "object",
           "description": "Backends that handle yaml files.",
           "properties": {
-            "yaml": {
-              "$ref": "#/$defs/lint_yaml"
-            },
             "typos": {
               "$ref": "#/$defs/lint_typos"
             },
@@ -193,6 +190,9 @@
             },
             "quality": {
               "$ref": "#/$defs/lint_quality"
+            },
+            "yaml": {
+              "$ref": "#/$defs/lint_yaml"
             }
           },
           "additionalProperties": true
@@ -201,9 +201,6 @@
           "type": "object",
           "description": "Backends that handle toml files.",
           "properties": {
-            "taplo": {
-              "$ref": "#/$defs/lint_taplo"
-            },
             "polyconfig": {
               "$ref": "#/$defs/lint_polyconfig"
             },
@@ -218,6 +215,9 @@
             },
             "quality": {
               "$ref": "#/$defs/lint_quality"
+            },
+            "taplo": {
+              "$ref": "#/$defs/lint_taplo"
             }
           },
           "additionalProperties": true
@@ -226,12 +226,6 @@
           "type": "object",
           "description": "Backends that handle markdown files.",
           "properties": {
-            "rumdl": {
-              "$ref": "#/$defs/lint_rumdl"
-            },
-            "adrlint": {
-              "$ref": "#/$defs/lint_adrlint"
-            },
             "typos": {
               "$ref": "#/$defs/lint_typos"
             },
@@ -243,6 +237,12 @@
             },
             "quality": {
               "$ref": "#/$defs/lint_quality"
+            },
+            "adrlint": {
+              "$ref": "#/$defs/lint_adrlint"
+            },
+            "rumdl": {
+              "$ref": "#/$defs/lint_rumdl"
             }
           },
           "additionalProperties": true
@@ -251,9 +251,6 @@
           "type": "object",
           "description": "Backends that handle mdx files.",
           "properties": {
-            "rumdl": {
-              "$ref": "#/$defs/lint_rumdl"
-            },
             "typos": {
               "$ref": "#/$defs/lint_typos"
             },
@@ -265,6 +262,9 @@
             },
             "quality": {
               "$ref": "#/$defs/lint_quality"
+            },
+            "rumdl": {
+              "$ref": "#/$defs/lint_rumdl"
             }
           },
           "additionalProperties": true
@@ -295,9 +295,6 @@
           "type": "object",
           "description": "Backends that handle css files.",
           "properties": {
-            "biome": {
-              "$ref": "#/$defs/lint_biome"
-            },
             "typos": {
               "$ref": "#/$defs/lint_typos"
             },
@@ -309,6 +306,9 @@
             },
             "quality": {
               "$ref": "#/$defs/lint_quality"
+            },
+            "biome": {
+              "$ref": "#/$defs/lint_biome"
             }
           },
           "additionalProperties": true
@@ -317,9 +317,6 @@
           "type": "object",
           "description": "Backends that handle scss files.",
           "properties": {
-            "biome": {
-              "$ref": "#/$defs/lint_biome"
-            },
             "typos": {
               "$ref": "#/$defs/lint_typos"
             },
@@ -331,6 +328,9 @@
             },
             "quality": {
               "$ref": "#/$defs/lint_quality"
+            },
+            "biome": {
+              "$ref": "#/$defs/lint_biome"
             }
           },
           "additionalProperties": true
@@ -532,9 +532,6 @@
             "graphql": {
               "$ref": "#/$defs/lint_graphql"
             },
-            "biome": {
-              "$ref": "#/$defs/lint_biome"
-            },
             "typos": {
               "$ref": "#/$defs/lint_typos"
             },
@@ -546,6 +543,9 @@
             },
             "quality": {
               "$ref": "#/$defs/lint_quality"
+            },
+            "biome": {
+              "$ref": "#/$defs/lint_biome"
             }
           },
           "additionalProperties": true
@@ -3874,6 +3874,28 @@
       },
       "additionalProperties": true
     },
+    "lint_polyconfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
     "lint_taplo": {
       "type": "object",
       "properties": {
@@ -3896,11 +3918,17 @@
       },
       "additionalProperties": true
     },
-    "lint_polyconfig": {
+    "lint_adrlint": {
       "type": "object",
       "properties": {
         "enabled": {
           "type": "boolean"
+        },
+        "extend_select": {
+          "type": "array"
+        },
+        "ignore": {
+          "type": "array"
         },
         "indent_width": {
           "type": "integer"
@@ -3914,6 +3942,9 @@
               "type": "object"
             }
           ]
+        },
+        "select": {
+          "type": "array"
         }
       },
       "additionalProperties": true
@@ -3943,37 +3974,6 @@
           "type": "integer"
         },
         "line_length": {
-          "type": "integer"
-        },
-        "rules": {
-          "oneOf": [
-            {
-              "type": "array"
-            },
-            {
-              "type": "object"
-            }
-          ]
-        },
-        "select": {
-          "type": "array"
-        }
-      },
-      "additionalProperties": true
-    },
-    "lint_adrlint": {
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "extend_select": {
-          "type": "array"
-        },
-        "ignore": {
-          "type": "array"
-        },
-        "indent_width": {
           "type": "integer"
         },
         "rules": {
@@ -4984,9 +4984,6 @@
     "fmt_shfmt": {
       "type": "object",
       "properties": {
-        "batch": {
-          "type": "boolean"
-        },
         "enabled": {
           "type": "boolean"
         },

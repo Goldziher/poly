@@ -469,7 +469,6 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
         &[
             "native_tool/mod.rs",
             "native_tool/tabs.rs",
-            "native_tool/editorconfig.rs",
             "native_tool/batch.rs",
         ],
     ),
