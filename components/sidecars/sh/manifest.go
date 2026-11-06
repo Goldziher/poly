@@ -56,7 +56,7 @@ func loadManifest() (componentManifest, error) {
 }
 
 func readManifest(path string) (componentManifest, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is the verified manifest next to our own executable
 	if err != nil {
 		return componentManifest{}, fmt.Errorf("read manifest: %w", err)
 	}

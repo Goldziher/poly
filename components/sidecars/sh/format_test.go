@@ -17,11 +17,11 @@ func TestFormatMatchesShfmtGoldens(t *testing.T) {
 	for _, fixture := range fixtures {
 		for _, indent := range []uint{2, 4, 0} {
 			t.Run(fixture+"/i"+strconv.Itoa(int(indent)), func(t *testing.T) {
-				src, err := os.ReadFile(filepath.Join("testdata", fixture))
+				src, err := os.ReadFile(filepath.Join("testdata", fixture)) //nolint:gosec // fixed fixture names
 				if err != nil {
 					t.Fatal(err)
 				}
-				want, err := os.ReadFile(filepath.Join("testdata", "golden", fixture+".i"+strconv.Itoa(int(indent))))
+				want, err := os.ReadFile(filepath.Join("testdata", "golden", fixture+".i"+strconv.Itoa(int(indent)))) //nolint:gosec // fixed fixture names
 				if err != nil {
 					t.Fatal(err)
 				}

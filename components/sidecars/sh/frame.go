@@ -36,7 +36,7 @@ func writeFrame(w io.Writer, body []byte) error {
 		return fmt.Errorf("frame length %d is outside 1..=%d", len(body), maxFrame)
 	}
 	frame := make([]byte, 4+len(body))
-	binary.LittleEndian.PutUint32(frame, uint32(len(body)))
+	binary.LittleEndian.PutUint32(frame, uint32(len(body))) //nolint:gosec // len(body) is checked against maxFrame above
 	copy(frame[4:], body)
 	if _, err := w.Write(frame); err != nil {
 		return fmt.Errorf("write frame: %w", err)

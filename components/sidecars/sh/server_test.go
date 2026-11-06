@@ -68,7 +68,7 @@ func register(t *testing.T, s *server, id uint32, indent int64, tabs bool) {
 func formatRequestFor(id uint32, path string, n int) map[string]any {
 	return map[string]any{"Format": map[string]any{
 		"engine": "shfmt", "config": id,
-		"file": map[string]any{"path": path, "language": "shell", "len": uint64(n)},
+		"file": map[string]any{"path": path, "language": "shell", "len": uint64(n)}, //nolint:gosec // n is a small test length
 	}}
 }
 
@@ -224,7 +224,7 @@ func mustPackNoT(v any) []byte {
 func TestUnpackCall(t *testing.T) {
 	pack := func(header, body string) []byte {
 		out := make([]byte, 4, 4+len(header)+len(body))
-		binary.LittleEndian.PutUint32(out, uint32(len(header)))
+		binary.LittleEndian.PutUint32(out, uint32(len(header))) //nolint:gosec // short test header
 		return append(append(out, header...), body...)
 	}
 	tests := []struct {
