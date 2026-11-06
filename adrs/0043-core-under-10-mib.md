@@ -56,8 +56,8 @@ runs it on Linux, and the release workflow checks the shipped `x86_64-unknown-li
 
 ## Consequences
 
-- Cold runs on the core are slower than a thin-LTO `opt-level = 3` build by the measured amount;
-  a warm cache run is unaffected.
+- Cold runs on the core cost about 10-15% more CPU time than a thin-LTO `opt-level = 3` build
+  (a warm run about 20-30 ms), above the 5% guideline; the ceiling is the harder constraint.
 - Two more engines need a component to be used: `uncomment` and `ini`. A core build without the
   lock reports them like any other missing component.
 - Any dependency that grows the core past the ceiling fails CI, and the answer is a component, not
