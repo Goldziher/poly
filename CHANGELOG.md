@@ -12,6 +12,17 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 - **`poly commit`.** Consumes the upstream `gitfluff` 0.10.0 library from crates.io instead of the in-tree fork
   (`crates/gitfluff` is removed); the `[commit]` config loading and `poly.toml` `extends` resolution live in
   `poly-cli`'s `commit/` module.
+- **`poly commit`: skipping merge and revert messages.** The merge-in-progress skip applies only when the message
+  being linted is the repository's own `COMMIT_EDITMSG`, and now also triggers on `REVERT_HEAD` and
+  `CHERRY_PICK_HEAD`, not just `MERGE_HEAD`. Previously any message linted during a merge was skipped.
+- **`poly commit`: generated subjects pass.** A subject starting with one of the prefixes `Revert "`, `fixup!`,
+  `squash!` or `amend!` is no longer linted.
+- **`poly commit`: AI-attribution cleanup is line-anchored.** The built-in cleanup removes whole attribution lines
+  (the `Generated with` banners, `Co-Authored-By` trailers naming an AI assistant with an optional bare `<email>`
+  line, and standalone Claude bullets) instead of matching across unrelated text.
+- **Breaking: `poly commit --exclude` separator.** `--exclude REGEX[->MESSAGE]` splits the custom message off with
+  `->`, not `:`. A `:` in the argument now belongs to the regex, so `--exclude 'WIP:Not allowed'` is read as one
+  regex; write `--exclude 'WIP->Not allowed'`. `--cleanup FIND->REPLACE` already used `->` and is unchanged.
 
 ## [0.33.1] - 2026-11-05
 
