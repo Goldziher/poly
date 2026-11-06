@@ -219,4 +219,23 @@ inherits = "release"
 lto = "fat"
 codegen-units = 1
 strip = true
+opt-level = "z"
+
+# Size first ("z"), but the per-file hot path keeps speed: pure "z" cost a cold lint about 55% more CPU
+# time, mostly in the tree-sitter C runtime (the cc crate takes -Oz from the package's opt-level).
+# Measurements: docs/size-baseline.md.
+[profile.core.package.poly-cache]
+opt-level = 3
+[profile.core.package.tree-sitter]
+opt-level = 3
+[profile.core.package.blake3]
+opt-level = 3
+[profile.core.package.ignore]
+opt-level = 3
+[profile.core.package.memchr]
+opt-level = 3
+[profile.core.package.aho-corasick]
+opt-level = 3
+[profile.core.package.regex-automata]
+opt-level = 3
 
