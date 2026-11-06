@@ -1,21 +1,16 @@
-//! The `poly commit` flow: load the message, resolve the rules, lint, report and write back.
+//! The `poly commit` flow: map the command line onto gitfluff's library runner and exit code.
 
-use std::fs;
-use std::io::{self, IsTerminal, Read, Write};
-use std::path::PathBuf;
+use std::io;
 
-use anyhow::{Context, Result, anyhow};
-use gitfluff::config::{CleanupRuleConfig, ExcludeRuleConfig};
-use gitfluff::{LintSettings, git_sequencer_in_progress, has_generated_subject, lint_message, resolve_lint_options};
+use anyhow::{Result, anyhow};
+use gitfluff::LintSettings;
+use gitfluff::config::CleanupRuleConfig;
+use gitfluff::run::{ColorChoice as GitfluffColor, MessageInput, RunIo, RunOptions, run_lint_with};
 use poly_config::BaseConfigResolver;
 
 use super::args::CommitArgs;
 use super::config;
 use crate::global::ColorChoice;
-
-/// Delimiter separating a regex from its custom message or replacement text. A multi-character
-/// delimiter, because a single `:` cannot be told apart from the colon in `(?:...)` or `(?i)`.
-const RULE_ARG_DELIMITER: &str = "->";
 
 /// Lint (and optionally rewrite) a commit message according to the resolved preset, the
 /// `[commit]` config and the command-line overrides. Returns the process exit code.
@@ -27,109 +22,52 @@ const RULE_ARG_DELIMITER: &str = "->";
 /// Returns an error if the message source is missing, the config is invalid, a preset is
 /// unknown, a user-supplied regex fails to compile, or writing the cleaned message back fails.
 pub fn run_commit_lint(args: CommitArgs, resolver: &dyn BaseConfigResolver) -> Result<i32> {
-    let message_data = load_message(&args)?;
-    let cwd = std::env::current_dir().context("failed to discover current directory")?;
-
-    if has_generated_subject(&message_data.text) {
-        return Ok(0);
-    }
-
-    // The git-state skip is keyed on the working directory, so it applies only when the message
-    // is that repository's pending commit message file: a `--message` string may be a PR title
-    // validated from a checkout that happens to be mid-merge.
-    if let MessageSource::File(path) = &message_data.source
-        && git_sequencer_in_progress(&cwd, path)
-    {
-        return Ok(0);
-    }
-
-    let mut reporter = Reporter::new(args.color);
-    let loaded_config = config::load(args.config.as_deref(), &cwd, resolver)?;
-    let settings = settings_from_args(&args)?;
-
-    let resolved = resolve_lint_options(
-        loaded_config.as_ref().map(|(path, cfg)| (path.as_path(), cfg)),
-        &settings,
-    )?;
-    let mut options = resolved.options;
-    let mut write_requested = resolved.write;
-    let exit_nonzero_on_rewrite = resolved.exit_nonzero_on_rewrite;
-
-    // A literal message has nowhere to persist a rewrite. An explicit `--write` still prints the
-    // cleaned message to stdout; a `write` that only came from the config is ignored.
-    if write_requested && !args.write && message_data.source == MessageSource::Literal {
-        reporter.warn(
-            "`write` is ignored for `--message`: a literal message has nowhere to persist a \
-             rewrite, so violations are reported as-is",
-        )?;
-        write_requested = false;
-    }
-
-    options.autofix = write_requested;
-
-    let outcome = lint_message(&message_data.text, &options);
-
-    let summary_label = if write_requested {
-        "applied cleanup"
-    } else {
-        "cleanup available"
+    let options = run_options(&args)?;
+    let explicit = args.config.as_deref();
+    let mut stdin = io::stdin().lock();
+    let mut stdout = io::stdout().lock();
+    let mut stderr = io::stderr().lock();
+    let mut io = RunIo {
+        stdin: &mut stdin,
+        stdout: &mut stdout,
+        stderr: &mut stderr,
     };
-    for summary in &outcome.cleanup_summaries {
-        reporter.info(format!("{summary_label}: {summary}"))?;
-    }
+    run_lint_with(&options, &mut io, |cwd| config::load(explicit, cwd, resolver))
+}
 
-    let active_violations = if write_requested {
-        for fixed in outcome
-            .violations_before
-            .iter()
-            .filter(|msg| !outcome.violations_after.contains(msg))
-        {
-            reporter.info(format!("fixed: {fixed}"))?;
-        }
-        for warning in &outcome.warnings_after {
-            reporter.warn(warning)?;
-        }
-        for violation in &outcome.violations_after {
-            reporter.error(violation)?;
-        }
-        &outcome.violations_after
+const NO_SOURCE: &str = "no commit message source provided (pass COMMIT_FILE, --from-file, --stdin, or --message)";
+
+fn run_options(args: &CommitArgs) -> Result<RunOptions> {
+    let input = if let Some(path) = args.from_file.as_ref().or(args.commit_file.as_ref()) {
+        MessageInput::File(path.clone())
+    } else if args.stdin {
+        MessageInput::Stdin
+    } else if let Some(message) = &args.message {
+        MessageInput::Literal(message.clone())
     } else {
-        for warning in &outcome.warnings_before {
-            reporter.warn(warning)?;
-        }
-        for violation in &outcome.violations_before {
-            reporter.error(violation)?;
-        }
-        &outcome.violations_before
+        return Err(anyhow!(NO_SOURCE));
     };
 
-    if let Some(notice) = &resolved.custom_pattern_notice
-        && !active_violations.is_empty()
-    {
-        reporter.info(notice)?;
-    }
-
-    let did_rewrite = write_requested && outcome.cleaned_message != message_data.text;
-
-    if write_requested {
-        apply_write(&message_data, &outcome.cleaned_message)?;
-    }
-
-    if active_violations.is_empty() {
-        if did_rewrite && exit_nonzero_on_rewrite {
-            reporter.info("commit message was rewritten; please re-run the commit to review changes")?;
-            Ok(1)
-        } else {
-            Ok(0)
-        }
-    } else {
-        Ok(1)
-    }
+    let mut options = RunOptions::new(input);
+    options.settings = settings_from_args(args);
+    options.exclude_args.clone_from(&args.exclude);
+    options.cleanup_args.clone_from(&args.cleanup);
+    options.cleanup_pattern = args.cleanup_pattern.as_ref().map(|find| CleanupRuleConfig {
+        find: find.clone(),
+        replace: args.cleanup_replacement.clone().unwrap_or_default(),
+        description: args.cleanup_description.clone(),
+    });
+    options.color = match args.color {
+        ColorChoice::Auto => GitfluffColor::Auto,
+        ColorChoice::Always => GitfluffColor::Always,
+        ColorChoice::Never => GitfluffColor::Never,
+    };
+    Ok(options)
 }
 
 /// Translate the command-line overrides into gitfluff's [`LintSettings`].
-fn settings_from_args(args: &CommitArgs) -> Result<LintSettings> {
-    let mut settings = LintSettings {
+fn settings_from_args(args: &CommitArgs) -> LintSettings {
+    LintSettings {
         preset: args.preset.clone(),
         msg_pattern: args.msg_pattern.clone(),
         msg_pattern_description: args.msg_pattern_description.clone(),
@@ -146,176 +84,6 @@ fn settings_from_args(args: &CommitArgs) -> Result<LintSettings> {
         write: args.write,
         exit_nonzero_on_rewrite: args.exit_nonzero_on_rewrite,
         ..Default::default()
-    };
-
-    for exclude in &args.exclude {
-        let (pattern, message) = parse_exclude_arg(exclude)?;
-        settings.excludes.push(ExcludeRuleConfig { pattern, message });
-    }
-
-    for cleanup in &args.cleanup {
-        let (find, replace) = parse_cleanup_arg(cleanup)?;
-        settings.cleanups.push(CleanupRuleConfig {
-            find,
-            replace,
-            description: None,
-        });
-    }
-
-    if let Some(pattern) = &args.cleanup_pattern {
-        settings.cleanups.push(CleanupRuleConfig {
-            find: pattern.clone(),
-            replace: args.cleanup_replacement.clone().unwrap_or_default(),
-            description: args.cleanup_description.clone(),
-        });
-    }
-
-    Ok(settings)
-}
-
-fn apply_write(message: &MessageData, cleaned: &str) -> Result<()> {
-    match &message.source {
-        MessageSource::File(path) => {
-            if cleaned != message.text {
-                fs::write(path, cleaned)
-                    .with_context(|| format!("failed to write cleaned commit message to {}", path.display()))?;
-            }
-        }
-        MessageSource::Stdin | MessageSource::Literal => {
-            let mut stdout = io::stdout().lock();
-            stdout
-                .write_all(cleaned.as_bytes())
-                .context("failed to write cleaned message to stdout")?;
-        }
-    }
-    Ok(())
-}
-
-const NO_SOURCE: &str = "no commit message source provided (pass COMMIT_FILE, --from-file, --stdin, or --message)";
-
-fn load_message(args: &CommitArgs) -> Result<MessageData> {
-    let read_file = |path: &PathBuf| {
-        fs::read_to_string(path)
-            .with_context(|| format!("failed to read commit message from {}", path.display()))
-            .map(|text| MessageData {
-                text,
-                source: MessageSource::File(path.clone()),
-            })
-    };
-
-    if let Some(path) = &args.from_file {
-        read_file(path)
-    } else if let Some(path) = &args.commit_file {
-        read_file(path)
-    } else if args.stdin {
-        let mut text = String::new();
-        io::stdin()
-            .read_to_string(&mut text)
-            .context("failed to read commit message from stdin")?;
-        Ok(MessageData {
-            text,
-            source: MessageSource::Stdin,
-        })
-    } else if let Some(message) = &args.message {
-        Ok(MessageData {
-            text: message.clone(),
-            source: MessageSource::Literal,
-        })
-    } else {
-        Err(anyhow!(NO_SOURCE))
-    }
-}
-
-fn parse_exclude_arg(raw: &str) -> Result<(String, Option<String>)> {
-    let (pattern, message) = match raw.split_once(RULE_ARG_DELIMITER) {
-        Some((pattern, message)) => {
-            let message = message.trim();
-            (pattern, (!message.is_empty()).then(|| message.to_string()))
-        }
-        None => (raw, None),
-    };
-
-    if pattern.trim().is_empty() {
-        return Err(anyhow!(
-            "exclude argument must be `REGEX` or `REGEX{RULE_ARG_DELIMITER}MESSAGE` with a non-empty regex (got `{raw}`)"
-        ));
-    }
-
-    Ok((pattern.to_string(), message))
-}
-
-fn parse_cleanup_arg(raw: &str) -> Result<(String, String)> {
-    let Some((find, replace)) = raw.split_once(RULE_ARG_DELIMITER) else {
-        return Err(anyhow!(
-            "cleanup argument must use `FIND{RULE_ARG_DELIMITER}REPLACE` format (got `{raw}`)"
-        ));
-    };
-
-    if find.trim().is_empty() {
-        return Err(anyhow!(
-            "cleanup argument must use `FIND{RULE_ARG_DELIMITER}REPLACE` format with a non-empty regex (got `{raw}`)"
-        ));
-    }
-
-    Ok((find.to_string(), replace.to_string()))
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct MessageData {
-    text: String,
-    source: MessageSource,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum MessageSource {
-    File(PathBuf),
-    Stdin,
-    Literal,
-}
-
-/// Writes `gitfluff: <level>: <line>` diagnostics to stderr, coloured the way the standalone
-/// tool does so the output stays identical across both entry points.
-struct Reporter {
-    color: bool,
-    stderr: io::Stderr,
-}
-
-impl Reporter {
-    fn new(choice: ColorChoice) -> Self {
-        let color = match choice {
-            ColorChoice::Auto => io::stderr().is_terminal(),
-            ColorChoice::Always => true,
-            ColorChoice::Never => false,
-        };
-        Self {
-            color,
-            stderr: io::stderr(),
-        }
-    }
-
-    fn error(&mut self, msg: impl AsRef<str>) -> io::Result<()> {
-        self.write_line("error", msg.as_ref(), "\x1b[31m")
-    }
-
-    fn info(&mut self, msg: impl AsRef<str>) -> io::Result<()> {
-        self.write_line("info", msg.as_ref(), "\x1b[36m")
-    }
-
-    fn warn(&mut self, msg: impl AsRef<str>) -> io::Result<()> {
-        self.write_line("warn", msg.as_ref(), "\x1b[33m")
-    }
-
-    fn write_line(&mut self, level: &str, msg: &str, color: &str) -> io::Result<()> {
-        const RESET: &str = "\x1b[0m";
-        let mut stderr = self.stderr.lock();
-        for line in msg.split('\n') {
-            if self.color {
-                writeln!(stderr, "gitfluff: {color}{level}{RESET}: {line}")?;
-            } else {
-                writeln!(stderr, "gitfluff: {level}: {line}")?;
-            }
-        }
-        Ok(())
     }
 }
 
@@ -324,30 +92,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exclude_arg_splits_on_arrow_only() {
-        assert_eq!(
-            parse_exclude_arg("(?i)^wip->no WIP").unwrap(),
-            ("(?i)^wip".to_string(), Some("no WIP".to_string()))
-        );
-        assert_eq!(parse_exclude_arg("(?:a|b)").unwrap(), ("(?:a|b)".to_string(), None));
-        assert!(parse_exclude_arg("->msg").is_err());
-    }
-
-    #[test]
-    fn cleanup_arg_requires_the_arrow() {
-        assert_eq!(parse_cleanup_arg("a->").unwrap(), ("a".to_string(), String::new()));
-        assert!(parse_cleanup_arg("a").is_err());
-    }
-
-    #[test]
     fn separators_override_the_config_only_with_their_pattern() {
         let mut args = blank_args();
-        let settings = settings_from_args(&args).unwrap();
+        let settings = settings_from_args(&args);
         assert_eq!(settings.title_prefix_separator, None);
         assert_eq!(settings.title_suffix_separator, None);
 
         args.title_prefix = Some("^\\w+".into());
-        let settings = settings_from_args(&args).unwrap();
+        let settings = settings_from_args(&args);
         assert_eq!(settings.title_prefix_separator.as_deref(), Some(" * "));
         assert_eq!(settings.title_suffix_separator, None);
     }

@@ -1524,9 +1524,9 @@ dependencies = [
 
 [[package]]
 name = "gitfluff"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac690ed1f42c048afcb08caadfd07b73aa9215c2887589f3c7265b46524874ae"
+checksum = "11deea33c00d69e0c5c30eff66f340ad327ce7dbd1f1565a16d9b718686588e6"
 dependencies = [
  "anyhow",
  "regex",

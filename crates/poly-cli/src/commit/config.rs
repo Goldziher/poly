@@ -1,9 +1,10 @@
 //! Loading the commit-lint configuration: gitfluff's own files first, then the `[commit]`
 //! table of the nearest `poly.toml`.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Context;
+use gitfluff::ConfigSource;
 use gitfluff::config::{CleanupRuleConfig, ExcludeRuleConfig, FileConfig, MessageRuleConfig, RulesConfig};
 use poly_config::BaseConfigResolver;
 
@@ -19,9 +20,9 @@ pub(super) fn load(
     explicit_path: Option<&Path>,
     start_dir: &Path,
     resolver: &dyn BaseConfigResolver,
-) -> anyhow::Result<Option<(PathBuf, FileConfig)>> {
-    if let Some(loaded) = gitfluff::load_config(explicit_path, start_dir)? {
-        return Ok(Some(loaded));
+) -> anyhow::Result<Option<(ConfigSource, FileConfig)>> {
+    if let Some((path, config)) = gitfluff::load_config(explicit_path, start_dir)? {
+        return Ok(Some((ConfigSource::new(path), config)));
     }
     load_poly_commit_config(start_dir, resolver)
 }
@@ -29,12 +30,16 @@ pub(super) fn load(
 fn load_poly_commit_config(
     start_dir: &Path,
     resolver: &dyn BaseConfigResolver,
-) -> anyhow::Result<Option<(PathBuf, FileConfig)>> {
+) -> anyhow::Result<Option<(ConfigSource, FileConfig)>> {
     match poly_config::find_config(start_dir) {
         Some(poly_path) => {
             let poly = poly_config::PolyConfig::load_file_with(&poly_path, resolver)
                 .with_context(|| format!("invalid config at {}", poly_path.display()))?;
-            Ok(Some((poly_path, file_config(poly.commit))))
+            let config = file_config(poly.commit);
+            Ok(Some((
+                ConfigSource::new(poly_path).with_rules_table("commit.rules"),
+                config,
+            )))
         }
         None => Ok(None),
     }
@@ -121,7 +126,8 @@ pattern = "^WIP"
         let (path, config) = load(None, dir.path(), &LocalPathResolver)
             .expect("load")
             .expect("config found via poly.toml");
-        assert!(path.ends_with("poly.toml"));
+        assert!(path.path.ends_with("poly.toml"));
+        assert_eq!(path.rules_table, "commit.rules");
         assert_eq!(config.preset.as_deref(), Some("conventional"));
         assert_eq!(config.rules.require_body, Some(true));
         assert_eq!(config.rules.no_emojis, Some(true));
@@ -139,7 +145,7 @@ pattern = "^WIP"
             .expect("load")
             .expect("config found");
         assert!(
-            path.ends_with(".gitfluff.toml"),
+            path.path.ends_with(".gitfluff.toml"),
             "gitfluff-native config should take precedence"
         );
         assert_eq!(config.preset.as_deref(), Some("angular"));

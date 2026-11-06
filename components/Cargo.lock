@@ -2417,11 +2417,11 @@ checksum = "1033caf0b349c518623b5396bfb2cf0bddf44f0306d543a250e5743297aafd10"
 
 [[package]]
 name = "gitfluff"
-version = "0.8.0"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11deea33c00d69e0c5c30eff66f340ad327ce7dbd1f1565a16d9b718686588e6"
 dependencies = [
  "anyhow",
- "clap",
- "poly-config",
  "regex",
  "serde",
  "toml 1.2.0+spec-1.1.0",
