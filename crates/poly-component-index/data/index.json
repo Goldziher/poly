@@ -401,7 +401,7 @@
             "fix": true,
             "project": false
           },
-          "version": "0.3.2+defaults5-mdx-rules-tmplskip-codeaware-md020guard-structfix+ruleparams1+extendsel2+oxc_formatter_markdown-f799f17+md-embed-1+oxfmtrc-scope-1",
+          "version": "0.3.2+defaults5-mdx-rules-tmplskip-codeaware-md020guard-md038fmt-structfix+ruleparams1+extendsel2+oxc_formatter_markdown-f799f17+md-embed-1+oxfmtrc-scope-1",
           "option_keys": [
             {
               "table": "Lint",
