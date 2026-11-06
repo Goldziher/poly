@@ -45,9 +45,6 @@ fn load_poly_commit_config(
     }
 }
 
-/// `poly.toml` has no key for the AI-trailer toggle or the message-rule length/case switches,
-/// so those stay at gitfluff's defaults (AI cleanup on, spec length/case checks off under a
-/// custom `message` pattern).
 fn file_config(commit: poly_config::CommitConfig) -> FileConfig {
     FileConfig {
         preset: commit.preset,
@@ -61,8 +58,8 @@ fn rules_config(rules: poly_config::CommitRules) -> RulesConfig {
         message: rules.message.map(|rule| MessageRuleConfig {
             pattern: rule.pattern,
             description: rule.description,
-            enforce_length: None,
-            enforce_case: None,
+            enforce_length: rule.enforce_length,
+            enforce_case: rule.enforce_case,
         }),
         excludes: rules
             .excludes
@@ -90,7 +87,7 @@ fn rules_config(rules: poly_config::CommitRules) -> RulesConfig {
         title_prefix_separator: rules.title_prefix_separator,
         title_suffix: rules.title_suffix,
         title_suffix_separator: rules.title_suffix_separator,
-        ai_cleanup: None,
+        ai_cleanup: rules.ai_cleanup,
     }
 }
 
@@ -158,19 +155,36 @@ pattern = "^WIP"
     }
 
     #[test]
-    fn poly_toml_message_rule_keeps_spec_length_and_case_checks_off() {
+    fn poly_toml_maps_ai_cleanup_and_message_rule_switches() {
         let dir = tempdir().unwrap();
         fs::write(
             dir.path().join("poly.toml"),
-            "[commit.rules.message]\npattern = \"^X\"\n[commit.rules]\nsingle_line = true\n",
+            "[commit.rules]\nai_cleanup = false\n[commit.rules.message]\npattern = \"^X\"\nenforce_length = true\nenforce_case = false\n",
         )
         .unwrap();
 
         let (_, config) = load(None, dir.path(), &LocalPathResolver).unwrap().unwrap();
         let message = config.rules.message.expect("message rule");
         assert_eq!(message.pattern, "^X");
+        assert_eq!(
+            (message.enforce_length, message.enforce_case),
+            (Some(true), Some(false))
+        );
+        assert_eq!(config.rules.ai_cleanup, Some(false));
+    }
+
+    #[test]
+    fn poly_toml_leaves_switches_unset_by_default() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("poly.toml"),
+            "[commit.rules.message]\npattern = \"^X\"\n",
+        )
+        .unwrap();
+
+        let (_, config) = load(None, dir.path(), &LocalPathResolver).unwrap().unwrap();
+        let message = config.rules.message.expect("message rule");
         assert_eq!((message.enforce_length, message.enforce_case), (None, None));
         assert_eq!(config.rules.ai_cleanup, None);
-        assert_eq!(config.rules.single_line, Some(true));
     }
 }
