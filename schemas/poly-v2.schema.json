@@ -1558,6 +1558,11 @@
           "description": "Separator between the subject and the title suffix.",
           "type": ["string", "null"],
           "default": null
+        },
+        "ai_cleanup": {
+          "description": "Set to `false` to disable the built-in removal of AI attribution trailers and banners.\nDefaults to `true`.",
+          "type": ["boolean", "null"],
+          "default": null
         }
       }
     },
@@ -1572,6 +1577,14 @@
         "description": {
           "description": "Human-readable description shown when the rule fails.",
           "type": ["string", "null"]
+        },
+        "enforce_length": {
+          "description": "Keep the Conventional Commits length limits even though `pattern` replaces the spec's\nstructural check.",
+          "type": ["boolean", "null"]
+        },
+        "enforce_case": {
+          "description": "Keep the Conventional Commits subject case and trailing-full-stop checks even though\n`pattern` replaces the spec's structural check.",
+          "type": ["boolean", "null"]
         }
       },
       "required": ["pattern"]
