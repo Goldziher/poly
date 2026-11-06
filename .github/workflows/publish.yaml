@@ -454,9 +454,61 @@ jobs:
           path: target/components-release/${{ matrix.triple }}/plan/plan.json
           if-no-files-found: error
 
+  build-sidecars:
+    # The Go sidecars (components/sidecars) are pure Go: one Linux host cross-compiles every component
+    # triple, then alef packages each executable with --library. alef cannot plan or build them, so they
+    # are rebuilt every release and `mise run components:release lock` adds their entries to the lock.
+    name: Build sidecars
+    needs: [meta, create_release]
+    if: >-
+      !inputs.plugins-only && (needs.meta.outputs.release_assets_exist != 'true')
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.meta.outputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - name: Setup mise (go, alef)
+        uses: xberg-io/actions/setup-mise@v1
+        with:
+          tools: go github:xberg-io/alef
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: "1.99.1"
+
+      - name: Cross-compile, sign and package the sidecars
+        shell: bash
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+          POLY_COMPONENT_SIGNING_KEY: ${{ secrets.POLY_COMPONENT_SIGNING_KEY }}
+        run: mise run components:release sidecars
+
+      - name: Upload sidecar assets to the release
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(target/components-release/sidecars/dist/*)
+          [ "${#assets[@]}" -gt 0 ] || { echo "::error::no sidecar assets were built"; exit 1; }
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+
+      # The name matches releases-components-*, so the lock and checksum jobs pick the assets up with the rest.
+      - name: Save artifact for the lock and checksums
+        uses: actions/upload-artifact@v7
+        with:
+          name: releases-components-sidecars
+          path: target/components-release/sidecars/dist/*
+          if-no-files-found: error
+
   component-lock:
     name: Merge the component lock
-    needs: [meta, build-components]
+    needs: [meta, build-components, build-sidecars]
     if: >-
       !inputs.plugins-only && (needs.meta.outputs.release_assets_exist != 'true')
     runs-on: ubuntu-latest
@@ -504,7 +556,9 @@ jobs:
           to_build="$(jq '[.rows[] | select(.action == "build")] | length' "$plan")"
           # Every configured component on every configured target, so a triple or component that
           # silently dropped out of the matrix or the plan fails here rather than at a user's first run.
-          expected="$(python3 -c 'import tomllib; d = tomllib.load(open("alef.toml", "rb")); print(sum(len(c.get("targets", [])) for crate in d["crates"] for c in crate.get("components", [])))')"
+          # The plan covers the Rust components; the Go sidecars are in no plan and are always built here.
+          expected="$(python3 -c 'import tomllib; d = tomllib.load(open("alef.toml", "rb")); print(sum(len(c.get("targets", [])) for crate in d["crates"] for c in crate.get("components", []) if c.get("producer_language") != "go"))')"
+          sidecars="$(python3 -c 'import tomllib; d = tomllib.load(open("alef.toml", "rb")); print(sum(len(c.get("targets", [])) for crate in d["crates"] for c in crate.get("components", []) if c.get("producer_language") == "go"))')"
           [ "$total" -gt 0 ] && [ "$total" -eq "$expected" ] || {
             echo "::error::the merged plan has $total rows; alef.toml configures $expected component builds"
             exit 1
@@ -514,17 +568,17 @@ jobs:
             exit 1
           }
           prefix="https://github.com/${GITHUB_REPOSITORY}/releases/download/"
-          jq -e --argjson total "$total" --argjson built "$to_build" --arg prefix "$prefix" --arg tag_prefix "${prefix}${RELEASE_TAG}/" '
+          jq -e --argjson total "$((total + sidecars))" --argjson built "$((to_build + sidecars))" --arg prefix "$prefix" --arg tag_prefix "${prefix}${RELEASE_TAG}/" '
             (.artifacts | length) == $total
             and ([.artifacts[] | select(.url | startswith($tag_prefix))] | length) == $built
             and ((.public_keys | keys) == ["poly-release-1"])
             and all(.artifacts[]; .key_id == "poly-release-1" and (.url | startswith($prefix)))
           ' poly-components.lock.json >/dev/null || {
-            echo "::error::component lock is incomplete, unsigned, or does not match the plan ($total entries, $to_build built for $RELEASE_TAG)"
+            echo "::error::component lock is incomplete, unsigned, or does not match the plan ($((total + sidecars)) entries, $((to_build + sidecars)) built for $RELEASE_TAG)"
             jq '{keys: (.public_keys | keys), artifacts: [.artifacts[] | {c: .identity.component, t: .identity.target, key: .key_id, url}]}' poly-components.lock.json
             exit 1
           }
-          echo "lock carries $total signed artifacts ($to_build built for $RELEASE_TAG, $((total - to_build)) reused)"
+          echo "lock carries $((total + sidecars)) signed artifacts ($((to_build + sidecars)) built for $RELEASE_TAG, $((total - to_build)) reused)"
 
       - name: Upload the lock to the release
         env:
@@ -818,7 +872,7 @@ jobs:
   checksums:
     if: ${{ !inputs.plugins-only }}
     name: Generate and upload checksums
-    needs: [meta, build-binaries, build-components, component-lock]
+    needs: [meta, build-binaries, build-components, build-sidecars, component-lock]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

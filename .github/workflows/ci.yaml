@@ -207,6 +207,63 @@ jobs:
       - name: poly rules without an embedded lock (core build)
         run: cargo test --locked -p poly-cli --no-default-features --features core --test rules_core
 
+  go:
+    # The Go sidecars under components/sidecars: vet, golangci-lint (govet, staticcheck, errcheck, gosec),
+    # race tests, govulncheck, the licence allow-list and `go mod tidy -diff`, all through the mise task.
+    name: go sidecars
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: xberg-io/actions/setup-mise@v1
+        with:
+          tools: >-
+            go golangci-lint
+            go:golang.org/x/vuln/cmd/govulncheck
+            go:github.com/google/go-licenses/v2
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('components/sidecars/*/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+      - name: Vet, lint, test, vulnerabilities, licences, tidy
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run sidecar:check
+
+  sidecar-conformance:
+    # The real sh sidecar, built and packaged as a release does, driven by the host through alef's stdio
+    # transport and compared with the host shfmt byte for byte. POLY_REQUIRE_SIDECAR (set by the task)
+    # fails the job if any of it was skipped.
+    name: sidecar conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: xberg-io/actions/setup-mise@v1
+        with:
+          tools: go shfmt github:xberg-io/alef
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('components/sidecars/*/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+      - name: Build, package and run the conformance tests
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run sidecar:conformance
+
   alef-verify:
     # The checked-in alef outputs (producer crate, host module, versions) must match alef.toml.
     name: alef verify

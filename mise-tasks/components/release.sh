@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Release build of the downloadable components on alef's content-addressed plan (previous-lock, plan, build, package, lock)"
-#USAGE arg "<step>" help="Release step" { choices "previous-lock" "fetch-alef" "fetch-mise" "fetch-jq" "plan" "build" "package" "lock"; }
-#USAGE arg "[args]..." help="plan, build and package take <triple>; lock takes <plans> <records> <out>"
+#USAGE arg "<step>" help="Release step" { choices "previous-lock" "fetch-alef" "fetch-mise" "fetch-jq" "plan" "build" "package" "sidecars" "lock"; }
+#USAGE arg "[args]..." help="plan, build and package take <triple>; lock takes <plans> <records> <out>; sidecars takes none"
 # Release build of the downloadable components, on alef's content-addressed plan:
 #
 #   mise run components:release previous-lock                  fetch the lock the newest earlier release shipped
@@ -14,8 +14,11 @@
 #                                                              build or reuse against that lock
 #   mise run components:release build   <triple>               compile the rows marked build (thin LTO, stripped)
 #   mise run components:release package <triple>               sign and package them, verify
+#   mise run components:release sidecars                        cross-compile the Go sidecars for every triple from this
+#                                                              one host, sign and package them (no plan: alef cannot plan them)
 #   mise run components:release lock    <plans> <records> <out>  merge every triple's plan, then write the lock,
-#                                                              carrying the reuse rows over verbatim
+#                                                              carrying the reuse rows over verbatim, then add the
+#                                                              sidecars' entries
 #
 # publish.yaml runs plan, build and package inside a manylinux_2_28 container on linux gnu, through the
 # musl mise that fetch-mise verified (MISE_TASK_RUN_AUTO_INSTALL=false: the container installs no tools). Everything
@@ -32,6 +35,11 @@
 #                                   must be the binary `fetch-alef` verified, since the image installs no tools
 #                                   and its glibc is too old for the gnu build
 #   ALEF                            alef binary to use instead of the version pinned in mise.toml
+#
+# Sidecars are components alef cannot compile (Go executables): alef.toml declares them with
+# producer_language = "go", `alef component plan` rejects those, so the plan, build and package steps are
+# limited to the Rust components, the `sidecars` step packages the executables with `--library`, and `lock`
+# writes their entries separately and merges them. They are rebuilt every release.
 #
 # The plan, --plan and --reuse commands need the alef release that ships them (alef #869); the pin in
 # mise.toml selects it, and `fetch-alef` needs the musl binaries of #874.
@@ -58,7 +66,7 @@ COMPONENTS_OUT="${ROOT_DIR}/target/components-release"
 PREVIOUS_LOCK="${COMPONENTS_OUT}/previous-lock.json"
 
 usage() {
-  echo "usage: mise run components:release previous-lock | fetch-alef | fetch-mise | fetch-jq | plan|build|package <triple> | lock <plans> <records> <out>" >&2
+  echo "usage: mise run components:release previous-lock | fetch-alef | fetch-mise | fetch-jq | sidecars | plan|build|package <triple> | lock <plans> <records> <out>" >&2
   exit 1
 }
 
@@ -188,6 +196,37 @@ alef() {
   fi
 }
 
+# Components alef.toml declares with a Go producer, one name per line.
+sidecar_names() {
+  python3 - <<'PY'
+import tomllib
+
+with open("alef.toml", "rb") as handle:
+    config = tomllib.load(handle)
+for crate in config["crates"]:
+    for component in crate.get("components", []):
+        if component.get("producer_language") == "go":
+            print(component["name"])
+PY
+}
+
+# The Rust components, comma-separated: what the plan, build and package steps cover.
+rust_components() {
+  python3 - <<'PY'
+import tomllib
+
+with open("alef.toml", "rb") as handle:
+    config = tomllib.load(handle)
+names = [
+    component["name"]
+    for crate in config["crates"]
+    for component in crate.get("components", [])
+    if component.get("producer_language") != "go"
+]
+print(",".join(names))
+PY
+}
+
 check_rustc() {
   : "${RUST_TOOLCHAIN:?${STEP} needs RUST_TOOLCHAIN (an exact rust version)}"
   local actual
@@ -274,15 +313,87 @@ if [[ "${STEP}" == "lock" ]]; then
     exit 1
   }
   jq -s '{schema_version: .[0].schema_version, debug: .[0].debug, rows: (map(.rows) | add)}' "${plan_files[@]}" >"${MERGED}"
+  # The sidecars' archives and records are locked on their own: they are in no plan.
+  RUST_RECORDS="${COMPONENTS_OUT}/records-rust"
+  SIDECAR_RECORDS="${COMPONENTS_OUT}/records-sidecar"
+  rm -rf "${RUST_RECORDS}" "${SIDECAR_RECORDS}"
+  mkdir -p "${RUST_RECORDS}" "${SIDECAR_RECORDS}"
+  shopt -s nullglob
+  for file in "${RECORDS}"/*; do
+    destination="${RUST_RECORDS}"
+    while IFS= read -r name; do
+      [[ -n "${name}" && "$(basename "${file}")" == "poly-component-${name}-"* ]] && destination="${SIDECAR_RECORDS}"
+    done < <(sidecar_names)
+    cp "${file}" "${destination}/"
+  done
+  RUST_LOCK="${COMPONENTS_OUT}/rust.lock.json"
   if has_previous_lock; then
-    alef component lock --input "${RECORDS}" --output "${OUTPUT}" --reuse "${PREVIOUS_LOCK}" --plan "${MERGED}"
+    alef component lock --input "${RUST_RECORDS}" --output "${RUST_LOCK}" --reuse "${PREVIOUS_LOCK}" --plan "${MERGED}"
   else
     [[ "$(build_rows "${MERGED}")" == "$(jq '.rows | length' "${MERGED}")" ]] || {
       echo "components-release: the plan reuses components but there is no previous lock" >&2
       exit 1
     }
-    alef component lock --input "${RECORDS}" --output "${OUTPUT}"
+    alef component lock --input "${RUST_RECORDS}" --output "${RUST_LOCK}"
   fi
+  if [[ -n "$(sidecar_names)" ]]; then
+    sidecar_records="$(find "${SIDECAR_RECORDS}" -maxdepth 1 -name '*.record.json' | grep -c . || true)"
+    expected_records="$(($(sidecar_names | grep -c .) * $(python3 -c 'import tomllib; d = tomllib.load(open("alef.toml", "rb")); print(max(len(c.get("targets", [])) for k in d["crates"] for c in k.get("components", []) if c.get("producer_language") == "go"))')))"
+    [[ "${sidecar_records}" == "${expected_records}" ]] || {
+      echo "components-release: expected ${expected_records} sidecar record(s) under ${RECORDS}, found ${sidecar_records}" >&2
+      exit 1
+    }
+    alef component lock --input "${SIDECAR_RECORDS}" --output "${COMPONENTS_OUT}/sidecar.lock.json"
+    jq -s '.[0].artifacts += .[1].artifacts | .[0]' "${RUST_LOCK}" "${COMPONENTS_OUT}/sidecar.lock.json" >"${OUTPUT}"
+  else
+    cp "${RUST_LOCK}" "${OUTPUT}"
+  fi
+  exit 0
+fi
+
+if [[ "${STEP}" == "sidecars" ]]; then
+  : "${POLY_COMPONENT_SIGNING_KEY:?sidecars needs POLY_COMPONENT_SIGNING_KEY (Ed25519 private key)}"
+  OUT="${COMPONENTS_OUT}/sidecars"
+  DIST="${OUT}/dist"
+  rm -rf "${OUT}"
+  mkdir -p "${DIST}"
+  built=0
+  while IFS= read -r name; do
+    [[ -n "${name}" ]] || continue
+    triples="$(python3 - "${name}" <<'PY'
+import sys
+import tomllib
+
+with open("alef.toml", "rb") as handle:
+    config = tomllib.load(handle)
+for crate in config["crates"]:
+    for component in crate.get("components", []):
+        if component["name"] == sys.argv[1]:
+            print(" ".join(component["targets"]))
+PY
+    )"
+    # shellcheck disable=SC2086 # one argument per triple
+    mise run sidecar:build "${name}" ${triples} --out "${OUT}/bin" >/dev/null
+    for triple in ${triples}; do
+      exe="${OUT}/bin/${name}/${triple}/${name}"
+      [[ "${triple}" != *windows* ]] || exe="${exe}.exe"
+      [[ -f "${exe}" ]] || {
+        echo "components-release: no ${name} executable for ${triple} at ${exe}" >&2
+        exit 1
+      }
+      alef component package --component "${name}" --target "${triple}" --library "${exe}" --output "${DIST}" \
+        --signing-key-env POLY_COMPONENT_SIGNING_KEY --key-id "${KEY_ID}"
+      built=$((built + 1))
+    done
+  done < <(sidecar_names)
+  alef component verify --input "${DIST}"
+  records="$(find "${DIST}" -maxdepth 1 -name '*.record.json' | grep -c . || true)"
+  archives="$(find "${DIST}" -maxdepth 1 -name 'poly-component-*.tar.gz' | grep -c . || true)"
+  [[ "${built}" -gt 0 && "${records}" == "${built}" && "${archives}" == "${built}" ]] || {
+    echo "components-release: packaged ${built} sidecar(s), found ${archives} archive(s) and ${records} record(s)" >&2
+    exit 1
+  }
+  ls -l "${DIST}"
   exit 0
 fi
 
@@ -301,7 +412,8 @@ plan)
   mkdir -p "${DIST}" "$(dirname "${PLAN}")"
   previous=()
   ! has_previous_lock || previous=(--previous-lock "${PREVIOUS_LOCK}")
-  alef component plan --target "${TARGET}" ${previous[@]+"${previous[@]}"} "${EXTRA[@]}" --output "${PLAN}"
+  alef component plan --component "$(rust_components)" --target "${TARGET}" ${previous[@]+"${previous[@]}"} "${EXTRA[@]}" \
+    --output "${PLAN}"
   rows="$(jq '.rows | length' "${PLAN}")"
   [[ "${rows}" -gt 0 ]] || {
     echo "components-release: alef.toml lists no component for ${TARGET}" >&2
