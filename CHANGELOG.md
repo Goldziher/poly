@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Fixed
+
+- **Project checks served by a component.** The project phase planned only compiled-in engines, so a
+  project check hosted by a downloadable component (ty from the `python` component in a core build) never ran.
+  It now runs the components' project-check engines too.
+
 ## [0.33.1] - 2026-11-05
 
 ### Fixed
