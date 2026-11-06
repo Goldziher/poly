@@ -194,3 +194,9 @@ id = "ai-rulez"
 git = "https://github.com/Goldziher/ai-rulez.git"
 revision = "v5"
 hooks = ["ai-rulez-validate", "ai-rulez-plugin-verify"]
+
+# The Go sidecars run golangci-lint (govet, staticcheck, errcheck, gosec: components/sidecars/*/.golangci.yml)
+# beside poly's own gofmt, so the hooks gate them like CI's `mise run sidecar:check`. The tool is installed by mise
+# (see mise.toml); a machine without it gets a warning, not an error.
+[tools.golangci-lint]
+enabled = true
