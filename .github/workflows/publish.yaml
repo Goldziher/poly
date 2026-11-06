@@ -684,6 +684,16 @@ jobs:
           echo "dev-lock absent from $bin"
         shell: bash
 
+      - name: Assert the core is under 10 MiB
+        # The ceiling is for the shipped binary, lock included, on the largest native triple.
+        if: ${{ matrix.triple == 'x86_64-unknown-linux-gnu' }}
+        run: |
+          set -euo pipefail
+          size="$(wc -c < "target/${{ matrix.triple }}/$PROFILE_DIR/poly" | tr -d ' ')"
+          echo "core binary: $size bytes"
+          [ "$size" -gt 1000000 ] && [ "$size" -le 10485760 ] || { echo "::error::the core binary is $size bytes, outside 1 MB..10 MiB"; exit 1; }
+        shell: bash
+
       - name: Assert the component lock is embedded (absent for musl)
         # The lock's URLs are string data in the binary only when build.rs embedded the lock, so
         # reading the artifact shows what the build actually carries. The binary path is the one

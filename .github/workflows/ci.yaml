@@ -239,6 +239,23 @@ jobs:
           MISE_TASK_RUN_AUTO_INSTALL: "false"
         run: mise run check:deps
 
+  # The released core ships on every download, so its size is gated on the largest native triple
+  # (ADR 0039, ADR 0043): a fat-LTO `--profile core` build must stay under 10 MiB.
+  core-size:
+    name: core under 10 MiB
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: xberg-io/actions/setup-mise@v1
+      - run: mise run check:core-size
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+
   # The release builds linux gnu components in this container through `mise run components:release`, with a
   # musl mise and alef the host fetched; the plan step runs the same path without compiling, so a broken
   # container invocation fails here rather than in a release. Keep the image in step with publish.yaml.
