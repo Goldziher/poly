@@ -28,6 +28,7 @@ use crate::config::EngineConfig;
 use crate::engine::SourceFile;
 
 pub mod astgrep_rules;
+pub mod editorconfig;
 pub mod oxfmt_native;
 pub mod oxfmt_scope;
 pub mod oxlintrc;
@@ -52,13 +53,17 @@ pub enum HostHook {
     /// Ruff's lint depends on the package root, the module tree under the source roots and the
     /// target Python version the project declares.
     RuffContext,
+    /// Formatting indents as the file's `.editorconfig` says, unless the options set the
+    /// indentation themselves: shfmt, which reads `.editorconfig` only when it is given a filename,
+    /// and poly never passes one.
+    Editorconfig,
 }
 
 /// Inputs shared by every file of a run (see [`Engine::run_context`](crate::engine::Engine::run_context)).
 #[must_use]
 pub fn run_context(hook: HostHook, cfg: &EngineConfig) -> String {
     match hook {
-        HostHook::None | HostHook::OxfmtScope | HostHook::Oxc => String::new(),
+        HostHook::None | HostHook::OxfmtScope | HostHook::Oxc | HostHook::Editorconfig => String::new(),
         HostHook::RuffContext => {
             let src_roots: Vec<std::path::PathBuf> = cfg
                 .options
@@ -78,7 +83,7 @@ pub fn run_context(hook: HostHook, cfg: &EngineConfig) -> String {
 pub fn file_context(hook: HostHook, path: &Path, cfg: &EngineConfig) -> Option<String> {
     match hook {
         HostHook::None => None,
-        HostHook::OxfmtScope => format_input_salt(hook, path, cfg),
+        HostHook::OxfmtScope | HostHook::Editorconfig => format_input_salt(hook, path, cfg),
         HostHook::Oxc => match (lint_input_salt(hook, path, cfg), format_input_salt(hook, path, cfg)) {
             (None, None) => None,
             (lint, format) => Some(format!("{}|{}", lint.unwrap_or_default(), format.unwrap_or_default())),
@@ -97,7 +102,7 @@ pub fn file_context(hook: HostHook, path: &Path, cfg: &EngineConfig) -> Option<S
 pub fn lint_input_salt(hook: HostHook, path: &Path, cfg: &EngineConfig) -> Option<String> {
     match hook {
         HostHook::Oxc => oxlintrc::governing_for(cfg, path).map(|governing| governing.digest.clone()),
-        HostHook::None | HostHook::OxfmtScope | HostHook::RuffContext => None,
+        HostHook::None | HostHook::OxfmtScope | HostHook::RuffContext | HostHook::Editorconfig => None,
     }
 }
 
@@ -107,6 +112,7 @@ pub fn lint_input_salt(hook: HostHook, path: &Path, cfg: &EngineConfig) -> Optio
 pub fn format_input_salt(hook: HostHook, path: &Path, cfg: &EngineConfig) -> Option<String> {
     match hook {
         HostHook::OxfmtScope | HostHook::Oxc => oxfmt_scope::input_salt(cfg, path),
+        HostHook::Editorconfig => editorconfig::salt(cfg, path),
         HostHook::None | HostHook::RuffContext => None,
     }
 }
@@ -122,6 +128,7 @@ pub fn format_config<'a>(
 ) -> Cow<'a, EngineConfig> {
     match hook {
         HostHook::OxfmtScope | HostHook::Oxc => oxfmt_scope::path_config(cfg, src, engine),
+        HostHook::Editorconfig => editorconfig::apply(cfg, &src.path),
         HostHook::None | HostHook::RuffContext => Cow::Borrowed(cfg),
     }
 }
@@ -179,6 +186,24 @@ mod tests {
             format_config(HostHook::None, "oxc", &src, &cfg),
             Cow::Borrowed(_)
         ));
+    }
+
+    #[test]
+    fn the_editorconfig_hook_scopes_the_indent_and_salts_the_cache_key() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(
+            repo.path().join(".editorconfig"),
+            "[*.sh]\nindent_style = space\nindent_size = 3\n",
+        )
+        .unwrap();
+        let path = repo.path().join("run.sh");
+        let cfg = cfg(toml::Table::new());
+        let scoped = format_config(HostHook::Editorconfig, "shfmt", &source(path.clone()), &cfg);
+        assert_eq!(scoped.indent_width, 3);
+        let salt = format_input_salt(HostHook::Editorconfig, &path, &cfg);
+        assert_eq!(salt.as_deref(), Some("editorconfig:Spaces(3)"));
+        assert_eq!(file_context(HostHook::Editorconfig, &path, &cfg), salt);
+        assert_eq!(lint_input_salt(HostHook::Editorconfig, &path, &cfg), None);
     }
 
     #[test]

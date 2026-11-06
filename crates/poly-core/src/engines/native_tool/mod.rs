@@ -75,7 +75,7 @@
 //! ```
 //!
 //! shfmt reads `.editorconfig` only when it is given a filename, which poly never passes, so poly
-//! resolves it for each file ([`mod@editorconfig`]): `indent_style = tab` indents with tabs and
+//! resolves it for each file ([`poly_engine_api::host_hooks::editorconfig`]): `indent_style = tab` indents with tabs and
 //! `indent_style = space` with `indent_size`. A table that sets `indent_width` or `use_tabs` wins.
 //!
 //! `indent_width` belongs on the **engine** table above, not on `[fmt.shell]`:
@@ -131,7 +131,6 @@ mod batch;
 #[cfg(test)]
 mod cache_key_tests;
 mod edition;
-mod editorconfig;
 mod format;
 mod go_imports;
 mod isolate;
@@ -249,10 +248,10 @@ impl NativeToolEngine {
     }
 
     /// shfmt indents as the file's `.editorconfig` says, unless the table sets the indentation
-    /// itself (see [`mod@editorconfig`]); every other tool takes `cfg` as it is.
+    /// itself (see [`poly_engine_api::host_hooks::editorconfig`]); every other tool takes `cfg` as it is.
     fn scoped_config<'a>(&self, src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
         match self.role {
-            NativeRole::Shfmt => editorconfig::apply(cfg, &src.path),
+            NativeRole::Shfmt => poly_engine_api::host_hooks::editorconfig::apply(cfg, &src.path),
             _ => std::borrow::Cow::Borrowed(cfg),
         }
     }
@@ -380,7 +379,7 @@ impl Engine for NativeToolEngine {
 
     fn format_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
         match self.role {
-            NativeRole::Shfmt => editorconfig::salt(cfg, path),
+            NativeRole::Shfmt => poly_engine_api::host_hooks::editorconfig::salt(cfg, path),
             _ => None,
         }
     }
