@@ -291,6 +291,20 @@ fn keys_read_by(engine: &str) -> BTreeSet<String> {
     read
 }
 
+/// Option keys an engine hands to the host through `project_inputs` instead of reading itself.
+fn host_read_keys(engine: &dyn Engine) -> BTreeSet<String> {
+    let inputs = engine.project_inputs();
+    let mut keys = BTreeSet::new();
+    keys.extend(inputs.gate_key);
+    keys.extend(inputs.files.into_iter().map(|file| file.option_key));
+    if let Some(dirs) = inputs.dirs {
+        keys.insert(dirs.dir_key);
+        keys.extend(dirs.paths_key);
+        keys.extend(dirs.recursive_key);
+    }
+    keys
+}
+
 #[test]
 fn every_declared_option_key_is_one_the_backend_reads_at_the_declared_type() {
     // Direction one: a declaration naming a key the backend never reads is the
@@ -307,8 +321,14 @@ fn every_declared_option_key_is_one_the_backend_reads_at_the_declared_type() {
     for engine in web_engines() {
         let source = source_of(engine.name());
         let read = keys_read_by(engine.name());
+        let host_read = host_read_keys(engine.as_ref());
         for table in [OptionTable::Lint, OptionTable::Format, OptionTable::CrossCuttingLint] {
             for (key, declared) in engine.option_keys(table).declared_keys() {
+                // Keys named in `project_inputs` are read by the host, which loads the files
+                // they select; the backend never sees the option, only the files it names.
+                if host_read.contains(*key) {
+                    continue;
+                }
                 assert!(
                     read.contains(*key),
                     "`{}` declares `{key}` for {table:?}, but no read of that key was found in its sources",
