@@ -1,0 +1,6 @@
+#!/bin/mksh
+print -r -- hi
+if [ -f x ]
+then
+  echo   y
+fi

@@ -13,6 +13,9 @@ exclude = [
   # Saved real tool output, kept byte-for-byte: golangci.json is two JSON documents, not one.
   "crates/poly-core/src/engines/catalog_tool/recipe/output/fixtures/**",
   "**/identify/tags.rs",
+  # Deliberately unformatted shell (and one that does not parse): the sh sidecar's input, with the
+  # host shfmt's output beside it as golden files.
+  "components/sidecars/sh/testdata/**",
   ".ai-rulez/**",
   # Everything `ai-rulez generate --plugin` emits. These are generated bundles,
   # not sources: poly reformatting them and the next generation reverting it is
