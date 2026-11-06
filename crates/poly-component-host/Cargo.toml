@@ -27,6 +27,10 @@ serde_json.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+flate2.workspace = true
+hex.workspace = true
+sha2.workspace = true
+tar.workspace = true
 poly-engines = { workspace = true, features = ["sql"] }
 rayon.workspace = true
 tempfile.workspace = true

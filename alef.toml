@@ -184,6 +184,24 @@ targets = [
   "x86_64-pc-windows-msvc",
 ]
 
+# The sh sidecar: shfmt (mvdan.cc/sh) as a Go executable speaking alef's framed stdio protocol. alef
+# has no way to declare a component that is only packaged (`alef component package --library`), so the
+# entry names a Go producer whose generated c-shared bridge in `producer_dir` is never built; the
+# executable itself is built from `components/sidecars/sh`.
+[[crates.components]]
+name = "sh"
+producer_language = "go"
+producer_dir = "components/sidecars/alef-sh"
+provides = [{ contract = "poly", implementation = "NewShComponent" }]
+features = []
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
 # Release distribution: component archives are GitHub release assets of the tag they were built for
 # ({version} is the version the artifact was packaged at, so an asset reused from an earlier release
 # keeps pointing at that release). The signing key is the repository secret POLY_COMPONENT_SIGNING_KEY
@@ -198,3 +216,4 @@ poly-release-1 = "MCowBQYDK2VwAyEAmv5BXWnmk2dddU9Uv74gMjlYP5urPfJVFbm3thZB/xk="
 
 [crates.component_host]
 output = "crates/poly-component-host/src/components_gen.rs"
+stdio_components = ["sh"]

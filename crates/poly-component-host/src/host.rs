@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use alef_component_abi::AlefHostApiV1;
 use alef_component_runtime::{
@@ -42,6 +43,11 @@ pub struct HostOptions {
     /// What the components this host loads may call back into (the component ABI's host service
     /// table). `None` leaves the table empty, so a component sees every service as unsupported.
     pub services: Option<Arc<dyn HostServices>>,
+    /// Components that are executables speaking alef's framed stdio protocol rather than dylibs
+    /// (the index's `kind = "sidecar"`).
+    pub sidecars: Vec<String>,
+    /// Deadline for one call to a sidecar; `None` keeps alef's default of 30 seconds.
+    pub sidecar_timeout: Option<Duration>,
 }
 
 impl HostOptions {
@@ -57,6 +63,8 @@ impl HostOptions {
             init: InitParams::default(),
             gate_loads: false,
             services: None,
+            sidecars: Vec::new(),
+            sidecar_timeout: None,
         }
     }
 }
@@ -108,9 +116,15 @@ impl ComponentHost {
         if let Some(services) = options.services {
             manager = manager.with_host_services(services);
         }
+        for id in &options.sidecars {
+            manager = manager.with_stdio_component(id.clone());
+        }
+        if let Some(timeout) = options.sidecar_timeout {
+            manager = manager.with_sidecar_timeout(timeout);
+        }
         Ok(Self {
             manager: Arc::new(manager),
-            connector: Arc::new(AlefConnector),
+            connector: Arc::new(AlefConnector::with_sidecars(options.sidecars)),
             offline: options.offline,
             shared: Arc::new(Shared::new(options.gate_loads)),
             init: options.init,
