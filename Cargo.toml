@@ -149,16 +149,16 @@ quick-xml = "0.42"
 rand = "0.10.3"
 rayon = "1"
 regex = "1"
-rmcp = { version = "3.8.0", features = ["schemars"] }
+rmcp = { version = "3.9.0", features = ["schemars"] }
 rmp-serde = "1.3"
-ruff_db = "=0.0.20"
-ruff_formatter = "=0.0.20"
-ruff_linter = "=0.17.3"
-ruff_notebook = "=0.0.20"
-ruff_python_ast = "=0.0.20"
-ruff_python_formatter = "=0.0.20"
-ruff_python_semantic = "=0.0.20"
-ruff_text_size = "=0.0.20"
+ruff_db = "=0.0.21"
+ruff_formatter = "=0.0.21"
+ruff_linter = "=0.17.4"
+ruff_notebook = "=0.0.21"
+ruff_python_ast = "=0.0.21"
+ruff_python_formatter = "=0.0.21"
+ruff_python_semantic = "=0.0.21"
+ruff_text_size = "=0.0.21"
 rust-ini = { version = "0.21", features = ["inline-comment"] }
 rustc-hash = "2.1.3"
 rustix = { version = "1.1.6", features = ["pty", "process", "fs", "termios"] }
@@ -168,7 +168,7 @@ schemars = "1.2.3"
 seahash = "4.1.0"
 semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
-serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize", "serialize"] }
+serde-saphyr = { version = "2.1.1", default-features = false, features = ["deserialize", "serialize"] }
 serde_ignored = "0.1"
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_stacker = "0.1.14"
@@ -186,19 +186,19 @@ terminal_size = "0.4.4"
 textwrap = "0.16.4"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
-toml = "1.1"
+toml = "1.2"
 toml_edit = "0.25"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tree-sitter = "0.27"
-tree-sitter-language-pack = "1.23"
-ty_module_resolver = "=0.0.20"
+tree-sitter-language-pack = "1.24"
+ty_module_resolver = "=0.0.21"
 # `testing` only exposes `TestProgramDb` (a salsa-cached `Program` from settings, no extra deps); poly-engines-python's
 # ty database is built on it because `ty_project` is unpublished.
-ty_python_core = { version = "=0.0.20", features = ["testing"] }
-ty_python_semantic = "=0.0.20"
-ty_site_packages = "=0.0.20"
-ty_vendored = "=0.0.20"
+ty_python_core = { version = "=0.0.21", features = ["testing"] }
+ty_python_semantic = "=0.0.21"
+ty_site_packages = "=0.0.21"
+ty_vendored = "=0.0.21"
 typos = "0.10"
 typos-dict = "0.14"
 uncomment = "3.10"
@@ -207,7 +207,7 @@ unicode-width = { version = "0.2.3", default-features = false }
 ureq = "3"
 walkdir = "2.5.0"
 which = "8.0.6"
-zip = { version = "9.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [profile.release]
 lto = "thin"

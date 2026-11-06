@@ -1,7 +1,7 @@
 //! Python type checking with ty, as a project-check engine.
 //!
 //! ty is consumed as the published `ty_*` crates at the exact version that ships with the pinned
-//! ruff (`=0.0.20`, see the workspace `Cargo.toml`). `ty_project` is unpublished, so the minimum of
+//! ruff (`=0.0.21`, see the workspace `Cargo.toml`). `ty_project` is unpublished, so the minimum of
 //! it is ported: the salsa database (`db`), the program settings (`settings`) and the system
 //! the check reads through (`system`). The crate version is folded into `TyEngine::version`, so
 //! bumping it invalidates cached results.
@@ -88,7 +88,7 @@ impl Engine for TyEngine {
     }
 
     fn version(&self) -> &str {
-        "ty-0.0.20+proj1"
+        "ty-0.0.21+proj1"
     }
 
     fn project_check(&self, req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {
