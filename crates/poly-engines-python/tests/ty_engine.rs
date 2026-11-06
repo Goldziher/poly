@@ -161,7 +161,7 @@ fn site_packages_resolution() {
         .flat_map(|(_, ds)| ds.iter().map(|d| d.code.as_deref().unwrap()))
         .collect();
     assert!(
-        codes.contains(&"unresolved-import"),
+        codes.contains(&"import-not-found"),
         "without the environment the import must not resolve: {unresolved:?}"
     );
 }
@@ -197,7 +197,7 @@ fn python_version_option_drives_version_dependent_checks() {
         .iter()
         .flat_map(|(_, ds)| ds.iter().map(|d| d.code.as_deref().unwrap()))
         .collect();
-    assert_eq!(codes, ["unresolved-import"], "tomllib is 3.11+: {reported:?}");
+    assert_eq!(codes, ["import-not-found"], "tomllib is 3.11+: {reported:?}");
 
     let new = config(&[
         ("backend", toml::Value::String("ty".into())),
@@ -212,5 +212,5 @@ fn python_version_option_drives_version_dependent_checks() {
 
 #[test]
 fn version_names_the_ty_crate() {
-    assert!(TyEngine.version().contains("0.0.20"));
+    assert!(TyEngine.version().contains("0.0.21"));
 }

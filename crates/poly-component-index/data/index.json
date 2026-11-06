@@ -401,7 +401,7 @@
             "fix": true,
             "project": false
           },
-          "version": "0.3.2+defaults5-mdx-rules-tmplskip-codeaware-md020guard-structfix+ruleparams1+extendsel2+oxc_formatter_markdown-f799f17+md-embed-1+oxfmtrc-scope-1",
+          "version": "0.3.2+defaults5-mdx-rules-tmplskip-codeaware-md020guard-md038fmt-structfix+ruleparams1+extendsel2+oxc_formatter_markdown-f799f17+md-embed-1+oxfmtrc-scope-1",
           "option_keys": [
             {
               "table": "Lint",
@@ -709,7 +709,7 @@
             "fix": false,
             "project": true
           },
-          "version": "ty-0.0.20+proj1",
+          "version": "ty-0.0.21+proj1",
           "option_keys": [
             {
               "table": "Lint",
@@ -771,7 +771,7 @@
             "fix": true,
             "project": false
           },
-          "version": "ruff-0.17.3+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts2+plugopts2+isort3+pylint2+impconv1+defignore2+unsafefix1+plugopts3+fmtopts3+tgtdisc1",
+          "version": "ruff-0.17.4+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts2+plugopts2+isort3+pylint2+impconv1+defignore2+unsafefix1+plugopts3+fmtopts3+tgtdisc1",
           "option_keys": [
             {
               "table": "Lint",
@@ -1515,7 +1515,7 @@
             "fix": false,
             "project": false
           },
-          "version": "biome_css_analyze+rev:e2e5a36+lint-v1+iehack-skip",
+          "version": "biome_css_analyze+rev:fca5c35+lint-v1+iehack-skip",
           "option_keys": [
             {
               "table": "Lint",
@@ -1560,7 +1560,7 @@
             "fix": false,
             "project": false
           },
-          "version": "biome_graphql_analyze+rev:e2e5a36+lint-v1",
+          "version": "biome_graphql_analyze+rev:fca5c35+lint-v1",
           "option_keys": [
             {
               "table": "Lint",
@@ -1614,7 +1614,7 @@
             "fix": false,
             "project": false
           },
-          "version": "rubyfmt-git:884b9fd",
+          "version": "rubyfmt-git:7c6ddaa",
           "option_keys": [
             {
               "table": "Lint",
@@ -1834,7 +1834,7 @@
             "fix": true,
             "project": false
           },
-          "version": "ast-grep-core-0.51.1-engine-3+tslp1.23.1+builtin-pack-3",
+          "version": "ast-grep-core-0.51.1-engine-3+tslp1.24.0+builtin-pack-3",
           "option_keys": [
             {
               "table": "Lint",

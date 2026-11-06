@@ -120,7 +120,7 @@ pub fn engines_for(_language: &Language) -> Vec<Box<dyn Engine>> {
 /// that — but "intended" is not a property a cache may rely on: the rules are
 /// compiled through a different registration than the cached payload was, so
 /// the entry is invalidated rather than trusted.
-const ENGINE_VERSION: &str = "ast-grep-core-0.51.1-engine-3+tslp1.23.1+builtin-pack-3";
+const ENGINE_VERSION: &str = "ast-grep-core-0.51.1-engine-3+tslp1.24.0+builtin-pack-3";
 
 /// Cross-cutting custom-rule engine backed by ast-grep + TSLP grammars.
 ///
