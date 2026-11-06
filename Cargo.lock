@@ -3262,6 +3262,7 @@ dependencies = [
 name = "poly-component-protocol"
 version = "0.33.1"
 dependencies = [
+ "poly-component-protocol",
  "proptest",
  "rmp-serde",
  "schemars 1.2.3",

@@ -15,15 +15,21 @@ description = "Language-neutral wire protocol (MessagePack + JSON Schema) for po
 name = "poly_component_protocol"
 path = "src/lib.rs"
 
+[features]
+# Derive `schemars::JsonSchema` on the wire types and expose `json_schema()`. Off by default: the
+# released core never publishes the schema. The crate's own tests turn it on. ~keep
+schemars = ["dep:schemars"]
+
 [dependencies]
 rmp-serde.workspace = true
-schemars.workspace = true
+schemars = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 
 [dev-dependencies]
+poly-component-protocol = { path = ".", features = ["schemars"] }
 proptest.workspace = true
 
 [lints.rust]
