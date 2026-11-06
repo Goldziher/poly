@@ -51,6 +51,10 @@
 //! test would not reserve the slot for a better tool, it would leave Shell
 //! formatted by nothing but whitespace normalization.
 //!
+//! A build that downloads components formats shell with the `sh` sidecar instead (ADR 0041): its
+//! `shfmt` engine replaces this one, and `[components] disable = ["sh"]` brings this one back. The
+//! bundled build (`engine-shfmt`) keeps this one.
+//!
 //! It had previously been held back as "rewrites every shell file … and has not
 //! been measured". Measured, across the pinned corpus B trees (10 repositories,
 //! 97 `.sh`/`.bash` files, none unparseable): **19 files changed, 424 diff
