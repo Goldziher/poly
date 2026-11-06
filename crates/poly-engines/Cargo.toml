@@ -25,6 +25,7 @@ misc = [
   "poly-engines-misc/dockerfile",
   "poly-engines-misc/dotenv",
   "poly-engines-misc/hcl",
+  "poly-engines-misc/ini",
   "poly-engines-misc/graphql",
 ]
 nix = ["dep:poly-engines-nix"]

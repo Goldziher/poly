@@ -10,8 +10,6 @@ use std::sync::{LazyLock, OnceLock};
 
 use crate::engine::Engine;
 use crate::engines::config_keys::PolyConfigEngine;
-#[cfg(feature = "engine-ini")]
-use crate::engines::ini::IniEngine;
 use crate::engines::native_tool::NativeToolEngine;
 #[cfg(feature = "engine-quality")]
 use crate::engines::quality::QualityEngine;
@@ -178,7 +176,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         #[cfg(feature = "engine-dotenv")]
         Language::Dotenv => poly_engines_misc::engines_for(lang),
         #[cfg(feature = "engine-ini")]
-        Language::Ini => vec![Box::new(IniEngine)],
+        Language::Ini => poly_engines_misc::engines_for(lang),
         Language::Go => vec![Box::new(NativeToolEngine::for_language(Language::Go))],
         Language::Rust => vec![Box::new(NativeToolEngine::for_language(Language::Rust))],
         Language::Zig => vec![Box::new(NativeToolEngine::for_language(Language::Zig))],
@@ -335,9 +333,10 @@ pub(crate) const CROSS_CUTTING_ENGINES: &[&str] = &["typos", "astgrep", "uncomme
 ///
 /// Every other engine runs unless switched off. An absent key on one of these means
 /// "off", so a project that never mentions `typos` neither spell-checks nor loads it.
-/// `uncomment` is also opt-in but gates itself inside `lint`, so it is not listed. Not
-/// feature-gated, like [`CROSS_CUTTING_ENGINES`]: a component-served typos is opt-in too.
-pub(crate) const OPT_IN_ENGINES: &[&str] = &["typos"];
+/// `uncomment` is listed so a core build, which serves it from the `uncomment` component, never
+/// fetches that component for a project that has not enabled it; it also gates itself inside `lint`.
+/// Not feature-gated, like [`CROSS_CUTTING_ENGINES`]: a component-served typos is opt-in too.
+pub(crate) const OPT_IN_ENGINES: &[&str] = &["typos", "uncomment"];
 
 /// Project-check engines planned only when their config table sets the named key, paired as
 /// `(engine, key)`. Without the gate the project phase would read and hash every file such an

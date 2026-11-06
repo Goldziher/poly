@@ -244,7 +244,7 @@ fn merge_catalog_engines(
 
 /// Drop every registry engine explicitly switched off with `enabled = false`.
 ///
-/// Only an explicit `false` counts, except for the `OPT_IN_ENGINES` (`typos`),
+/// Only an explicit `false` counts, except for the `OPT_IN_ENGINES` (`typos`, `uncomment`),
 /// which need an explicit `true`. An absent key means "this engine's own
 /// default", which differs per backend — `uncomment` is opt-in, `quality` is
 /// on, and each `native_tool` spec carries its own `default_on` — so reading

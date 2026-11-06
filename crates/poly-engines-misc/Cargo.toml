@@ -9,17 +9,18 @@ repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 publish = false
-description = "The dockerfile, dotenv, HCL and GraphQL engine family for poly."
+description = "The dockerfile, dotenv, HCL, INI and GraphQL engine family for poly."
 
 [lib]
 name = "poly_engines_misc"
 path = "src/lib.rs"
 
 [features]
-default = ["dockerfile", "dotenv", "hcl", "graphql"]
+default = ["dockerfile", "dotenv", "hcl", "ini", "graphql"]
 dockerfile = ["dep:dockerfile-parser"]
 dotenv = ["dep:dotenv-analyzer", "dep:dotenv-core"]
 hcl = ["dep:hcl-edit"]
+ini = ["dep:rust-ini"]
 graphql = ["dep:graphql-parser", "dep:pretty_graphql"]
 
 [dependencies]
@@ -31,6 +32,7 @@ graphql-parser = { workspace = true, optional = true }
 hcl-edit = { workspace = true, optional = true }
 poly-engine-api.workspace = true
 pretty_graphql = { workspace = true, features = ["config_serde"], optional = true }
+rust-ini = { workspace = true, optional = true }
 toml.workspace = true
 tracing.workspace = true
 

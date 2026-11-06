@@ -1874,10 +1874,122 @@
       "lock_sha": null
     },
     {
+      "name": "uncomment",
+      "kind": "engines",
+      "opt_in": true,
+      "features": ["engine-uncomment"],
+      "engines": [
+        {
+          "name": "uncomment",
+          "languages": [],
+          "capabilities": {
+            "lint": true,
+            "format": false,
+            "fix": true,
+            "project": false
+          },
+          "version": "uncomment-3.10.4+map2-codeonly+prose3-blocks",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "enabled",
+                  "types": 1
+                },
+                {
+                  "name": "remove_todos",
+                  "types": 1
+                },
+                {
+                  "name": "remove_fixme",
+                  "types": 1
+                },
+                {
+                  "name": "remove_docs",
+                  "types": 1
+                },
+                {
+                  "name": "use_default_ignores",
+                  "types": 1
+                },
+                {
+                  "name": "code_only",
+                  "types": 1
+                },
+                {
+                  "name": "preserve_patterns",
+                  "types": 16
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "enabled",
+                  "types": 1
+                },
+                {
+                  "name": "remove_todos",
+                  "types": 1
+                },
+                {
+                  "name": "remove_fixme",
+                  "types": 1
+                },
+                {
+                  "name": "remove_docs",
+                  "types": 1
+                },
+                {
+                  "name": "use_default_ignores",
+                  "types": 1
+                },
+                {
+                  "name": "code_only",
+                  "types": 1
+                },
+                {
+                  "name": "preserve_patterns",
+                  "types": 16
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        }
+      ],
+      "lock_sha": null
+    },
+    {
       "name": "misc",
       "kind": "engines",
       "opt_in": false,
-      "features": ["engine-dockerfile", "engine-dotenv", "engine-hcl", "engine-graphql"],
+      "features": ["engine-dockerfile", "engine-dotenv", "engine-hcl", "engine-ini", "engine-graphql"],
       "engines": [
         {
           "name": "dockerfile",
@@ -2051,6 +2163,51 @@
             }
           ],
           "hooks": 0,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        },
+        {
+          "name": "ini",
+          "languages": ["ini"],
+          "capabilities": {
+            "lint": true,
+            "format": false,
+            "fix": false,
+            "project": false
+          },
+          "version": "rust-ini-0.21.3+map1+extendsel2",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": true,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",

@@ -86,13 +86,21 @@ family_component!(
     "misc",
     misc,
     MiscComponent,
-    "The `misc` component: the Dockerfile, dotenv, GraphQL and HCL engines.",
+    "The `misc` component: the Dockerfile, dotenv, GraphQL, HCL and INI engines.",
     vec![
         Box::new(crate::misc::dockerfile::DockerfileEngine),
         Box::new(crate::misc::dotenv::DotenvEngine),
         Box::new(crate::misc::graphql::GraphQlEngine),
         Box::new(crate::misc::hcl::HclEngine),
+        Box::new(crate::misc::ini::IniEngine),
     ]
+);
+family_component!(
+    "uncomment",
+    uncomment,
+    UncommentComponent,
+    "The `uncomment` component: the opt-in cross-cutting comment-removal lint.",
+    vec![Box::new(crate::uncomment::uncomment::UncommentEngine)]
 );
 
 #[cfg(feature = "mcp")]

@@ -3319,7 +3319,6 @@ dependencies = [
  "proptest",
  "rayon",
  "regex",
- "rust-ini",
  "rustc-hash 2.1.3",
  "schemars 1.2.3",
  "serde",
@@ -3436,6 +3435,7 @@ dependencies = [
  "insta",
  "poly-engine-api",
  "pretty_graphql",
+ "rust-ini",
  "toml 1.2.0+spec-1.1.0",
  "tracing",
 ]
@@ -3589,6 +3589,14 @@ dependencies = [
  "toml 1.2.0+spec-1.1.0",
  "tracing",
  "uncomment",
+]
+
+[[package]]
+name = "poly-engines-uncomment-component"
+version = "0.33.1"
+dependencies = [
+ "alef-component-abi",
+ "poly-engines",
 ]
 
 [[package]]
