@@ -1596,7 +1596,8 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/WireProjectSideFile"
-          }
+          },
+          "default": []
         },
         "dirs": {
           "description": "Directories that scope the served files and the listing.",
@@ -1609,8 +1610,7 @@
             }
           ]
         }
-      },
-      "required": ["files"]
+      }
     },
     "WireProjectSideFile": {
       "description": "A side file of a project check: the option naming its path and the default path.",

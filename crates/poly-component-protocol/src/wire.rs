@@ -213,6 +213,7 @@ pub struct WireProjectInputs {
     /// Option that must be set for the engine to be planned.
     pub gate_key: Option<String>,
     /// Side files the host loads when they exist.
+    #[serde(default)]
     pub files: Vec<WireProjectSideFile>,
     /// Directories that scope the served files and the listing.
     pub dirs: Option<WireProjectDirs>,
