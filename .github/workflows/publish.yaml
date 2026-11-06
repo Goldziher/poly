@@ -585,6 +585,12 @@ jobs:
           git config --global core.longpaths true
           echo 'CARGO_HOME=D:\c' >> "$GITHUB_ENV"
 
+      - name: Name the directory the binary is built into
+        # The core is built with `--profile core` (target/<triple>/core); the musl bundled build
+        # keeps the release profile.
+        run: echo "PROFILE_DIR=${{ matrix.alpine && 'release' || 'core' }}" >> "$GITHUB_ENV"
+        shell: bash
+
       - name: Setup Rust
         if: ${{ !matrix.alpine }}
         uses: dtolnay/rust-toolchain@v1
@@ -616,7 +622,7 @@ jobs:
           POLY_COMPONENT_LOCK_FILE: ${{ github.workspace }}/components-lock/poly-components.lock.json
         # The core flavour (ADR 0039): every other engine family and the MCP server are components
         # this binary downloads on first use, from the lock embedded above.
-        run: cargo build --release --locked --target ${{ matrix.triple }} -p poly-cli --no-default-features --features core
+        run: cargo build --profile core --locked --target ${{ matrix.triple }} -p poly-cli --no-default-features --features core
         shell: bash
 
       - name: Build binary (musl, Alpine container)
@@ -655,7 +661,7 @@ jobs:
               # Windows binaries don't benefit from strip
               ;;
             *)
-              strip target/${{ matrix.triple }}/release/poly || true
+              strip target/${{ matrix.triple }}/$PROFILE_DIR/poly || true
               ;;
           esac
         shell: bash
@@ -668,7 +674,7 @@ jobs:
         # build made in a container and for cross-built targets.
         run: |
           set -euo pipefail
-          bin="target/${{ matrix.triple }}/release/poly"
+          bin="target/${{ matrix.triple }}/$PROFILE_DIR/poly"
           case "${{ matrix.triple }}" in *windows*) bin="$bin.exe" ;; esac
           test -s "$bin" || { echo "::error::no binary at $bin"; exit 1; }
           if grep -aq POLY_COMPONENT_DEV_LOCK "$bin"; then
@@ -684,7 +690,7 @@ jobs:
         # the build steps above produce: the musl container copies target/release/poly to it.
         run: |
           set -euo pipefail
-          bin="target/${{ matrix.triple }}/release/poly"
+          bin="target/${{ matrix.triple }}/$PROFILE_DIR/poly"
           case "${{ matrix.triple }}" in *windows*) bin="$bin.exe" ;; esac
           test -s "$bin" || { echo "::error::no binary at $bin"; exit 1; }
           lock=components-lock/poly-components.lock.json
@@ -715,7 +721,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          bin="$PWD/target/${{ matrix.triple }}/release/poly"
+          bin="$PWD/target/${{ matrix.triple }}/$PROFILE_DIR/poly"
           case "${{ matrix.triple }}" in *windows*) bin="$bin.exe" ;; esac
           lock=components-lock/poly-components.lock.json
           mirror="$RUNNER_TEMP/component-mirror"
@@ -770,7 +776,7 @@ jobs:
 
       - name: Create release artifacts
         run: |
-          cd target/${{ matrix.triple }}/release
+          cd target/${{ matrix.triple }}/$PROFILE_DIR
 
           case "${{ matrix.triple }}" in
             *windows*)
