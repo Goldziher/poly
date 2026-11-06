@@ -493,3 +493,36 @@ fn committed_schema_matches_generated() {
         "schemas/component-protocol.json is stale; regenerate with `UPDATE_SCHEMA=1 cargo test -p poly-component-protocol committed_schema`"
     );
 }
+
+mod sidecar_payload {
+    use crate::sidecar::{PayloadError, pack_call, unpack_call};
+
+    #[test]
+    fn a_packed_call_splits_back_into_its_header_and_body() {
+        let cases: &[(&[u8], &[u8])] = &[(b"header", b"body"), (b"", b"body"), (b"header", b""), (b"", b"")];
+        for (header, body) in cases {
+            let payload = pack_call(header, body).unwrap();
+            assert_eq!(unpack_call(&payload).unwrap(), (*header, *body), "{header:?} {body:?}");
+        }
+    }
+
+    #[test]
+    fn the_length_prefix_is_four_little_endian_bytes() {
+        let payload = pack_call(&[7; 258], b"x").unwrap();
+        assert_eq!(payload[..4], [2, 1, 0, 0]);
+        assert_eq!(payload.len(), 4 + 258 + 1);
+    }
+
+    #[test]
+    fn a_payload_that_cannot_be_split_is_refused() {
+        assert_eq!(unpack_call(&[1, 0]), Err(PayloadError::TooShort));
+        assert_eq!(unpack_call(&[]), Err(PayloadError::TooShort));
+        assert_eq!(
+            unpack_call(&[9, 0, 0, 0, 1, 2, 3]),
+            Err(PayloadError::HeaderOverrun {
+                declared: 9,
+                available: 3
+            })
+        );
+    }
+}
