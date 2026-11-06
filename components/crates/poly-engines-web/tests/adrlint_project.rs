@@ -11,6 +11,7 @@ use adrlint::{adr, lock};
 use poly_engine_api::config::{EngineConfig, GlobalDefaults};
 use poly_engine_api::engine::{Engine, ProjectEnvironment, ProjectFile, ProjectRequest};
 use poly_engine_api::language::Language;
+use poly_engine_api::project::LISTING_LANGUAGE;
 use poly_engines_web::adrlint::AdrlintEngine;
 
 mod common;
@@ -34,8 +35,9 @@ fn cfg(extra: &[(&str, toml::Value)]) -> EngineConfig {
     }
 }
 
-/// Every file under `root`, the way the host hands them over: Markdown as Markdown, the rest as
-/// `Other`, which is also how the lock manifest arrives.
+/// Every file under `root`, the way the host hands them over: Markdown as Markdown with its
+/// content, anything else as a name-only `Other("listing")` entry. The lock manifest arrives
+/// separately as `Other("adrlint.lock")`, see [`lock_file`].
 fn load(root: &Path) -> Vec<ProjectFile> {
     let mut files = Vec::new();
     let mut pending = vec![root.to_path_buf()];
@@ -47,13 +49,13 @@ fn load(root: &Path) -> Vec<ProjectFile> {
                 continue;
             }
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_owned();
-            let language = if name.ends_with(".md") {
-                Language::Markdown
+            let (language, content) = if name.ends_with(".md") {
+                (Language::Markdown, fs::read_to_string(&path).expect("read"))
             } else {
-                Language::Other(name)
+                (Language::Other(LISTING_LANGUAGE.to_owned()), String::new())
             };
             files.push(ProjectFile {
-                content: fs::read_to_string(&path).expect("read").into(),
+                content: content.into(),
                 path,
                 language,
             });
@@ -218,10 +220,30 @@ fn a_selection_drops_unselected_rules() {
 }
 
 #[test]
-fn files_outside_the_configured_log_are_not_judged() {
-    let root = fixture("madr41a");
-    let other = toml::Value::String("elsewhere".into());
-    assert_eq!(check(&root, &load(&root), &cfg(&[("dir", other)])), []);
+fn a_listing_entry_is_never_mistaken_for_the_lock() {
+    let root = fixture("madr42");
+    let files = load(&root);
+    assert!(
+        files
+            .iter()
+            .any(|f| f.language == Language::Other(LISTING_LANGUAGE.to_owned())),
+        "the fixture has a stray file"
+    );
+    assert_eq!(check(&root, &files, &cfg(&[])), [pair("notes.txt", "MADR42")]);
+}
+
+#[test]
+fn a_lock_named_by_the_option_is_the_manifest_whatever_its_name() {
+    let root = fixture("adr50");
+    let mut files = load(&root);
+    let original = fs::read_to_string(root.join("docs/adr/0001-use-rust.md")).expect("read");
+    let locked = original.replace("Chosen option: Rust", "Chosen option: Zig");
+    files.push(ProjectFile {
+        path: root.join("locks/mine.lock"),
+        language: Language::Other("mine.lock".to_owned()),
+        content: lock_text(&[("docs/adr/0001-use-rust.md", 1, &locked)]).into(),
+    });
+    assert_eq!(check(&root, &files, &cfg(&[])), [pair("0001-use-rust.md", "ADR50")]);
 }
 
 #[test]
@@ -355,6 +377,52 @@ fn a_stray_file_in_the_log_is_reported_as_madr42_and_the_listing_invalidates_the
 
     fs::remove_file(adrs.join("notes.txt")).expect("remove");
     assert_eq!(run(project.path()), []);
+}
+
+/// A log elsewhere is the one judged: the host hands over only the declared directory, so a log
+/// with a gap under `docs/adr` is not reported when `dir` names another directory.
+#[test]
+fn a_directory_other_than_the_default_is_the_one_judged() {
+    let (project, _, template) = project();
+    fs::write(
+        project.path().join("poly.toml"),
+        "[workspace]\nroot = true\n\n[engines.adrlint]\nenabled = true\ndir = \"records\"\nselect = [\"MADR4\"]\n",
+    )
+    .expect("write config");
+    fs::write(project.path().join("docs/adr/0009-gap.md"), &template).expect("gap outside");
+    let records = project.path().join("records");
+    fs::create_dir_all(&records).expect("mkdir");
+    fs::write(records.join("0001-one.md"), &template).expect("write");
+    fs::write(records.join("0003-three.md"), &template).expect("write");
+    assert_eq!(
+        run(project.path()),
+        [pair("0003-three.md", "MADR41b")],
+        "only the configured directory is judged"
+    );
+}
+
+/// Naming one record must not judge the log as if it held that record alone: a log of two records
+/// has no gap, but handed only the second the check would report one.
+#[test]
+fn naming_one_record_still_judges_the_whole_log() {
+    let (_project, adrs, template) = project();
+    fs::write(adrs.join("0002-use-go.md"), &template).expect("write");
+    common::register();
+    let options = poly_core::RunOptions {
+        jobs: Some(1),
+        ..poly_core::RunOptions::default()
+    };
+    let config = poly_core::Config::default();
+    let one = adrs.join("0002-use-go.md");
+    let run = poly_core::lint_run(&[one], &config, &options, false, false).expect("lint run");
+    let codes: Vec<_> = run
+        .results
+        .iter()
+        .flat_map(|r| &r.diagnostics)
+        .filter(|d| d.engine == "adrlint")
+        .map(|d| d.code.clone().unwrap_or_default())
+        .collect();
+    assert_eq!(codes, Vec::<String>::new(), "no false gap from a one-file run");
 }
 
 /// Files outside the declared ADR directory are neither judged nor listed.

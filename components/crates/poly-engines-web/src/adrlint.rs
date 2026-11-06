@@ -152,11 +152,11 @@ impl Engine for AdrlintEngine {
             gate_key: Some("enabled".to_owned()),
             files: vec![ProjectSideFile {
                 option_key: "lock".to_owned(),
-                default_path: "adrlint.lock".to_owned(),
+                default_path: project::DEFAULT_LOCK.to_owned(),
             }],
             dirs: Some(ProjectDirs {
                 dir_key: "dir".to_owned(),
-                dir_default: "docs/adr".to_owned(),
+                dir_default: project::DEFAULT_DIR.to_owned(),
                 paths_key: Some("paths".to_owned()),
                 recursive_key: Some("recursive".to_owned()),
                 list_unserved: true,

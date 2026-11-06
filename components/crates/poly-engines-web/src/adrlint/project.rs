@@ -10,10 +10,13 @@
 //! The ADR log is `[lint.markdown.adrlint] dir` (default `docs/adr`, adrlint's own default) or the
 //! directories in `paths`, relative to the project root; `recursive = true` takes their
 //! subdirectories too. `start` and `allow_gaps` mean what they do in adrlint's `[adr]` table, and
-//! `lock` names the manifest (default `adrlint.lock`). A glob in `paths` is not supported. The host
-//! (see `Engine::project_inputs`) hands over only the Markdown under the log, the lock, and a
-//! name-only listing of the other files there (language `Other("listing")`, empty content), which is
-//! what lets `MADR42` fire.
+//! `lock` names the manifest (default `adrlint.lock`). A glob in `paths` is not supported.
+//!
+//! The directories are the host's business, not this module's: the engine declares the option keys
+//! in `Engine::project_inputs` and the host hands over exactly the Markdown under them, the lock,
+//! and a name-only listing of the other files there (language `Other("listing")`, empty content),
+//! which is what lets `MADR42` fire. So every file in the request except the lock is a member of
+//! the log.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -24,15 +27,15 @@ use ::adrlint::lock;
 use anyhow::Context;
 use poly_engine_api::engine::{Diagnostic, ProjectFile, ProjectRequest};
 use poly_engine_api::language::Language;
-use poly_engine_api::rule_config::string_list;
+use poly_engine_api::project::LISTING_LANGUAGE;
 
 use super::{Selection, enabled, map_diagnostic};
 
-/// The default ADR directory, adrlint's own.
-const DEFAULT_DIR: &str = "docs/adr";
+/// The default ADR directory, adrlint's own. Declared to the host in `Engine::project_inputs`.
+pub(super) const DEFAULT_DIR: &str = "docs/adr";
 
-/// The default lock manifest, matching the host's `PROJECT_SIDE_INPUTS`.
-const DEFAULT_LOCK: &str = "adrlint.lock";
+/// The default lock manifest. Declared to the host in `Engine::project_inputs`, which loads it.
+pub(super) const DEFAULT_LOCK: &str = "adrlint.lock";
 
 /// Runs the tree-wide and lock rules over the ADR log in `req.files`.
 pub(super) fn check(req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {
@@ -41,19 +44,18 @@ pub(super) fn check(req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Ve
         return Ok(Vec::new());
     }
     let settings = Settings::from_options(cfg);
-    let lock_name = settings.lock.clone();
 
     let mut members: Vec<(PathBuf, &str)> = Vec::new();
     let mut originals: BTreeMap<PathBuf, &Path> = BTreeMap::new();
     let mut manifest = None;
     for file in req.files {
         let relative = file.path.strip_prefix(req.root).unwrap_or(&file.path).to_path_buf();
-        if is_lock(file, &relative, &lock_name) {
+        if is_lock(file) {
             manifest = Some(
                 lock::parse_manifest(&file.content)
                     .with_context(|| format!("invalid lock file {}", relative.display()))?,
             );
-        } else if settings.in_log(&relative) {
+        } else {
             originals.insert(relative.clone(), &file.path);
             members.push((relative, &file.content));
         }
@@ -84,62 +86,28 @@ pub(super) fn check(req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Ve
     Ok(grouped.into_iter().collect())
 }
 
-/// Whether `file` is the lock manifest the host loaded as a side input.
-fn is_lock(file: &ProjectFile, relative: &Path, lock_name: &Path) -> bool {
-    matches!(file.language, Language::Other(_)) && relative == lock_name
+/// Whether `file` is the lock manifest the host loaded as a side input: the one file it hands over
+/// that is neither a Markdown record nor a name in the listing.
+fn is_lock(file: &ProjectFile) -> bool {
+    matches!(&file.language, Language::Other(name) if name != LISTING_LANGUAGE)
 }
 
-/// The `[lint.markdown.adrlint]` keys the project check reads.
+/// The `[lint.markdown.adrlint]` keys the project check reads itself; the directories are the host's.
 struct Settings {
-    roots: Vec<PathBuf>,
-    recursive: bool,
     start: Option<u32>,
     allow_gaps: bool,
-    lock: PathBuf,
 }
 
 impl Settings {
     fn from_options(cfg: &poly_engine_api::config::EngineConfig) -> Self {
-        let mut roots: Vec<PathBuf> = string_list(cfg, "paths").into_iter().map(PathBuf::from).collect();
-        if roots.is_empty() {
-            let dir = cfg
-                .options
-                .get("dir")
-                .and_then(toml::Value::as_str)
-                .unwrap_or(DEFAULT_DIR);
-            roots.push(PathBuf::from(dir));
-        }
         Self {
-            roots,
-            recursive: option_bool(cfg, "recursive"),
             start: cfg
                 .options
                 .get("start")
                 .and_then(toml::Value::as_integer)
                 .and_then(|start| u32::try_from(start).ok()),
             allow_gaps: option_bool(cfg, "allow_gaps"),
-            lock: PathBuf::from(
-                cfg.options
-                    .get("lock")
-                    .and_then(toml::Value::as_str)
-                    .unwrap_or(DEFAULT_LOCK),
-            ),
         }
-    }
-
-    /// Whether `relative` sits in a configured ADR directory (or beneath one, when recursive).
-    fn in_log(&self, relative: &Path) -> bool {
-        let Some(parent) = relative.parent() else {
-            return false;
-        };
-        self.roots.iter().any(|root| {
-            let root = root.strip_prefix(".").unwrap_or(root);
-            if self.recursive {
-                parent.starts_with(root)
-            } else {
-                parent == root
-            }
-        })
     }
 }
 
