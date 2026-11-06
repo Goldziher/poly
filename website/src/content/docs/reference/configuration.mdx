@@ -245,7 +245,7 @@ diagnostics, and are described in [Tool catalog](/poly/reference/catalog/#tools-
 | --- | --- | --- |
 | `preset` | string | Named preset to seed the rules from (e.g. `"conventional"`). |
 | `write` | boolean | Whether the cleaner rewrites the message in place. |
-| `[commit.rules] message` | table | `{ pattern, description }` — a required subject pattern. |
+| `[commit.rules] message` | table | `{ pattern, description, enforce_length, enforce_case }` — a required subject pattern. A pattern replaces the Conventional Commits structural check; `enforce_length` and `enforce_case` keep its length limits and its subject case / trailing full stop checks. |
 | `[commit.rules] excludes` | array of tables | `{ pattern, message }` — subjects that skip linting. |
 | `[commit.rules] cleanup` | array of tables | `{ find, replace, description }` — find/replace cleanups. |
 | `[commit.rules] single_line` | boolean | Reject multi-line subjects. |
@@ -257,6 +257,7 @@ diagnostics, and are described in [Tool catalog](/poly/reference/catalog/#tools-
 | `[commit.rules] title_prefix_separator` | string | Separator after the prefix. |
 | `[commit.rules] title_suffix` | string | Required subject suffix. |
 | `[commit.rules] title_suffix_separator` | string | Separator before the suffix. |
+| `[commit.rules] ai_cleanup` | boolean | Set to `false` to keep AI attribution trailers and banners instead of removing them (default `true`). |
 
 ## `[hooks]`
 

@@ -412,6 +412,7 @@ poly --config /path/to/poly.toml mcp
 
 | Command | Flags |
 | --- | --- |
+| `poly commit` | `--exclude REGEX[->MESSAGE]` (reject matching messages; `->` separates the custom error text, so `:` stays part of the regex), `--cleanup FIND->REPLACE` (both repeatable) |
 | `poly hooks run [STAGE]` | `--all-files` (the whole tracked tree, not the staged files), `--message-file <PATH>` (required to run `commit-msg` / `prepare-commit-msg` directly), `-j <N>`, `--no-cache`, `--no-sccache` (and the global `-v`, `--config`) |
 | `poly hooks install` | `--hook-type <TYPE>` (repeatable; default: the stages `poly.toml` configures), `--overwrite` (discard an existing hook instead of keeping it as `<hook>.legacy`), `--replace-lefthook` |
 | `poly hooks uninstall` | `--hook-type <TYPE>`; restores a kept `<hook>.legacy` |
