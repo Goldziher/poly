@@ -16,7 +16,12 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Changed
 
-- **`poly commit`.** Consumes the upstream `gitfluff` 0.10.0 library from crates.io instead of the in-tree fork
+- **Dependencies.** ruff 0.17.4 (`ruff_*` 0.0.21), ty 0.0.21, biome v2.6.5 and rubyfmt v0.14.2-38;
+  alef 0.127.2 for the component build.
+- **`python-types` (ty).** ty renamed the diagnostic `unresolved-import` to `import-not-found`;
+  update any `poly: allow[unresolved-import]` suppression or `[lint.python.python-types]` rule
+  selection that names the old code.
+- **`poly commit`.** Consumes the upstream `gitfluff` 0.11.0 library from crates.io instead of the in-tree fork
   (`crates/gitfluff` is removed); the `[commit]` config loading and `poly.toml` `extends` resolution live in
   `poly-cli`'s `commit/` module.
 - **`poly commit`: skipping merge and revert messages.** The merge-in-progress skip applies only when the message

@@ -293,3 +293,12 @@ is bumped whenever the vendored parser's behaviour changes.
 `pest_stack_guard` still requires `psm =0.1.24` on the supported targets. Disabling pest's default
 features would drop the pin but also the stack guard, which is what converts deeply nested input
 into a parse error rather than a stack overflow, so the pin is kept.
+
+## Amendment — 2026-11-06 (dependency refresh)
+
+The biome pin moved to `fca5c35` (Biome CLI v2.6.5) and rubyfmt to `7c6ddaa` (v0.14.2-38); oxc stays at
+`f799f17` (`crates_v0.157.0`), which is still the newest `crates_v*` tag. ruff and ty moved to
+`0.17.4` / `0.0.21`, the coherent set published on 2026-11-05. Re-checked against crates.io on this
+date: `oxc_formatter` and `rubyfmt` remain placeholder or ancient releases (last updated 2023-12-08 and
+2024-06-07), `biome_analyze` is still the 2024 `0.5.7` tarball, and `oxc_linter` is not published, so
+all three git pins stand.

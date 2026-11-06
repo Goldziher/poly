@@ -12,7 +12,7 @@ uv = "0.13.6"
 node = "26.13.0"
 pnpm = "12.16.1"
 # The component build tool; keep in step with alef-component-abi/runtime in Cargo.toml.
-"github:xberg-io/alef" = "0.124.0"
+"github:xberg-io/alef" = "0.127.2"
 
 [vars]
 # Tasks run the bundled poly (core plus the web, biome and ruby engines, built from components/) from this

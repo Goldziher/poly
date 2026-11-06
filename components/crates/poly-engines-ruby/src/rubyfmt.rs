@@ -23,7 +23,7 @@ pub struct RubyfmtEngine;
 /// rubyfmt pinned git rev; folded into the cache key so a rev bump invalidates
 /// any stale cached output. rubyfmt is a git dependency (no meaningful crates.io
 /// version), so the short rev is the authoritative source identifier.
-const VERSION: &str = "rubyfmt-git:884b9fd";
+const VERSION: &str = "rubyfmt-git:7c6ddaa";
 
 /// Languages handled by this backend.
 static LANGUAGES: &[Language] = &[Language::Ruby];
