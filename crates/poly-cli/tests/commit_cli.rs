@@ -78,3 +78,24 @@ fn missing_message_source_is_an_error() {
     assert_eq!(output.status.code(), Some(1));
     assert!(stderr(&output).contains("no commit message source"));
 }
+
+#[test]
+fn exclude_splits_the_custom_message_on_arrow() {
+    let dir = tempdir().unwrap();
+    let output = poly_commit(
+        dir.path(),
+        &["--exclude", "WIP->Not allowed", "--message", "feat: WIP thing"],
+    );
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    assert!(stderr(&output).contains("Not allowed"), "{}", stderr(&output));
+}
+
+#[test]
+fn exclude_colon_belongs_to_the_regex() {
+    let dir = tempdir().unwrap();
+    let output = poly_commit(
+        dir.path(),
+        &["--exclude", "WIP:Not allowed", "--message", "feat: WIP thing"],
+    );
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+}
