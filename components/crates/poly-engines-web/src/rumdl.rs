@@ -56,7 +56,7 @@ pub struct RumdlEngine;
 /// [`contains_go_template_markdown`]), and the MD020 guard ([`GuardedMd020`]). Bump the
 /// suffix whenever any of these change so stale cached diagnostics are
 /// invalidated.
-const RUMDL_VERSION: &str = "0.3.2+defaults5-mdx-rules-tmplskip-codeaware-md020guard-structfix+ruleparams1+extendsel2+oxc_formatter_markdown-f799f17+md-embed-1+oxfmtrc-scope-1";
+const RUMDL_VERSION: &str = "0.3.2+defaults5-mdx-rules-tmplskip-codeaware-md020guard-md038fmt-structfix+ruleparams1+extendsel2+oxc_formatter_markdown-f799f17+md-embed-1+oxfmtrc-scope-1";
 
 /// rumdl-proprietary stylistic rules disabled by default.
 ///
@@ -189,7 +189,8 @@ impl Engine for RumdlEngine {
             return markdown_fmt::format(src, cfg);
         }
         let rumdl_cfg = build_rumdl_config(cfg, &src.language);
-        let rules = guarded_rules(&rumdl_cfg, &src.content);
+        let mut rules = guarded_rules(&rumdl_cfg, &src.content);
+        rules.retain(|rule| rule.name() != MD038);
         let coordinator = FixCoordinator::default();
         let mut content = src.content.to_string();
         coordinator
@@ -290,6 +291,12 @@ fn apply_rule_params(config: &mut RumdlConfig, rules: &BTreeMap<String, RuleOpti
 
 /// Rule code of rumdl's "no space inside closed ATX heading" rule.
 const MD020: &str = "MD020";
+
+/// rumdl's `no-space-in-code`. Its fix strips edge spaces from a code span, but CommonMark
+/// removes one only when both ends have one, so `` `# ` `` renders `# ` and the fix changes the
+/// rendered text. A formatter must not, so `format` leaves the rule out and `map_warning` drops its
+/// fix edit (the diagnostic stays).
+const MD038: &str = "MD038";
 
 /// Matches an ATX heading line whose *text* ends in `#`, such as `### C#`.
 ///
@@ -473,6 +480,7 @@ fn map_warning(w: &LintWarning, engine: &str) -> Diagnostic {
     let fix: Vec<Edit> = w
         .fix
         .as_ref()
+        .filter(|_| w.rule_name.as_deref() != Some(MD038))
         .map(|f| Edit {
             start_byte: f.range.start,
             end_byte: f.range.end,
@@ -709,6 +717,41 @@ mod tests {
             ),
             "`### C#` must survive formatting untouched"
         );
+    }
+
+    #[test]
+    fn one_sided_code_span_space_is_not_stripped_by_format() {
+        let engine = RumdlEngine;
+        for input in [
+            "Remove the `# ` prefix.\n",
+            "Remove the ` #` prefix.\n",
+            "Use ` a` here.\n",
+            "Use `a ` here.\n",
+            "Use ` a ` here.\n",
+        ] {
+            assert!(
+                matches!(
+                    engine.format(&source(input), &default_cfg()).expect("format succeeded"),
+                    FormatOutput::Unchanged
+                ),
+                "{input:?} must survive formatting untouched"
+            );
+        }
+    }
+
+    #[test]
+    fn lint_never_offers_a_fix_that_strips_code_span_spaces() {
+        let engine = RumdlEngine;
+        for input in ["Remove the `# ` prefix.\n", "Use ` a` here.\n", "Use `a ` here.\n"] {
+            let diagnostics = engine.lint(&source(input), &default_cfg()).expect("lint succeeded");
+            assert!(
+                diagnostics
+                    .iter()
+                    .filter(|d| d.code.as_deref() == Some(MD038))
+                    .all(|d| d.fix.is_empty()),
+                "{input:?}: MD038 must not carry a fix edit"
+            );
+        }
     }
 
     #[test]
