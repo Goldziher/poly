@@ -53,8 +53,8 @@ use ::adrlint::diagnostics::{self as adr_diagnostics, Diagnostic as AdrDiagnosti
 
 use poly_engine_api::config::EngineConfig;
 use poly_engine_api::engine::{
-    Capabilities, Diagnostic, Edit, Engine, OptionKeys, OptionTable, OptionType, ProjectRequest, Severity, SourceFile,
-    Span,
+    Capabilities, Diagnostic, Edit, Engine, OptionKeys, OptionTable, OptionType, ProjectDirs, ProjectInputs,
+    ProjectRequest, ProjectSideFile, Severity, SourceFile, Span,
 };
 use poly_engine_api::language::Language;
 use poly_engine_api::rule_config::string_list;
@@ -142,6 +142,26 @@ impl Engine for AdrlintEngine {
 
     fn skip_reason(&self, src: &SourceFile) -> Option<Cow<'static, str>> {
         (!is_adr_file(&src.path)).then_some(Cow::Borrowed(NOT_AN_ADR))
+    }
+
+    /// The tree-wide rules are switched on by `enabled`, need `adrlint.lock`, and are about one
+    /// ADR directory: the host hands over only the Markdown under it, plus a name-only listing of
+    /// the other files there, which is all `MADR42` needs.
+    fn project_inputs(&self) -> ProjectInputs {
+        ProjectInputs {
+            gate_key: Some("enabled".to_owned()),
+            files: vec![ProjectSideFile {
+                option_key: "lock".to_owned(),
+                default_path: "adrlint.lock".to_owned(),
+            }],
+            dirs: Some(ProjectDirs {
+                dir_key: "dir".to_owned(),
+                dir_default: "docs/adr".to_owned(),
+                paths_key: Some("paths".to_owned()),
+                recursive_key: Some("recursive".to_owned()),
+                list_unserved: true,
+            }),
+        }
     }
 
     fn project_check(&self, req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {

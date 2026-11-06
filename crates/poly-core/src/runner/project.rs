@@ -13,6 +13,8 @@
 //! `(path, content digest)` list of the files it saw — any change to one file, the set, the config
 //! or the interpreter re-runs the whole check, and nothing else does.
 
+mod inputs;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -30,7 +32,7 @@ use crate::engine::{Diagnostic, ENABLED_OPTION_KEY, Engine, ProjectEnvironment, 
 use crate::engine_guard::guard_engine_panic;
 use crate::filter::{PerFileIgnores, Suppressions, is_binary, is_generated_source, relative_for_match};
 use crate::language::Language;
-use crate::registry::{GATED_PROJECT_ENGINES, PROJECT_SIDE_INPUTS, engines_for};
+use crate::registry::engines_for;
 use crate::resolve::ConfigSet;
 use crate::runner::SuppressedDiagnostic;
 
@@ -128,9 +130,10 @@ fn plan_project_engines(
             if config.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool) == Some(false) {
                 continue;
             }
-            let gated_off = GATED_PROJECT_ENGINES
-                .iter()
-                .any(|(name, key)| *name == engine.name() && !config.options.contains_key(*key));
+            let gated_off = engine
+                .project_inputs()
+                .gate_key
+                .is_some_and(|key| !config.options.contains_key(&key));
             if gated_off {
                 continue;
             }
@@ -181,61 +184,6 @@ fn load_files(files: &[&DiscoveredFile], act_on_generated: &[bool]) -> Vec<Proje
         })
         .collect();
     loaded.sort_by(|a, b| a.path.cmp(&b.path));
-    loaded
-}
-
-/// Append the side file `plan`'s engine declared in [`PROJECT_SIDE_INPUTS`], when it exists.
-///
-/// The path comes from the engine's option (default: the declared name) and must stay inside the
-/// project root; one that is absolute or climbs out of it is ignored with a warning rather than
-/// read. The file is added as [`Language::Other`] named after its file name, then the list is
-/// re-sorted so the cache key does not depend on where the file landed.
-fn add_side_inputs(plan: &ProjectPlan, root: &Path, loaded: &mut Vec<ProjectFile>) {
-    let Some((_, key, default)) = PROJECT_SIDE_INPUTS
-        .iter()
-        .find(|(name, ..)| *name == plan.engine.name())
-    else {
-        return;
-    };
-    let relative = plan
-        .config
-        .options
-        .get(*key)
-        .and_then(toml::Value::as_str)
-        .unwrap_or(default);
-    let relative = Path::new(relative);
-    if relative.is_absolute()
-        || relative
-            .components()
-            .any(|part| matches!(part, std::path::Component::ParentDir))
-    {
-        tracing::warn!(engine = plan.engine.name(), path = %relative.display(), "project check: side input must stay inside the project root");
-        return;
-    }
-    let path = root.join(relative);
-    let Ok(content) = std::fs::read_to_string(&path) else {
-        return;
-    };
-    let name = relative
-        .file_name()
-        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-    loaded.push(ProjectFile {
-        path,
-        language: Language::Other(name),
-        content: Arc::from(content),
-    });
-    loaded.sort_by(|a, b| a.path.cmp(&b.path));
-}
-
-/// Everything `plan`'s engine is handed: its files, plus the side file it declared, if any.
-fn load_inputs(
-    plan: &ProjectPlan,
-    scoped: &[&DiscoveredFile],
-    root: &Path,
-    act_on_generated: &[bool],
-) -> Vec<ProjectFile> {
-    let mut loaded = load_files(scoped, act_on_generated);
-    add_side_inputs(plan, root, &mut loaded);
     loaded
 }
 
@@ -307,7 +255,9 @@ pub(super) fn run_project_phase(
         let environment = environments
             .entry(root.clone())
             .or_insert_with(|| crate::project::env::resolve_environment(&root));
-        let loaded = load_inputs(plan, &scoped, &root, act_on_generated);
+        let scoped = inputs::in_scope(plan, &root, scoped);
+        let mut loaded = load_files(&scoped, act_on_generated);
+        inputs::add_declared_inputs(plan, &root, configs, act_on_generated, &mut loaded);
         let key = cache.enabled().then(|| cache_key(plan, &root, &loaded, &*environment));
         let cached = key
             .as_ref()

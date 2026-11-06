@@ -10,9 +10,10 @@
 //! The ADR log is `[lint.markdown.adrlint] dir` (default `docs/adr`, adrlint's own default) or the
 //! directories in `paths`, relative to the project root; `recursive = true` takes their
 //! subdirectories too. `start` and `allow_gaps` mean what they do in adrlint's `[adr]` table, and
-//! `lock` names the manifest (default `adrlint.lock`). A glob in `paths` is not supported. `MADR42`
-//! flags a non-Markdown file in the log, which only fires when the host supplies one: it hands over
-//! the files of the languages the engine serves, Markdown.
+//! `lock` names the manifest (default `adrlint.lock`). A glob in `paths` is not supported. The host
+//! (see `Engine::project_inputs`) hands over only the Markdown under the log, the lock, and a
+//! name-only listing of the other files there (language `Other("listing")`, empty content), which is
+//! what lets `MADR42` fire.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

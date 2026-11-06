@@ -8,13 +8,13 @@ use std::sync::Arc;
 use anyhow::Context;
 use poly_component_protocol::{
     Payload, Request, WireBatchSupport, WireDiagnostic, WireEngineDesc, WireFile, WireFileSlice, WireFormatOutput,
-    WireKind, WireOptionTable, hooks,
+    WireKind, WireOptionTable, WireProjectInputs, hooks,
 };
 use poly_engine_api::component_wire::OffsetOutOfRange;
 use poly_engine_api::config::EngineConfig;
 use poly_engine_api::engine::{
-    BatchSupport, Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, OptionType, ProjectRequest,
-    SourceFile,
+    BatchSupport, Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, OptionType, ProjectDirs,
+    ProjectInputs, ProjectRequest, ProjectSideFile, SourceFile,
 };
 use poly_engine_api::host_hooks::HostHook;
 use poly_engine_api::language::Language;
@@ -60,6 +60,7 @@ pub struct ComponentEngine {
     self_manages_enabled: bool,
     supersedes_generic_formatter: bool,
     batch_shard_floor: usize,
+    project_inputs: ProjectInputs,
     slot: Arc<ComponentSlot>,
     unavailable: Option<String>,
     unavailable_skips: bool,
@@ -84,6 +85,27 @@ fn wire_table(table: WireOptionTable) -> OptionTable {
 
 fn leak(text: &str) -> &'static str {
     Box::leak(text.to_owned().into_boxed_str())
+}
+
+fn project_inputs(wire: &WireProjectInputs) -> ProjectInputs {
+    ProjectInputs {
+        gate_key: wire.gate_key.clone(),
+        files: wire
+            .files
+            .iter()
+            .map(|file| ProjectSideFile {
+                option_key: file.option_key.clone(),
+                default_path: file.default_path.clone(),
+            })
+            .collect(),
+        dirs: wire.dirs.as_ref().map(|dirs| ProjectDirs {
+            dir_key: dirs.dir_key.clone(),
+            dir_default: dirs.dir_default.clone(),
+            paths_key: dirs.paths_key.clone(),
+            recursive_key: dirs.recursive_key.clone(),
+            list_unserved: dirs.list_unserved,
+        }),
+    }
 }
 
 fn build_option_keys(component_id: &str, engine: &str, desc: &WireEngineDesc) -> anyhow::Result<[OptionKeys; 3]> {
@@ -156,6 +178,7 @@ impl ComponentEngine {
             self_manages_enabled: desc.self_manages_enabled,
             supersedes_generic_formatter: desc.supersedes_generic_formatter,
             batch_shard_floor: usize::try_from(desc.batch_shard_floor).unwrap_or(usize::MAX),
+            project_inputs: project_inputs(&desc.project_inputs),
             slot,
             unavailable: None,
             unavailable_skips: false,
@@ -597,6 +620,10 @@ impl Engine for ComponentEngine {
 
     fn batch_shard_floor(&self) -> usize {
         self.batch_shard_floor
+    }
+
+    fn project_inputs(&self) -> ProjectInputs {
+        self.project_inputs.clone()
     }
 
     fn takes_over_tier_one(&self) -> bool {

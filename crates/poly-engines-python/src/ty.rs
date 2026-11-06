@@ -31,7 +31,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, anyhow, bail};
 use poly_engine_api::engine::{
-    Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, OptionType, ProjectFile, ProjectRequest,
+    Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, OptionType, ProjectFile, ProjectInputs, ProjectRequest,
 };
 use poly_engine_api::language::Language;
 use ruff_db::Db as SourceDb;
@@ -89,6 +89,14 @@ impl Engine for TyEngine {
 
     fn version(&self) -> &str {
         "ty-0.0.20+proj1"
+    }
+
+    /// Planned only once `backend` is set, so a Python project that never mentions it pays nothing.
+    fn project_inputs(&self) -> ProjectInputs {
+        ProjectInputs {
+            gate_key: Some("backend".to_owned()),
+            ..ProjectInputs::default()
+        }
     }
 
     fn project_check(&self, req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {

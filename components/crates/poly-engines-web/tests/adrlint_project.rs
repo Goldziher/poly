@@ -271,16 +271,18 @@ fn run(root: &Path) -> Vec<(String, String)> {
     found
 }
 
-/// The project-check result is cached on every file the check saw, so a change to a sibling ADR or
-/// to the lock must re-run it: a stale entry would keep reporting the old verdict.
-#[test]
-fn the_cached_result_is_invalidated_by_a_sibling_adr_and_by_the_lock() {
-    let cache_home = tempfile::tempdir().expect("cache dir");
-    // SAFETY: this is the only test in the binary that reaches the cache, and it sets the variable
-    // before running anything that reads it.
-    unsafe {
-        std::env::set_var("POLY_CACHE_HOME", cache_home.path());
-    }
+/// A project directory with an ADR log and a `poly.toml` enabling adrlint, under one cache directory
+/// shared by every test in this binary (the variable is set once, before anything reads it).
+fn project() -> (tempfile::TempDir, PathBuf, String) {
+    static CACHE_HOME: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    CACHE_HOME.get_or_init(|| {
+        let dir = tempfile::tempdir().expect("cache dir");
+        // SAFETY: set once, from the `OnceLock` initialiser, before any run in this binary reads it.
+        unsafe {
+            std::env::set_var("POLY_CACHE_HOME", dir.path());
+        }
+        dir
+    });
     let project = tempfile::tempdir().expect("project");
     let adrs = project.path().join("docs/adr");
     fs::create_dir_all(&adrs).expect("mkdir");
@@ -291,6 +293,14 @@ fn the_cached_result_is_invalidated_by_a_sibling_adr_and_by_the_lock() {
     .expect("write config");
     let template = fs::read_to_string(fixture("clean").join("docs/adr/0001-use-rust.md")).expect("template");
     fs::write(adrs.join("0001-use-rust.md"), &template).expect("write");
+    (project, adrs, template)
+}
+
+/// The project-check result is cached on every file the check saw, so a change to a sibling ADR or
+/// to the lock must re-run it: a stale entry would keep reporting the old verdict.
+#[test]
+fn the_cached_result_is_invalidated_by_a_sibling_adr_and_by_the_lock() {
+    let (project, adrs, template) = project();
 
     assert_eq!(run(project.path()), [], "a single ADR is clean");
     assert_eq!(run(project.path()), [], "and stays clean from the cache");
@@ -331,4 +341,28 @@ fn the_cached_result_is_invalidated_by_a_sibling_adr_and_by_the_lock() {
         [],
         "editing the ADR back to its locked content clears ADR50"
     );
+}
+
+/// `MADR42` needs the names of the files that are not Markdown, which the host lists (names only)
+/// for the declared ADR directory; adding or removing one must re-run the check.
+#[test]
+fn a_stray_file_in_the_log_is_reported_as_madr42_and_the_listing_invalidates_the_cache() {
+    let (project, adrs, _) = project();
+    assert_eq!(run(project.path()), []);
+
+    fs::write(adrs.join("notes.txt"), "scratch\n").expect("write stray file");
+    assert_eq!(run(project.path()), [pair("notes.txt", "MADR42")]);
+
+    fs::remove_file(adrs.join("notes.txt")).expect("remove");
+    assert_eq!(run(project.path()), []);
+}
+
+/// Files outside the declared ADR directory are neither judged nor listed.
+#[test]
+fn files_outside_the_declared_directory_are_not_listed() {
+    let (project, _, _) = project();
+    fs::create_dir_all(project.path().join("elsewhere")).expect("mkdir");
+    fs::write(project.path().join("elsewhere/notes.txt"), "x\n").expect("write");
+    fs::write(project.path().join("notes.txt"), "x\n").expect("write");
+    assert_eq!(run(project.path()), []);
 }

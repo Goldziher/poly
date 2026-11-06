@@ -91,7 +91,23 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": "enabled",
+            "files": [
+              {
+                "option_key": "lock",
+                "default_path": "adrlint.lock"
+              }
+            ],
+            "dirs": {
+              "dir_key": "dir",
+              "dir_default": "docs/adr",
+              "paths_key": "paths",
+              "recursive_key": "recursive",
+              "list_unserved": true
+            }
+          }
         },
         {
           "name": "malva",
@@ -157,7 +173,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "markup_fmt",
@@ -271,7 +292,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "oxc",
@@ -414,7 +440,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 256
+          "batch_shard_floor": 256,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "rumdl",
@@ -521,7 +552,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "taplo",
@@ -639,7 +675,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "yaml",
@@ -713,7 +754,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -784,7 +830,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "ruff",
@@ -1371,7 +1422,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1451,7 +1507,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1519,7 +1580,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1573,7 +1639,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "biome",
@@ -1618,7 +1689,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1672,7 +1748,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1726,7 +1807,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1838,7 +1924,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1892,7 +1983,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1946,7 +2042,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "dotenv",
@@ -1991,7 +2092,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "graphql",
@@ -2036,7 +2142,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "hcl",
@@ -2081,7 +2192,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null

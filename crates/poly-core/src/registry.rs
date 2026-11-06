@@ -339,27 +339,6 @@ pub(crate) const CROSS_CUTTING_ENGINES: &[&str] = &["typos", "astgrep", "uncomme
 /// feature-gated, like [`CROSS_CUTTING_ENGINES`]: a component-served typos is opt-in too.
 pub(crate) const OPT_IN_ENGINES: &[&str] = &["typos"];
 
-/// Project-check engines planned only when their config table sets the named key, paired as
-/// `(engine, key)`. Without the gate the project phase would read and hash every file such an
-/// engine serves on every run, only for the engine to decline; `python-types` is switched on by
-/// `backend`, so a Python project that never mentions it pays nothing.
-///
-/// Not feature-gated: the `python` component serves `python-types` to a core build.
-///
-/// `adrlint` is switched on by its `enabled` key, which it already needs for the per-file rules.
-pub(crate) const GATED_PROJECT_ENGINES: &[(&str, &str)] = &[("python-types", "backend"), ("adrlint", "enabled")];
-
-/// Project-check engines that also depend on one file outside the language set they serve, paired
-/// as `(engine, option key, default file name)`.
-///
-/// The host reads the file (the option names a path relative to the project root, else the default
-/// name) and hands it to the engine as one more [`ProjectFile`](crate::engine::ProjectFile) of
-/// language [`Language::Other`], so a component never touches the filesystem and the file's bytes
-/// fold into the project-check cache key like any other input. A missing file is not an error: the
-/// engine receives no such file and reads that as "not configured". `adrlint` takes its
-/// `adrlint.lock` this way.
-pub(crate) const PROJECT_SIDE_INPUTS: &[(&str, &str, &str)] = &[("adrlint", "lock", "adrlint.lock")];
-
 /// Every concrete (non-[`Language::Other`]) [`Language`] variant, used to
 /// walk every arm of [`engines_for`]. Kept from silently narrowing by
 /// `tests::assert_all_language_variants_listed`: adding a new `Language`

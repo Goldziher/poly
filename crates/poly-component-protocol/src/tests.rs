@@ -371,6 +371,7 @@ fn describe_round_trips() {
             self_manages_enabled: false,
             supersedes_generic_formatter: true,
             batch_shard_floor: 2,
+            project_inputs: Default::default(),
         }],
     };
     assert_eq!(decode_describe(&encode_describe(&describe).unwrap()).unwrap(), describe);
