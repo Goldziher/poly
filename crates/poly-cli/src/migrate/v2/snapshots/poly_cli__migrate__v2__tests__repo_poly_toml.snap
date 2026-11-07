@@ -100,11 +100,37 @@ files = "components/**/*.rs"
 workspace = true
 serial = "cargo"
 
-# components/ builds the root crates by path, so a dependency change in one of them stales
-# components/Cargo.lock without touching components/; CI's --locked builds then fail.
+# The same gates for components-pyrefly/, the pyrefly workspace (jemalloc 0.7 cannot share components/'s lockfile).
+[hooks.pre-commit.commands.pyrefly-clippy]
+run = "mise run hooks:components-check clippy pyrefly"
+files = "components-pyrefly/**"
+workspace = true
+serial = "cargo"
+
+[hooks.pre-commit.commands.pyrefly-deny]
+run = "mise run hooks:components-check deny pyrefly"
+files = "components-pyrefly/**"
+workspace = true
+serial = "cargo"
+
+[hooks.pre-commit.commands.pyrefly-rustdoc]
+run = "mise run hooks:components-check rustdoc pyrefly"
+files = "components-pyrefly/**/*.rs"
+workspace = true
+serial = "cargo"
+
+# components/ and components-pyrefly/ build the root crates by path, so a dependency change in one of them
+# stales their Cargo.lock without touching either directory; CI's --locked builds then fail.
 [hooks.pre-commit.commands.components-lock]
 run = "mise run check:components-lock"
-files = ["crates/*/Cargo.toml", "Cargo.lock", "components/**/Cargo.toml", "components/Cargo.lock"]
+files = [
+  "crates/*/Cargo.toml",
+  "Cargo.lock",
+  "components/**/Cargo.toml",
+  "components/Cargo.lock",
+  "components-pyrefly/**/Cargo.toml",
+  "components-pyrefly/Cargo.lock",
+]
 workspace = true
 serial = "cargo"
 

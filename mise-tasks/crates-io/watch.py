@@ -38,6 +38,12 @@ BLOCKED: dict[str, str | None] = {
     "biome_graphql_parser": None,
     "biome_languages": None,
     "rubyfmt": None,
+    # facebook/pyrefly: the crates.io `pyrefly` 0.0.1 is a different, unrelated crate; the others do not exist.
+    "pyrefly": "0.0.1",
+    "pyrefly_build": None,
+    "pyrefly_config": None,
+    "pyrefly_python": None,
+    "pyrefly_util": None,
 }
 
 _VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+.*)?$")

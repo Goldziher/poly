@@ -146,7 +146,11 @@ class GitDependencyTests(unittest.TestCase):
 
     def git_dependencies(self) -> set[str]:
         found: set[str] = set()
-        for manifest in (ROOT / "Cargo.toml", ROOT / "components" / "Cargo.toml"):
+        for manifest in (
+            ROOT / "Cargo.toml",
+            ROOT / "components" / "Cargo.toml",
+            ROOT / "components-pyrefly" / "Cargo.toml",
+        ):
             if not manifest.is_file():
                 continue
             data = tomllib.loads(manifest.read_text())

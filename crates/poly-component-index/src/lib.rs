@@ -105,6 +105,36 @@ impl ComponentIndex {
             .filter(move |e| e.name == engine)
     }
 
+    /// Whether some engine declares that `key` set to `value` selects it in config table `table`.
+    #[must_use]
+    pub fn claims_selection(&self, table: &str, key: &str, value: &str) -> bool {
+        self.claiming_component(table, key, value).is_some()
+    }
+
+    /// The component and engine that declare `key` set to `value` selects them in config table `table`.
+    #[must_use]
+    pub fn claiming_component(&self, table: &str, key: &str, value: &str) -> Option<(&Component, &WireEngineDesc)> {
+        self.components.iter().find_map(|component| {
+            component
+                .engines
+                .iter()
+                .find(|e| {
+                    e.selection
+                        .as_ref()
+                        .is_some_and(|s| s.table == table && s.key == key && s.value == value)
+                })
+                .map(|engine| (component, engine))
+        })
+    }
+
+    /// The config table the engine named `engine` declares its selection through, when it declares one.
+    #[must_use]
+    pub fn selection_table(&self, engine: &str) -> Option<&str> {
+        self.engine_descs(engine)
+            .find_map(|desc| desc.selection.as_ref())
+            .map(|selection| selection.table.as_str())
+    }
+
     /// Components hosting an engine registered for the language id `language`, in index order.
     /// Cross-cutting engines (no languages) are not matched; see
     /// [`ComponentIndex::cross_cutting_components`].

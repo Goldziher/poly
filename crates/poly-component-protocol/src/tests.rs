@@ -202,6 +202,7 @@ fn sample_requests() -> Vec<Request> {
             files: vec![slice(0)],
             config: 3,
             environment: vec![("K".into(), "V".into())],
+            threads: Some(4),
         },
         Request::SkipReason {
             engine: "yaml".into(),
@@ -368,6 +369,7 @@ fn describe_without_project_inputs_or_files_still_decodes() {
                 files: vec![],
                 dirs: None,
             },
+            selection: None,
         }],
     };
     let mut value = serde_json::to_value(&describe).unwrap();
@@ -423,9 +425,56 @@ fn describe_round_trips() {
             supersedes_generic_formatter: true,
             batch_shard_floor: 2,
             project_inputs: Default::default(),
+            selection: None,
         }],
     };
     assert_eq!(decode_describe(&encode_describe(&describe).unwrap()).unwrap(), describe);
+}
+
+/// An engine no table chooses between omits `selection`; one that declares it carries it across the wire.
+#[test]
+fn describe_carries_the_selection_an_engine_declares() {
+    let describe = |selection| Describe {
+        protocol: PROTOCOL_VERSION,
+        component_version: "1".into(),
+        engines: vec![WireEngineDesc {
+            name: "pyrefly".into(),
+            languages: vec!["python".into()],
+            capabilities: WireCapabilities {
+                lint: false,
+                format: false,
+                fix: false,
+                project: true,
+            },
+            version: "1".into(),
+            option_keys: vec![],
+            hooks: 0,
+            takes_over_tier_one: false,
+            claimed_paths: vec![],
+            host_hook: "none".into(),
+            supplements_tier_one: false,
+            self_manages_enabled: false,
+            supersedes_generic_formatter: false,
+            batch_shard_floor: 2,
+            project_inputs: Default::default(),
+            selection,
+        }],
+    };
+    let none = describe(None);
+    assert!(
+        serde_json::to_value(&none).unwrap()["engines"][0]
+            .get("selection")
+            .is_none()
+    );
+    assert_eq!(decode_describe(&encode_describe(&none).unwrap()).unwrap(), none);
+
+    let chosen = describe(Some(WireSelection {
+        table: "python-types".into(),
+        key: "backend".into(),
+        value: "pyrefly".into(),
+        default: false,
+    }));
+    assert_eq!(decode_describe(&encode_describe(&chosen).unwrap()).unwrap(), chosen);
 }
 
 #[test]

@@ -28,18 +28,24 @@ run = [
   "mise install",
   "cargo fetch",
   "cargo fetch --manifest-path components/Cargo.toml",
+  "cargo fetch --manifest-path components-pyrefly/Cargo.toml",
   "{{vars.poly}} hooks install",
 ]
 
 [tasks.build]
-description = "Build the root workspace and the components workspace"
-run = ["cargo build --workspace --exclude conformance", "cargo build --manifest-path components/Cargo.toml --workspace"]
+description = "Build the root workspace and the components workspaces"
+run = [
+  "cargo build --workspace --exclude conformance",
+  "cargo build --manifest-path components/Cargo.toml --workspace",
+  "cargo build --manifest-path components-pyrefly/Cargo.toml --workspace",
+]
 
 [tasks.test]
-description = "Run the test suite of the root workspace and the components workspace"
+description = "Run the test suite of the root workspace and the components workspaces"
 run = [
   "cargo test --workspace --exclude conformance",
   "cargo test --manifest-path components/Cargo.toml --workspace --no-fail-fast",
+  "cargo test --manifest-path components-pyrefly/Cargo.toml --workspace --no-fail-fast",
 ]
 
 [tasks."test:hooks"]
@@ -52,18 +58,29 @@ description = "Clippy (deny warnings) plus poly's own lint over the repo"
 run = [
   "cargo clippy --workspace --exclude conformance --all-targets -- -D warnings",
   "cargo clippy --manifest-path components/Cargo.toml --workspace --all-targets -- -D warnings",
+  "cargo clippy --manifest-path components-pyrefly/Cargo.toml --workspace --all-targets -- -D warnings",
   "{{vars.poly}} lint .",
 ]
 
 [tasks.format]
 description = "Format Rust with rustfmt and the rest of the tree with polyfmt"
 alias = ["fmt"]
-run = ["cargo fmt", "cargo fmt --manifest-path components/Cargo.toml --all", "{{vars.poly}} fmt --fix ."]
+run = [
+  "cargo fmt",
+  "cargo fmt --manifest-path components/Cargo.toml --all",
+  "cargo fmt --manifest-path components-pyrefly/Cargo.toml --all",
+  "{{vars.poly}} fmt --fix .",
+]
 
 [tasks."format:check"]
 description = "Verify formatting without writing changes"
 alias = ["fmt:check"]
-run = ["cargo fmt --check", "cargo fmt --manifest-path components/Cargo.toml --all --check", "{{vars.poly}} fmt ."]
+run = [
+  "cargo fmt --check",
+  "cargo fmt --manifest-path components/Cargo.toml --all --check",
+  "cargo fmt --manifest-path components-pyrefly/Cargo.toml --all --check",
+  "{{vars.poly}} fmt .",
+]
 
 [tasks.hooks]
 description = "Run the full pre-commit hook stage from poly.toml over all files"

@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use alef_component_runtime::ComponentManager;
 use poly_component_host::{ComponentHost, ComponentTransport, HostOptions, TransportConnector};
@@ -18,6 +19,9 @@ use poly_core::components::ComponentInjection;
 use poly_core::{Config, RunOptions};
 
 const TARGET: &str = "test-target";
+
+/// The `threads` of the last `ProjectCheck` the component saw; 0 when it carried none.
+static SEEN_THREADS: AtomicU32 = AtomicU32::new(u32::MAX);
 
 fn desc() -> WireEngineDesc {
     WireEngineDesc {
@@ -40,6 +44,7 @@ fn desc() -> WireEngineDesc {
         supersedes_generic_formatter: false,
         batch_shard_floor: 2,
         project_inputs: Default::default(),
+        selection: None,
     }
 }
 
@@ -88,20 +93,23 @@ impl ComponentTransport for Checker {
                 protocol: PROTOCOL_VERSION,
                 component_version: "1.0.0".into(),
             },
-            Request::ProjectCheck { files, .. } => Payload::Project(vec![WireFileDiagnostics {
-                path: files[0].path.clone(),
-                diagnostics: vec![WireDiagnostic {
-                    engine: "checker".into(),
-                    code: Some("C001".into()),
-                    severity: WireSeverity::Error,
-                    title: "type error".into(),
-                    description: None,
-                    span: None,
-                    url: None,
-                    fix: Vec::new(),
-                    metadata: Default::default(),
-                }],
-            }]),
+            Request::ProjectCheck { files, threads, .. } => {
+                SEEN_THREADS.store(threads.unwrap_or(0), Ordering::SeqCst);
+                Payload::Project(vec![WireFileDiagnostics {
+                    path: files[0].path.clone(),
+                    diagnostics: vec![WireDiagnostic {
+                        engine: "checker".into(),
+                        code: Some("C001".into()),
+                        severity: WireSeverity::Error,
+                        title: "type error".into(),
+                        description: None,
+                        span: None,
+                        url: None,
+                        fix: Vec::new(),
+                        metadata: Default::default(),
+                    }],
+                }])
+            }
             _ => Payload::Ok,
         };
         Ok(encode_response(&Response {
@@ -149,4 +157,9 @@ fn a_component_served_project_check_reports_its_findings() {
         .map(|d| (d.engine.as_str(), d.code.as_deref()))
         .collect();
     assert_eq!(findings, [("checker", Some("C001"))], "results: {:?}", run.results);
+    assert_eq!(
+        SEEN_THREADS.load(Ordering::SeqCst),
+        1,
+        "the run's `jobs = 1` must reach the component's project check"
+    );
 }

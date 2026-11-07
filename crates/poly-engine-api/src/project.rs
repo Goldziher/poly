@@ -94,6 +94,9 @@ pub struct ProjectRequest<'a> {
     pub config: &'a EngineConfig,
     /// The host-resolved toolchain environment.
     pub environment: &'a ProjectEnvironment,
+    /// The worker threads the host's run budgets for this check (`-j`, else every core). `None` leaves the
+    /// engine to choose, as a caller that has no budget does.
+    pub threads: Option<usize>,
 }
 
 /// The language id of a listing entry: a file under a declared directory that the engine does not

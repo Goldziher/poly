@@ -126,6 +126,13 @@ jobs:
             exit 1
           fi
 
+          # The pyrefly workspace is built separately (jemalloc 0.7 cannot share a lockfile with components/).
+          pyrefly_version="$(grep -E '^version = "' components-pyrefly/Cargo.toml | head -1 | cut -d'"' -f2)"
+          if [ "$pyrefly_version" != "$target_version" ]; then
+            echo "::error::components-pyrefly/Cargo.toml version mismatch: expected $target_version, got $pyrefly_version"
+            exit 1
+          fi
+
           plugin_version="$(jq -r '.version' plugin/package.json)"
           if [ "$plugin_version" != "$target_version" ]; then
             echo "::error::Agent plugin version mismatch: expected $target_version, got $plugin_version"

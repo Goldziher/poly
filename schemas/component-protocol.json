@@ -248,6 +248,12 @@
                     "minItems": 2,
                     "maxItems": 2
                   }
+                },
+                "threads": {
+                  "description": "The worker threads the host's run budgets for the check. Absent from an older host, which reads as\n\"the component's choice\".",
+                  "type": ["integer", "null"],
+                  "format": "uint32",
+                  "minimum": 0
                 }
               },
               "required": ["engine", "root", "files", "config", "environment"]
@@ -1490,6 +1496,17 @@
             "files": [],
             "dirs": null
           }
+        },
+        "selection": {
+          "description": "`Engine::selection`: how a config table picks this engine among alternatives. Absent for an engine\nno table chooses between, and in an older description.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -1653,6 +1670,29 @@
         }
       },
       "required": ["dir_key", "dir_default", "list_unserved"]
+    },
+    "WireSelection": {
+      "description": "How one config table chooses between the engines that share it.\n\n`[engines.python-types] backend = \"pyrefly\"` is the engine table `python-types` with its key `backend`\nset to `pyrefly`: the engine declaring that value is the one that runs. Engines that declare the same\n`table` and `key` are alternatives; none runs until the key is set.",
+      "type": "object",
+      "properties": {
+        "table": {
+          "description": "The config table the alternatives share (an engine id).",
+          "type": "string"
+        },
+        "key": {
+          "description": "The key of that table that picks one.",
+          "type": "string"
+        },
+        "value": {
+          "description": "The key value that picks this engine.",
+          "type": "string"
+        },
+        "default": {
+          "description": "Runs when the key is set to a value no alternative declares, so it can report that value as unknown.",
+          "type": "boolean"
+        }
+      },
+      "required": ["table", "key", "value", "default"]
     }
   }
 }
