@@ -173,6 +173,14 @@ pub(super) fn ancestor_configs(configs: &ConfigSet, paths: &[PathBuf]) -> Vec<us
         .collect()
 }
 
+/// `ids` without the configs that own a file of the run. A config that owns files is planned for its own
+/// languages, so only a config owning none counts as an ancestor; the component pre-plan and the project
+/// planner both draw that line here.
+pub(crate) fn without_owning(ids: Vec<usize>, files: &[DiscoveredFile]) -> Vec<usize> {
+    let owning: FxHashSet<usize> = files.iter().map(|file| file.config_id).collect();
+    ids.into_iter().filter(|id| !owning.contains(id)).collect()
+}
+
 /// The project engines that apply to this run: those that declare the capability, are not
 /// switched off with `enabled = false`, and survive `--only` / `--skip`. They are the compiled-in
 /// ones and the downloadable components' (`components`).
@@ -197,10 +205,7 @@ fn plan_project_engines(
         .collect();
     let owning: FxHashSet<usize> = scopes.iter().map(|(id, _)| *id).collect();
     let languages: FxHashSet<Language> = scopes.iter().map(|(_, language)| language.clone()).collect();
-    for id in ancestor_configs(configs, paths)
-        .into_iter()
-        .filter(|id| !owning.contains(id))
-    {
+    for id in without_owning(ancestor_configs(configs, paths), files) {
         scopes.extend(languages.iter().map(|language| (id, language.clone())));
     }
     scopes.sort_by(|a, b| (a.0, a.1.id()).cmp(&(b.0, b.1.id())));

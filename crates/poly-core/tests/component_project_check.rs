@@ -349,3 +349,54 @@ fn a_per_file_component_of_an_ancestor_config_is_neither_ensured_nor_reported() 
     assert_eq!(run.components.used, ["checker"], "{:?}", run.components);
     assert!(run.components.missing.is_empty(), "{:?}", run.components);
 }
+
+#[test]
+fn an_ancestor_config_that_owns_a_file_of_the_run_fetches_no_component_for_other_languages() {
+    let _recording = RECORDING.lock().unwrap_or_else(|e| e.into_inner());
+    let rust_tree = WireEngineDesc {
+        languages: vec!["rust".into()],
+        ..whole_tree_desc()
+    };
+    let mut component_index = index();
+    component_index.components[0].engines = vec![rust_tree];
+    let cache = tempfile::tempdir().unwrap();
+    let mut host_options = HostOptions::new(lock(), PathBuf::from(cache.path()));
+    host_options.target = Some(TARGET.into());
+    host_options.gate_loads = true;
+    let host = ComponentHost::new(host_options)
+        .unwrap()
+        .with_connector(Arc::new(RecorderConnector));
+    let options = RunOptions {
+        component_injection: Some(ComponentInjection::new(host, component_index)),
+        no_cache: true,
+        jobs: Some(1),
+        ..RunOptions::default()
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let write = |name: &str, contents: &str| {
+        let path = dir.path().join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
+    };
+    write("poly.toml", "[workspace]\nroot = true\n");
+    write("packages/a/a.py", "a = 1\n");
+    write(
+        "packages/a/sub/poly.toml",
+        "[format]\n[components]\ndisable = [\"checker\"]\n",
+    );
+    write("packages/a/sub/b.rs", "fn b() {}\n");
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+
+    let run = poly_core::lint_run(
+        &[dir.path().join("packages/a")],
+        &Config::default(),
+        &options,
+        false,
+        false,
+    )
+    .unwrap();
+    assert!(run.errors.is_empty(), "{:?}", run.errors);
+    assert!(run.components.used.is_empty(), "{:?}", run.components);
+    assert!(run.components.missing.is_empty(), "{:?}", run.components);
+}

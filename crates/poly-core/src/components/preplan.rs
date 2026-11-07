@@ -155,7 +155,7 @@ pub(crate) fn resolve(
     // for every language the run saw.
     let languages: FxHashSet<Language> = files.iter().map(|file| file.language.clone()).collect();
     let mut ancestor_pairs = Vec::new();
-    for &config_id in ancestors {
+    for config_id in crate::runner::without_owning(ancestors.to_vec(), files) {
         for language in &languages {
             let pair = (config_id, language.clone());
             if seen.insert(pair.clone()) {
