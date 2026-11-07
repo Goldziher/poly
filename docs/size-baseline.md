@@ -42,7 +42,7 @@ The typos dictionary is data, not code: it adds 11.1 MB to the core on its own (
 
 The numbers above predate the component host and the alef runtime. v0.33.1 shipped a core of
 17.3 MB (`aarch64-apple-darwin`) and 21.1 MB (`x86_64-unknown-linux-gnu`), stripped: thin LTO at
-`opt-level = 3`, nothing gating the size. ADR 0043 sets a 10 MiB (10,485,760 bytes) ceiling on
+`opt-level = 3`, nothing gating the size. ADR 0043 sets a 14 MiB (14,680,064 bytes) ceiling on
 `x86_64-unknown-linux-gnu`, gated by `mise run check:core-size` in CI and on the shipped binary.
 
 Stripped bytes, `poly-cli --no-default-features --features core`, macOS 27 / aarch64 unless noted
@@ -54,12 +54,14 @@ Stripped bytes, `poly-cli --no-default-features --features core`, macOS 27 / aar
 | `core` profile, `opt-level = "s"` | 11,292,288 |
 | `core` profile, `opt-level = "z"` | 8,479,904 |
 | `core` profile, `z` with `tree-sitter`, `blake3`, `ignore`, `memchr`, `aho-corasick`, `regex-automata`, `poly-cache` at 3, plus `poly-core` at 3 | 10,441,360 |
-| **final**: `core` profile, `z` with the packages above except `poly-core` at 3, `uncomment` and `ini` moved to components, schemars off the protocol | **8,840,128** |
-| same, `aarch64-unknown-linux-gnu` (Docker `rust:latest`) | **10,171,472** |
+| `core` profile, `z` with the packages above except `poly-core` at 3, `uncomment` and `ini` moved to components, schemars off the protocol | 8,840,128 |
+| same, `aarch64-unknown-linux-gnu` (Docker `rust:latest`) | 10,171,472 |
+| **shipped**: `core` profile, `opt-level = "s"`, no per-package overrides, `uncomment` and `ini` moved to components, schemars off the protocol | **11,076,848** |
 
-`opt-level = "z"` is the only level that fits; `s` misses the ceiling by about 2.5 MB. The linux
-aarch64 build is the closest proxy available here for the gated `x86_64-unknown-linux-gnu`
-build, and CI is the authority on that one.
+The shipped profile is `s`: it fits 10 MiB only with `z`, but `z` costs cold-run CPU (below), so
+speed was chosen over the 10 MiB target and the ceiling is 14 MiB. The Linux build is about 13 MB
+(the `z` rows show the macOS to Linux ratio, about 1.15); CI is the authority on the gated
+`x86_64-unknown-linux-gnu` size.
 
 ### Speed of the opt-level choice
 
@@ -86,9 +88,9 @@ baselines come from other hardware and were not comparable):
 | `generic_formatter/parse_only_rust` | 1.70 ms | 1.77 ms | 2.37 ms |
 | `runner_e2e/format_64_rust_files_dry_run` | 2.90 s (loaded) | 0.74 s | 1.12 s |
 
-`s` is within the 5% budget everywhere but does not fit under 10 MiB, so the shipped profile is `z`
-with the hot-path packages raised, which costs a cold run about 10-15% CPU time and a warm
-run 20-30 ms. That is above the 5% guideline; the ceiling is the harder constraint.
+`s` is within the 5% budget everywhere, while `z` with the hot-path packages raised still costs a
+cold run 11-16% CPU time. The shipped profile is therefore `s`, and the ceiling moved from 10 MiB to
+14 MiB.
 
 ### Where the bytes are
 
@@ -97,7 +99,7 @@ Cargo.toml, 11.17 MB attributed: C and unattributed 2.2 MB, `core` 1.1, `poly_cl
 0.58, `regex_automata` 0.55, `poly_core` 0.49, `alloc` 0.45, `log` 0.32, `rustls` 0.26,
 `poly_config` 0.24, `serde_json` 0.24, `schemars` 0.23, `tracing_subscriber` 0.19,
 `serde_saphyr` + `granit_parser` 0.33, `poly_hooks` 0.17, `poly_workspace` 0.16, `rmp_serde`
-0.16, `clap_builder` 0.15, `ureq` 0.12. schemars stays because `poly config schema` and the
+0.16, `clap_builder` 0.15, `ureq` 0.12. schemars stays linked (via `poly-config` and `poly-host-services`) because `poly config schema` and the
 `schemas.output` host service (the `mcp` component asks for it) need the report and config
 derives; only the component protocol's own derives were gated. tree-sitter-language-pack's
 `download` feature is how the core fetches grammars and shares `ureq` with the component
@@ -200,9 +202,9 @@ so the verified stamp (xberg-io/alef#833, shipped) must be on in poly's host.
 
 ## Decisions
 
-- **The core fits under 10 MB** with fat LTO and `opt-level = "z"` (9.4 MB). `opt-level = "s"`
-  lands at the ceiling (10.0 MB). The core's own hot path (discovery, cache, runner) must be
-  benchmarked with `runner_e2e` before `z` is final; components keep their own profile.
+- **The core ships at `opt-level = "s"` under a 14 MiB ceiling** (11.1 MB on
+  `aarch64-apple-darwin`). `z` fits 10 MB (9.4 MB core-only) but costs cold-run CPU; speed was
+  chosen over the 10 MiB target. Components keep their own profile.
 - **In the core:** quality (+0.14 MB, shares the tree-sitter runtime), gitfluff, tslp, catalog and
   native-tool tiers, clap, ureq/rustls and the alef runtime. `uncomment` and `ini` moved to
   components (ADR 0043); the gated size is in "The released core after ADR 0043".

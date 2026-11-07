@@ -1,4 +1,4 @@
-# 0043 — The Core Stays Under 10 MiB
+# 0043 — The Core Stays Under 14 MiB
 
 - Status: Accepted
 - Date: 2026-11-06
@@ -15,8 +15,9 @@ property and needs a gate.
 
 ## Decision
 
-The released core stays under **10 MiB (10,485,760 bytes)** on `x86_64-unknown-linux-gnu`, the
-largest native triple, and CI fails above it.
+The released core stays under **14 MiB (14,680,064 bytes)** on `x86_64-unknown-linux-gnu`, the
+largest native triple, and CI fails above it. The first target was 10 MiB; speed was chosen over it
+(below).
 
 ### Scope of the core
 
@@ -41,12 +42,17 @@ outside engine is a component. That amends ADR 0039's core set in two places:
 stays `unwind` because `engine_guard` catches an engine panic. The release builds the core with
 `--profile core` and reads it from `target/<triple>/core`; the musl bundled build keeps `release`.
 
-`opt-level = "z"` is the base. A cold run is CPU-bound in the tree-sitter C runtime (the `cc` crate
-takes `-Oz` from the package's `opt-level`) and in a few small hot-path crates, so those packages
-keep `opt-level = 3` (`tree-sitter`, `poly-cache`, `blake3`, `ignore`, `memchr`, `aho-corasick`,
-`regex-automata`). Measurements are in `docs/size-baseline.md`: pure `z` made a cold lint of 573
-files about 50-60% more CPU time than the current release; `s` stayed within 5% but is about 2.5 MB
-larger and does not fit; `z` with the hot packages at 3 fits and costs about 10-15% cold CPU time.
+`opt-level = "s"` for the whole core, with no per-package overrides. Cold-run CPU time is what a
+user feels, and `s` stays within 5% of the v0.33.1 profile (thin LTO, `opt-level = 3`), where `z`
+costs 50-60% more (the tree-sitter C runtime takes `-Oz` from the package's `opt-level`) and `z` with
+the hot-path packages raised to 3 still costs 11-16%. `s` does not fit 10 MiB: 11,292,288 bytes on
+`aarch64-apple-darwin` (11,076,848 after the later cleanups, measured on this branch), about 13 MB on
+Linux. The maintainer chose speed over the 10 MiB target, so the ceiling is 14 MiB. Measurements are
+in `docs/size-baseline.md`.
+
+`schemars` stays linked: `poly config schema` and the `schemas.output` host service (reached through
+`poly-config` and `poly-host-services`) need the report and config derives. Only the component
+protocol's own derives are behind a feature.
 
 ### Gate
 
@@ -56,8 +62,8 @@ runs it on Linux, and the release workflow checks the shipped `x86_64-unknown-li
 
 ## Consequences
 
-- Cold runs on the core cost about 10-15% more CPU time than a thin-LTO `opt-level = 3` build
-  (a warm run about 20-30 ms), above the 5% guideline; the ceiling is the harder constraint.
+- Cold runs on the core stay within about 5% of a thin-LTO `opt-level = 3` build, at the cost of a
+  14 MiB core instead of 10 MiB.
 - Two more engines need a component to be used: `uncomment` and `ini`. A core build without the
   lock reports them like any other missing component.
 - Any dependency that grows the core past the ceiling fails CI, and the answer is a component, not
@@ -65,8 +71,9 @@ runs it on Linux, and the release workflow checks the shipped `x86_64-unknown-li
 
 ## Alternatives considered
 
-- **`opt-level = "s"` for the whole core.** Meets the 5% speed budget but is 11.3 MB on
-  `aarch64-apple-darwin`, about 13 MB on Linux. Rejected.
-- **Pure `opt-level = "z"`.** Smallest, but cold runs cost 50-60% more CPU time. Rejected for the
-  hot-path packages above.
-- **Raising the ceiling.** The ceiling is a decision about the first download, not a measurement.
+- **`opt-level = "z"` with the hot-path packages (`tree-sitter`, `poly-cache`, `blake3`, `ignore`,
+  `memchr`, `aho-corasick`, `regex-automata`) at 3.** Fits 10 MiB (8.8 MB on `aarch64-apple-darwin`,
+  10.2 MB on `aarch64-unknown-linux-gnu`) but costs a cold run 11-16% more CPU time. Rejected for speed.
+- **Pure `opt-level = "z"`.** Smallest, but cold runs cost 50-60% more CPU time. Rejected.
+- **Keeping 10 MiB.** Reachable only with `z`, at the speed cost above. The ceiling follows the chosen
+  profile; later growth is answered with a component, not another raise.

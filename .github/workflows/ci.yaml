@@ -240,9 +240,9 @@ jobs:
         run: mise run check:deps
 
   # The released core ships on every download, so its size is gated on the largest native triple
-  # (ADR 0039, ADR 0043): a fat-LTO `--profile core` build must stay under 10 MiB.
+  # (ADR 0039, ADR 0043): a fat-LTO `--profile core` build must stay under 14 MiB.
   core-size:
-    name: core under 10 MiB
+    name: core under 14 MiB
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

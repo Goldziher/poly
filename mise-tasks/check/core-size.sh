@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-#MISE description="Gate: the released core binary (profile `core`) stays under 10 MiB"
+#MISE description="Gate: the released core binary (profile `core`) stays under 14 MiB"
 #USAGE arg "[binary]" help="Check this built binary instead of building one"
-#USAGE flag "--limit <bytes>" help="Size ceiling in bytes" default="10485760"
+#USAGE flag "--limit <bytes>" help="Size ceiling in bytes" default="14680064"
 # Build the core exactly as the release does (`poly-cli --no-default-features --features core`,
 # `--profile core`) and fail when the stripped binary is larger than the ceiling (ADR 0039, ADR 0043).
 # With a path, check that binary instead: the release workflow checks the one it ships. The ceiling is
@@ -9,7 +9,7 @@
 set -euo pipefail
 shopt -s inherit_errexit
 
-limit="${usage_limit:-10485760}"
+limit="${usage_limit:-14680064}"
 bin="${usage_binary:-}"
 if [[ -z "$bin" ]]; then
   cargo build --locked --profile core -p poly-cli --no-default-features --features core

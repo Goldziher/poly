@@ -16,11 +16,12 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Changed
 
-- **The released core is under 10 MiB.** It is built with a new `core` Cargo profile (fat LTO, `opt-level = "z"`,
-  hot-path packages at 3, stripped) instead of the thin-LTO release profile, and `mise run check:core-size` gates
-  it in CI and in the release. `uncomment` and `ini` are no longer in the core: `ini` joins the `misc` component and
-  `uncomment` is its own opt-in component (ADR 0043). The component protocol links `schemars` only behind a
-  feature.
+- **The released core is smaller.** It is built with a new `core` Cargo profile (fat LTO, `opt-level = "s"`,
+  stripped) instead of the thin-LTO release profile, keeping cold-run CPU within about 5% of before, and
+  `mise run check:core-size` gates it at 14 MiB in CI and in the release (11.1 MB on `aarch64-apple-darwin`).
+  `uncomment` and `ini` are no longer in the core: `ini` joins the `misc` component and `uncomment` is its own
+  opt-in component (ADR 0043). The component protocol links `schemars` only behind a feature; the core still
+  links it through `poly-config` and `poly-host-services`.
 - **Dependencies.** ruff 0.17.4 (`ruff_*` 0.0.21), ty 0.0.21, biome v2.6.5 and rubyfmt v0.14.2-38;
   alef 0.127.2 for the component build.
 - **`python-types` (ty).** ty renamed the diagnostic `unresolved-import` to `import-not-found`;
