@@ -40,7 +40,7 @@
 //!
 //! Extensions: `.ini`, `.cfg`, `.desktop`, `.pypirc`. Filenames: `.npmrc`,
 //! `.editorconfig`, `.coveragerc`, `.pylintrc`, `pylintrc`, `.flake8`,
-//! `.gitlint`, `.hgrc` (see [`crate::language`]). Deliberately excluded:
+//! `.gitlint`, `.hgrc` (see `poly_engine_api::language`). Deliberately excluded:
 //! `*.conf` (mostly not INI), `*.properties` (Java, different syntax),
 //! `.gitconfig` (quoted subsections `rust-ini` cannot parse), systemd units
 //! (legal duplicate keys are normal there), `*.reg`. `[lint.ini] extra_files`
@@ -50,10 +50,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use ini::{Ini, ParseOption};
 
-use super::rule_config::RuleSelection;
-use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, Severity, SourceFile, Span};
-use crate::language::Language;
+use poly_engine_api::config::EngineConfig;
+use poly_engine_api::engine::{Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, Severity, SourceFile, Span};
+use poly_engine_api::language::Language;
+use poly_engine_api::rule_config::RuleSelection;
 
 /// Cache-key version: the `rust-ini` crate version, plus a marker for this
 /// backend's own scan/mapping logic. Bump whenever the crate is updated OR
@@ -313,7 +313,7 @@ fn apply_rule_selection(diags: Vec<Diagnostic>, selection: &RuleSelection) -> Ve
 
 #[cfg(test)]
 mod tests {
-    use crate::config::GlobalDefaults;
+    use poly_engine_api::config::GlobalDefaults;
 
     use super::*;
 

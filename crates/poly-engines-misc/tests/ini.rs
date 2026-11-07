@@ -13,14 +13,14 @@
 //!   separator) produces no findings.
 //! - `clean_file_has_no_ini_diagnostics` — a well-formed `.ini` file produces
 //!   no findings.
-#![cfg(feature = "engine-ini")]
+#![cfg(feature = "ini")]
 
-use poly_core::{
-    Language,
+use poly_engine_api::{
     config::{EngineConfig, GlobalDefaults},
     engine::{Engine, Severity, SourceFile},
-    engines::ini::IniEngine,
+    language::Language,
 };
+use poly_engines_misc::ini::IniEngine;
 
 fn engine_cfg() -> EngineConfig {
     EngineConfig {

@@ -25,6 +25,8 @@ pub use components::PythonComponent;
 pub use components::SqlComponent;
 #[cfg(feature = "typos")]
 pub use components::TyposComponent;
+#[cfg(feature = "uncomment")]
+pub use components::UncommentComponent;
 pub use producer::Producer;
 
 #[cfg(feature = "astgrep")]

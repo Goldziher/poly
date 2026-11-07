@@ -15,7 +15,7 @@ description = "Core engine for the poly universal, zero-dependency linter & form
 libc.workspace = true
 
 [package.metadata.cargo-machete]
-ignored = ["serde_toon_format", "rust-ini"]
+ignored = ["serde_toon_format"]
 
 [lib]
 name = "poly_core"
@@ -36,9 +36,10 @@ default = ["all-engines"]
 dev-lock = []
 # Link every engine family into the binary (the dev and test configuration). Alias of `all-engines`.
 bundled = ["all-engines"]
-# The families the released core links (ADR 0039): the ones that share the tree-sitter runtime or
-# cost too little to ship separately. Every other family is a downloadable component.
-core = ["engine-quality", "engine-uncomment", "engine-ini"]
+# The families the released core links (ADR 0039, narrowed by ADR 0043): poly's own quality rules,
+# which share the tree-sitter runtime. Every family wrapping an outside engine is a downloadable
+# component.
+core = ["engine-quality"]
 all-engines = [
   "engine-python",
   "engine-php",
@@ -65,7 +66,7 @@ engine-astgrep = ["dep:poly-engines-astgrep"]
 engine-uncomment = ["dep:poly-engines-uncomment"]
 engine-dockerfile = ["dep:poly-engines-misc", "poly-engines-misc/dockerfile"]
 engine-dotenv = ["dep:poly-engines-misc", "poly-engines-misc/dotenv"]
-engine-ini = ["dep:rust-ini"]
+engine-ini = ["dep:poly-engines-misc", "poly-engines-misc/ini"]
 engine-hcl = ["dep:poly-engines-misc", "poly-engines-misc/hcl"]
 engine-graphql = ["dep:poly-engines-misc", "poly-engines-misc/graphql"]
 
@@ -94,7 +95,6 @@ poly-engines-uncomment = { workspace = true, optional = true }
 poly-grammar.workspace = true
 rayon.workspace = true
 regex.workspace = true
-rust-ini = { workspace = true, optional = true }
 rustc-hash.workspace = true
 # Optional: only compiled when the `schemars` feature is enabled (by poly-mcp) to
 # derive JsonSchema on the public report types for MCP structured output.

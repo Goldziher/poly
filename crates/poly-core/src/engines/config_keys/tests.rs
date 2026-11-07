@@ -445,7 +445,7 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
     ("hcl", &["../../../poly-engines-misc/src/hcl/mod.rs"]),
     ("dockerfile", &["../../../poly-engines-misc/src/dockerfile.rs"]),
     ("dotenv", &["../../../poly-engines-misc/src/dotenv.rs"]),
-    ("ini", &["ini.rs"]),
+    ("ini", &["../../../poly-engines-misc/src/ini.rs"]),
     ("treesitter", &["treesitter/mod.rs"]),
     ("polyconfig", &["config_keys/mod.rs"]),
     // The four cross-cutting backends read a table `Config` merged for them, so

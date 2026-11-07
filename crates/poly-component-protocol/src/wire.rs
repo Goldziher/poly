@@ -2,7 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::WireValue;
@@ -11,7 +10,8 @@ use crate::WireValue;
 pub type ConfigId = u32;
 
 /// Severity of a [`WireDiagnostic`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum WireSeverity {
     /// A problem that should fail the run.
     Error,
@@ -24,7 +24,8 @@ pub enum WireSeverity {
 }
 
 /// 1-based line/column span.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireSpan {
     /// 1-based start line.
     pub start_line: u32,
@@ -37,7 +38,8 @@ pub struct WireSpan {
 }
 
 /// A byte-range replacement.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireEdit {
     /// Inclusive start byte offset.
     pub start_byte: u64,
@@ -48,7 +50,8 @@ pub struct WireEdit {
 }
 
 /// A normalized lint finding. Every field is always present on the wire.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireDiagnostic {
     /// Id of the engine that produced the finding.
     pub engine: String,
@@ -71,7 +74,8 @@ pub struct WireDiagnostic {
 }
 
 /// A file whose content is the entire `body` of the call.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireFile {
     /// Path, used for naming and config discovery only.
     pub path: String,
@@ -82,7 +86,8 @@ pub struct WireFile {
 }
 
 /// One member of a batch: a byte range of the call's `body`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireFileSlice {
     /// Path, used for naming and config discovery only.
     pub path: String,
@@ -95,7 +100,8 @@ pub struct WireFileSlice {
 }
 
 /// Which config table an option declaration describes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum WireOptionTable {
     /// `[lint.<lang>.<engine>]`.
     Lint,
@@ -106,7 +112,8 @@ pub enum WireOptionTable {
 }
 
 /// Whether a query concerns linting or formatting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum WireKind {
     /// Lint.
     Lint,
@@ -115,7 +122,8 @@ pub enum WireKind {
 }
 
 /// One declared option key.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireOptionKey {
     /// Key name.
     pub name: String,
@@ -124,7 +132,8 @@ pub struct WireOptionKey {
 }
 
 /// The static option keys an engine reads from one table.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireOptionKeys {
     /// The table described.
     pub table: WireOptionTable,
@@ -141,7 +150,8 @@ pub struct WireOptionKeys {
 }
 
 /// What an engine can do.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireCapabilities {
     /// Can report diagnostics.
     pub lint: bool,
@@ -154,7 +164,8 @@ pub struct WireCapabilities {
 }
 
 /// Which batch operations an engine supports.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireBatchSupport {
     /// `format_batch` is implemented.
     pub format: bool,
@@ -184,7 +195,8 @@ pub mod hooks {
 }
 
 /// A side file of a project check: the option naming its path and the default path.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireProjectSideFile {
     /// Option naming the path, relative to the project root.
     pub option_key: String,
@@ -193,7 +205,8 @@ pub struct WireProjectSideFile {
 }
 
 /// The directories a project check is about, named by options.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireProjectDirs {
     /// Option naming one directory, relative to the project root.
     pub dir_key: String,
@@ -208,7 +221,8 @@ pub struct WireProjectDirs {
 }
 
 /// `Engine::project_inputs`: what a project check needs from the host besides its own files.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireProjectInputs {
     /// Option that must be set for the engine to be planned.
     pub gate_key: Option<String>,
@@ -220,7 +234,8 @@ pub struct WireProjectInputs {
 }
 
 /// Static description of one engine hosted by a component.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireEngineDesc {
     /// Tool id (`Engine::name`).
     pub name: String,
@@ -256,7 +271,8 @@ pub struct WireEngineDesc {
 }
 
 /// The answer to `describe()`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Describe {
     /// Protocol version the component speaks.
     pub protocol: u32,
@@ -267,7 +283,8 @@ pub struct Describe {
 }
 
 /// Log level, ordered from most to least severe.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum WireLogLevel {
     /// Errors.
     Error,
@@ -282,7 +299,8 @@ pub enum WireLogLevel {
 }
 
 /// A log record emitted by the component during a call.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireLog {
     /// Level.
     pub level: WireLogLevel,
@@ -293,7 +311,8 @@ pub struct WireLog {
 }
 
 /// Classification of a [`WireError`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum WireErrorKind {
     /// The engine returned an error.
     Error,
@@ -311,7 +330,8 @@ pub enum WireErrorKind {
 }
 
 /// A failed call.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireError {
     /// Classification.
     pub kind: WireErrorKind,
@@ -322,7 +342,8 @@ pub struct WireError {
 }
 
 /// A request header. File content never appears here; it travels in the call's `body`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum Request {
     /// First call: negotiate the protocol and pass host settings.
     Init {
@@ -529,7 +550,8 @@ impl Request {
 }
 
 /// Result of formatting one file.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum WireFormatOutput {
     /// Already formatted.
     Unchanged,
@@ -538,7 +560,8 @@ pub enum WireFormatOutput {
 }
 
 /// Per-member result of a batch lint.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum WireLintItem {
     /// Diagnostics for the member.
     Ok(Vec<WireDiagnostic>),
@@ -547,7 +570,8 @@ pub enum WireLintItem {
 }
 
 /// Per-member result of a batch format.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum WireFormatItem {
     /// Output for the member.
     Ok(WireFormatOutput),
@@ -556,7 +580,8 @@ pub enum WireFormatItem {
 }
 
 /// Diagnostics of one file from a project check.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireFileDiagnostics {
     /// Path as given in the request.
     pub path: String,
@@ -565,7 +590,8 @@ pub struct WireFileDiagnostics {
 }
 
 /// One resolved rule of a [`WireRulesReport`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireRule {
     /// The rule's `id`, as reported in a diagnostic's `code`.
     pub id: String,
@@ -582,7 +608,8 @@ pub struct WireRule {
 }
 
 /// The outcome of one rule-test snippet.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireRuleTestOutcome {
     /// The rule id the snippet was checked against.
     pub rule_id: String,
@@ -597,7 +624,8 @@ pub struct WireRuleTestOutcome {
 }
 
 /// The result of running the rule tests.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireRuleTests {
     /// Rules discovered under the searched directories.
     pub total_rules: u64,
@@ -610,7 +638,8 @@ pub struct WireRuleTests {
 }
 
 /// The answer to [`Request::Rules`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WireRulesReport {
     /// Whether poly's built-in rule pack is enabled in the request's config.
     pub builtin_pack_enabled: bool,
@@ -621,7 +650,8 @@ pub struct WireRulesReport {
 }
 
 /// The successful payload of a [`Response`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum Payload {
     /// Success with no data (`RegisterConfig`).
     Ok,
@@ -657,7 +687,8 @@ pub enum Payload {
 }
 
 /// The answer to every call.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Response {
     /// Outcome.
     pub result: Result<Payload, WireError>,
@@ -666,7 +697,8 @@ pub struct Response {
 }
 
 /// Root type used to emit one JSON Schema covering every top-level message.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ProtocolSchema {
     /// Request header.
     pub request: Request,
