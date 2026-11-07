@@ -274,6 +274,13 @@ impl ComponentEngine {
         self
     }
 
+    /// The byte limit `src` is over, if any. `skip_reason` reports it, but the runner only skips a
+    /// file every planned engine declines, so `lint` and `format` check it again rather than ship
+    /// a frame the component cannot read.
+    fn frame_limit_exceeded(&self, src: &SourceFile) -> Option<usize> {
+        self.max_file_bytes.filter(|&max| src.content.len() > max)
+    }
+
     /// Collapse `\r\n` to `\n` in formatted output, as the host-tool engines do for the CLI they
     /// wrap (which may emit CRLF on Windows), so a sidecar that replaces one formats the same bytes.
     #[must_use]
@@ -396,7 +403,7 @@ impl Engine for ComponentEngine {
         if let Some(reason) = &self.unavailable {
             return self.unavailable_skips.then(|| Cow::Owned(reason.clone()));
         }
-        if let Some(max) = self.max_file_bytes.filter(|&max| src.content.len() > max) {
+        if let Some(max) = self.frame_limit_exceeded(src) {
             return Some(Cow::Owned(format!(
                 "larger than the {max}-byte limit of the {} component",
                 self.slot.component_id()
@@ -428,7 +435,7 @@ impl Engine for ComponentEngine {
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        if self.unavailable_noop {
+        if self.unavailable_noop || self.frame_limit_exceeded(src).is_some() {
             return Ok(Vec::new());
         }
         let connection = self.connect()?;
@@ -450,7 +457,7 @@ impl Engine for ComponentEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        if self.unavailable_noop {
+        if self.unavailable_noop || self.frame_limit_exceeded(src).is_some() {
             return Ok(FormatOutput::Unchanged);
         }
         let connection = self.connect()?;

@@ -182,6 +182,23 @@ fn a_file_the_frame_cannot_carry_is_declined_with_a_counted_skip() {
 }
 
 #[test]
+fn an_oversize_file_never_reaches_the_sidecar_even_when_format_is_called_directly() {
+    // The runner skips a file only when every planned formatter declines it, so with a second
+    // formatter in the plan `format` is called on a file `skip_reason` declined. It must not ship
+    // the file, whose frame the real sidecar cannot read: the `ok` script answers any forwarded
+    // call with FORMATTED, so a forwarded oversize file shows up as a rewrite.
+    let fixture = scripted("ok", PROTOCOL_VERSION, Duration::from_secs(10), None);
+    let limit = poly_component_protocol::sidecar::MAX_FILE_BYTES;
+    let oversize = shell(&"a".repeat(limit + 1));
+    assert!(matches!(
+        fixture.engine.format(&oversize, &config(2)).unwrap(),
+        FormatOutput::Unchanged
+    ));
+    assert!(fixture.engine.lint(&oversize, &config(2)).unwrap().is_empty());
+    assert_eq!(formatted(&fixture.engine).unwrap(), "FORMATTED");
+}
+
+#[test]
 fn a_crash_mid_call_fails_that_call_and_every_later_one() {
     let fixture = scripted("crash_at_3", PROTOCOL_VERSION, Duration::from_secs(10), None);
     let first = format!("{:#}", formatted(&fixture.engine).unwrap_err());
