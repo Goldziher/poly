@@ -85,13 +85,21 @@ fn run(root: &Path, files: &[ProjectFile], config: &EngineConfig) -> Analysis {
     analyze(&request).expect("skif runs")
 }
 
+/// `path` with `/` separators on every OS, so expectations are written once.
+fn slashed(path: &Path) -> String {
+    path.components()
+        .map(|part| part.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// `(path relative to root, rule, severity, line)` of every finding, sorted.
 fn summary(root: &Path, analysis: &Analysis) -> Vec<(String, String, String, Option<u32>)> {
     let mut found: Vec<_> = analysis
         .findings
         .iter()
         .flat_map(|(path, diagnostics)| {
-            let relative = path.strip_prefix(root).expect("inside the root").display().to_string();
+            let relative = slashed(path.strip_prefix(root).expect("inside the root"));
             diagnostics.iter().map(move |d| {
                 (
                     relative.clone(),
@@ -128,7 +136,7 @@ fn missed(root: &Path, analysis: &Analysis) -> (Vec<String>, Vec<PathBuf>) {
     let (inside, outside): (Vec<_>, Vec<_>) = analysis.log.missed.iter().partition(|path| path.starts_with(root));
     let inside = inside
         .into_iter()
-        .map(|path| path.strip_prefix(root).unwrap().display().to_string())
+        .map(|path| slashed(path.strip_prefix(root).unwrap()))
         .collect();
     (inside, outside.into_iter().cloned().collect())
 }
@@ -715,12 +723,7 @@ impl Project {
             .results
             .iter()
             .flat_map(|result| {
-                let name = result
-                    .path
-                    .strip_prefix(self.dir.path())
-                    .expect("inside")
-                    .display()
-                    .to_string();
+                let name = slashed(result.path.strip_prefix(self.dir.path()).expect("inside"));
                 result
                     .diagnostics
                     .iter()
