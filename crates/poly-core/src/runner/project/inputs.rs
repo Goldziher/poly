@@ -119,16 +119,10 @@ pub(super) fn resolve_dirs(declared: &ProjectDirs, options: &toml::Table) -> Res
         Some(key) => typed(options, key, "a boolean", toml::Value::as_bool)?.unwrap_or(false),
         None => false,
     };
-    let mut dirs: Vec<PathBuf> = named
-        .into_iter()
-        .filter_map(|dir| {
-            let resolved = inside_root(dir);
-            if resolved.is_none() {
-                tracing::warn!(path = dir, "project check: directory must stay inside the project root");
-            }
-            resolved
-        })
-        .collect();
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for dir in named {
+        dirs.push(inside_root(dir).ok_or_else(|| format!("directory `{dir}` must stay inside the project root"))?);
+    }
     dirs.sort();
     dirs.dedup();
     Ok(ResolvedDirs {
@@ -157,26 +151,34 @@ impl ResolvedDirs {
 
 /// Read a side file: the path comes from the engine's option (else its default) and must stay
 /// inside the project root. It is handed over as [`Language::Other`] named after its file name.
-fn side_file(root: &Path, option: Option<&str>, default: &str) -> Option<ProjectFile> {
+///
+/// A file that does not exist is `Ok(None)`: the project has not adopted that input. One that
+/// exists but cannot be used (a symlink, outside the root, unreadable, not UTF-8) is an error,
+/// because skipping it would silently switch off every check that judges the project against it.
+fn side_file(root: &Path, option: Option<&str>, default: &str) -> Result<Option<ProjectFile>, String> {
     let configured = option.unwrap_or(default);
-    let Some(relative) = inside_root(configured) else {
-        tracing::warn!(
-            path = configured,
-            "project check: side input must stay inside the project root"
-        );
-        return None;
-    };
+    let relative = inside_root(configured)
+        .ok_or_else(|| format!("side input `{configured}` must stay inside the project root"))?;
     let path = root.join(&relative);
-    if !matches!(check_inside(root, &path), Placement::Inside) {
-        return None;
+    match check_inside(root, &path) {
+        Placement::Inside => {}
+        Placement::Missing => return Ok(None),
+        Placement::Unsafe => {
+            return Err(format!(
+                "side input `{configured}` is a symlink or resolves outside the project root"
+            ));
+        }
     }
-    let content = std::fs::read_to_string(&path).ok()?;
-    let name = relative.file_name()?.to_string_lossy().into_owned();
-    Some(ProjectFile {
+    let content = std::fs::read_to_string(&path)
+        .map_err(|error| format!("side input `{configured}` cannot be read as UTF-8 text: {error}"))?;
+    let Some(name) = relative.file_name() else {
+        return Err(format!("side input `{configured}` does not name a file"));
+    };
+    Ok(Some(ProjectFile {
         path,
-        language: Language::Other(name),
+        language: Language::Other(name.to_string_lossy().into_owned()),
         content: Arc::from(content),
-    })
+    }))
 }
 
 /// Where `plan`'s engine keeps its side files, whether or not they exist.
@@ -270,7 +272,7 @@ pub(super) fn load(
     dirs: Option<&ResolvedDirs>,
     scoped: &[&DiscoveredFile],
     run: &RunInputs<'_>,
-) -> Vec<ProjectFile> {
+) -> Result<Vec<ProjectFile>, String> {
     let (mut loaded, unserved) = match dirs {
         Some(dirs) => {
             let (owned, unserved) = walk(plan, root, dirs, run.configs, run.exclude);
@@ -282,13 +284,13 @@ pub(super) fn load(
     let sides = side_paths(plan, root);
     for file in &plan.engine.project_inputs().files {
         let option = plan.config.options.get(&file.option_key).and_then(toml::Value::as_str);
-        loaded.extend(side_file(root, option, &file.default_path));
+        loaded.extend(side_file(root, option, &file.default_path)?);
     }
     if dirs.is_some_and(|dirs| dirs.list_unserved) {
         loaded.extend(listing(unserved, &sides, run.act_on_generated[plan.config_id]));
     }
     loaded.sort_by(|a, b| a.path.cmp(&b.path));
-    loaded
+    Ok(loaded)
 }
 
 /// Whether `loaded` holds anything but listing entries: a served file or a side file. A listing
@@ -346,8 +348,11 @@ mod tests {
     }
 
     #[test]
-    fn a_directory_leaving_the_root_leaves_nothing_to_read() {
-        assert!(dirs_of("dir = \"../outside\"").is_empty());
+    fn a_directory_leaving_the_root_is_an_error_naming_it() {
+        for text in ["dir = \"../outside\"", "dir = \"/etc\"", "paths = [\"ok\", \"../x\"]"] {
+            let error = resolve_dirs(&declared(), &table(text)).expect_err(text);
+            assert!(error.contains("inside the project root"), "{text}: {error}");
+        }
     }
 
     #[test]
@@ -367,28 +372,46 @@ mod tests {
     fn the_side_file_reads_inside_the_root_and_ignores_the_dot_prefix() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("a.lock"), "locked").unwrap();
-        let side = side_file(root.path(), Some("./a.lock"), "default.lock").expect("read");
+        let side = side_file(root.path(), Some("./a.lock"), "default.lock")
+            .expect("usable")
+            .expect("read");
         assert_eq!(side.path, root.path().join("a.lock"));
         assert_eq!(side.language, Language::Other("a.lock".to_owned()));
-        assert!(side_file(root.path(), Some("../a.lock"), "default.lock").is_none());
-        assert!(side_file(root.path(), None, "missing.lock").is_none());
-        assert_eq!(
-            side_file(root.path(), None, "a.lock")
-                .expect("default")
-                .content
-                .as_ref(),
-            "locked"
+        let default = side_file(root.path(), None, "a.lock")
+            .expect("usable")
+            .expect("default");
+        assert_eq!(default.content.as_ref(), "locked");
+    }
+
+    #[test]
+    fn a_missing_side_file_is_not_an_error_but_an_escaping_one_is() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(
+            side_file(root.path(), None, "missing.lock")
+                .expect("absent is fine")
+                .is_none()
         );
+        let error = side_file(root.path(), Some("../a.lock"), "default.lock").expect_err("escapes");
+        assert!(error.contains("inside the project root"), "{error}");
+    }
+
+    #[test]
+    fn a_side_file_that_is_not_utf8_is_an_error() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("a.lock"), [0xff, 0xfe, 0x00]).unwrap();
+        let error = side_file(root.path(), None, "a.lock").expect_err("not text");
+        assert!(error.contains("a.lock"), "{error}");
     }
 
     #[cfg(unix)]
     #[test]
-    fn a_symlinked_side_file_is_not_read() {
+    fn a_symlinked_side_file_is_an_error() {
         let outside = tempfile::tempdir().unwrap();
         let root = tempfile::tempdir().unwrap();
         std::fs::write(outside.path().join("secret"), "x").unwrap();
         std::os::unix::fs::symlink(outside.path().join("secret"), root.path().join("a.lock")).unwrap();
-        assert!(side_file(root.path(), None, "a.lock").is_none());
+        let error = side_file(root.path(), None, "a.lock").expect_err("symlink");
+        assert!(error.contains("symlink"), "{error}");
     }
 
     #[cfg(unix)]

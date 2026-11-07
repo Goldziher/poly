@@ -46,9 +46,14 @@ The `adrlint` engine in the `web` component declares `capabilities.project` and 
 - **The lock is host input.** `adrlint.lock` (or the `lock` option's path, which must stay inside the
   project root) is read by the host and appended to the request as a file of language
   `Other("<file name>")`; the component takes the one such file that is not a listing entry as the
-  manifest and reads nothing itself. A missing lock means no enforcement, a malformed one is an
-  error. A lock or a directory that is a symlink, or that resolves outside the project root, is not
-  read.
+  manifest and reads nothing itself. A missing lock means no enforcement; a malformed one is an
+  error. A lock that exists but cannot be used (a symlink, outside the project root, unreadable or
+  not UTF-8) is an error too, reported like a wrong-typed option and failing the run (exit 2), since
+  skipping it would silently turn `ADR50`/`ADR51` off. A configured directory or lock path that
+  leaves the project root, or a directory that is a symlink, is likewise an error naming it.
+- **What the listing and the log depend on.** `--exclude`, `[discovery] exclude` and `.gitignore`
+  shape the set the host walks, so excluding an ADR file removes it from the log the rules judge;
+  and a symlinked ADR file is a file the walk may not follow, so it is neither loaded nor listed.
 - **The cache key needs nothing new.** The project-check key already folds in the digest of every
   file handed over, so editing, adding or removing an ADR, or changing the lock, re-runs the check.
 - **Gated on `enabled`.** The engine declares `enabled` as its gate, as the per-file rules already

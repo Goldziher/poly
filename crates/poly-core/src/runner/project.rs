@@ -372,7 +372,16 @@ pub(super) fn run_project_phase(
         let environment = environments
             .entry(root.clone())
             .or_insert_with(|| crate::project::env::resolve_environment(&root));
-        let loaded = inputs::load(plan, &root, dirs.as_ref(), &scoped, run);
+        let loaded = match inputs::load(plan, &root, dirs.as_ref(), &scoped, run) {
+            Ok(loaded) => loaded,
+            Err(message) => {
+                outcome.errors.push(LintError {
+                    path: root,
+                    message: format!("project check '{}': {message}", plan.engine.name()),
+                });
+                continue;
+            }
+        };
         if !inputs::has_substance(&loaded) {
             continue;
         }
