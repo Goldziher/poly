@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use poly_engine_api::config::{EngineConfig, GlobalDefaults};
 use poly_engine_api::engine::{ProjectEnvironment, ProjectFile, ProjectRequest};
 use poly_engine_api::language::Language;
-use poly_engines_web::skif::{Analysis, analyze};
+use poly_engines_web::skif::{Analysis, DEFAULTED_OFF_CODE, analyze};
 
 mod common;
 
@@ -35,7 +35,7 @@ fn cfg(extra: &[(&str, toml::Value)]) -> EngineConfig {
 /// The language the host gives `path`, for what the engine serves or declared by name; `None` for the rest.
 fn language_of(path: &Path) -> Option<Language> {
     let name = path.file_name()?.to_str()?;
-    if matches!(name, ".gitignore" | ".ignore") {
+    if matches!(name, ".gitignore" | ".ignore" | "yarn.lock" | "bun.lock") {
         return Some(Language::Other(name.to_owned()));
     }
     match path.extension()?.to_str()? {
@@ -520,6 +520,93 @@ fn a_lock_file_that_names_the_peers_removes_the_false_unused_dependency() {
     assert_eq!(rules_found(&root, &files, &cfg(&[select("unused-dependencies")])), []);
 }
 
+/// `unknowable_members` plus a dependency nothing uses, and the lock file `lock` (named `name`) that records what
+/// `@acme/toolkit` and `@acme/host` provide.
+fn with_lock(name: &str, lock: &str) -> (PathBuf, Vec<ProjectFile>) {
+    let mut members = unknowable_members();
+    members.retain(|(path, _)| *path != "packages/host/package.json");
+    members.push((
+        "packages/host/package.json",
+        r#"{"name":"host","version":"1.0.0","main":"src/a.ts","dependencies":{"@acme/host":"1.0.0","@acme/peer":"1.0.0","left-pad":"1.0.0"}}"#,
+    ));
+    members.push((name, lock));
+    inline(&members)
+}
+
+const NPM_LOCK: &str = r#"{"name":"r","lockfileVersion":3,"packages":{
+  "node_modules/@acme/toolkit":{"version":"1.0.0","bin":{"kit":"cli.js"}},
+  "node_modules/@acme/host":{"version":"1.0.0","peerDependencies":{"@acme/peer":"1.0.0"}},
+  "node_modules/@acme/peer":{"version":"1.0.0"},
+  "node_modules/left-pad":{"version":"1.0.0"}}}"#;
+
+const BERRY_LOCK: &str = "__metadata:\n  version: 8\n\n\"@acme/toolkit@npm:1.0.0\":\n  version: 1.0.0\n  bin:\n    kit: cli.js\n  \
+     languageName: node\n\n\"@acme/host@npm:1.0.0\":\n  version: 1.0.0\n  peerDependencies:\n    \"@acme/peer\": ^1.0.0\n  \
+     languageName: node\n\n\"@acme/peer@npm:1.0.0\":\n  version: 1.0.0\n  languageName: node\n\n\"left-pad@npm:1.0.0\":\n  \
+     version: 1.0.0\n  languageName: node\n";
+
+const CLASSIC_YARN_LOCK: &str =
+    "# yarn lockfile v1\n\n\"@acme/toolkit@1.0.0\":\n  version \"1.0.0\"\n\nleft-pad@1.0.0:\n  version \"1.0.0\"\n";
+
+#[test]
+fn a_lock_file_that_records_binaries_keeps_the_unused_dependency_rules_on_by_default() {
+    for (name, lock) in [("package-lock.json", NPM_LOCK), ("yarn.lock", BERRY_LOCK)] {
+        let (root, files) = with_lock(name, lock);
+        assert_eq!(
+            rules_found(&root, &files, &cfg(&[])),
+            [pair("packages/host/package.json", "unused-dependencies")],
+            "{name}: the lock names kit and the peer, so only left-pad is unused"
+        );
+    }
+}
+
+#[test]
+fn without_a_lock_file_that_records_binaries_the_unused_dependency_rules_stay_off() {
+    for (name, lock) in [
+        ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+        ("yarn.lock", CLASSIC_YARN_LOCK),
+    ] {
+        let (root, files) = with_lock(name, lock);
+        assert_eq!(rules_found(&root, &files, &cfg(&[])), [], "{name}");
+        assert_eq!(
+            rules_found(&root, &files, &cfg(&[select("unused-dependencies")])),
+            [
+                pair("packages/host/package.json", "unused-dependencies"),
+                pair("packages/host/package.json", "unused-dependencies")
+            ],
+            "{name}: asking for the rule turns it back on, and the peer is then reported as unused too"
+        );
+    }
+}
+
+#[test]
+fn the_rules_left_off_are_named_in_one_info_note_on_the_root_manifest() {
+    let (root, files) = inline(&unknowable_members());
+    let analysis = run(&root, &files, &cfg(&[]));
+    let (path, note) = analysis.note.expect("rules were left off");
+    assert_eq!(path, root.join("package.json"));
+    assert_eq!(note.code.as_deref(), Some(DEFAULTED_OFF_CODE));
+    assert_eq!(format!("{:?}", note.severity), "Info");
+    for rule in ["unlisted-binaries", "unused-dependencies", "unused-dev-dependencies"] {
+        assert!(note.title.contains(rule), "{}", note.title);
+    }
+    assert!(note.description.as_deref().is_some_and(|how| how.contains("select")));
+
+    let (root, files) = with_lock("package-lock.json", NPM_LOCK);
+    let note = run(&root, &files, &cfg(&[]))
+        .note
+        .expect("unlisted-binaries is still off")
+        .1;
+    assert!(note.title.contains("unlisted-binaries") && !note.title.contains("unused-dependencies"));
+
+    let everything = toml::Value::Array(
+        ["unlisted-binaries", "unused-dependencies", "unused-dev-dependencies"]
+            .map(toml::Value::from)
+            .to_vec(),
+    );
+    let (root, files) = inline(&unknowable_members());
+    assert!(run(&root, &files, &cfg(&[("select", everything)])).note.is_none());
+}
+
 #[test]
 fn a_binary_skif_knows_by_name_is_not_reported_when_the_rule_is_asked_for() {
     let (root, files) = inline(&[
@@ -635,7 +722,7 @@ impl Project {
                 result
                     .diagnostics
                     .iter()
-                    .filter(|d| d.engine == "skif")
+                    .filter(|d| d.engine == "skif" && d.code.as_deref() != Some(DEFAULTED_OFF_CODE))
                     .map(move |d| (name.clone(), d.code.clone().unwrap_or_default()))
             })
             .collect();
@@ -760,4 +847,27 @@ fn the_host_walk_hands_over_components_and_ignore_files_and_ignores_discovery_ex
         "src/util.ts is excluded from linting but still a node of the import graph: App.vue imports it"
     );
     assert!(run.errors.is_empty());
+}
+
+#[test]
+fn the_pipeline_reports_the_defaulting_note_once_per_run() {
+    let project = Project::new(ENABLED);
+    let run = project.lint(false);
+    let notes: Vec<_> = run
+        .results
+        .iter()
+        .flat_map(|result| &result.diagnostics)
+        .filter(|d| d.code.as_deref() == Some(DEFAULTED_OFF_CODE))
+        .collect();
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert_eq!(format!("{:?}", notes[0].severity), "Info");
+    let off = Project::new("");
+    assert!(
+        off.lint(false)
+            .results
+            .iter()
+            .flat_map(|result| &result.diagnostics)
+            .all(|d| d.engine != "skif"),
+        "a project that did not enable skif hears nothing from it"
+    );
 }

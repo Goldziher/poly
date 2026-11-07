@@ -9,8 +9,11 @@
 //!
 //! The host computes the project-check cache key before the call, so every input has to be known up front. The
 //! engine therefore declares them ([`Engine::project_inputs`]) instead of discovering them while it runs: the
-//! host walks the declared tree (honoring `.gitignore`, the pruned directories and `[discovery] exclude`) and
-//! hands over every JavaScript, TypeScript, JSON, YAML and TOML file in it, plus the lock files as side files.
+//! host walks the declared tree and hands over every JavaScript, TypeScript, JSON, YAML and TOML file in it,
+//! plus the lock files as side files. The walk honors `.gitignore` and the pruned directories (`node_modules`,
+//! `dist`, ...) and nothing else: `[discovery] exclude`, `--exclude` and nested `poly.toml` scopes do not cut
+//! the graph, because the verdict is about the whole workspace and the run's paths only decide which findings
+//! are reported. Symlinks are not followed, so a package reached through one is absent from the graph.
 //! Manifests, `tsconfig`, `pnpm-workspace.yaml`, `skif.toml` and sources are all in that set, so editing, adding
 //! or removing any of them changes the key. skif then runs on a [`RecordingFs`](fs::RecordingFs) that serves
 //! only those files: nothing is read from the disk, so the result cannot depend on a `node_modules` that is
@@ -43,7 +46,7 @@ use std::sync::Arc;
 use anyhow::{Context, bail};
 use poly_engine_api::engine::{
     Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, OptionType, ProjectDirs, ProjectInputs, ProjectRequest,
-    ProjectSideFile,
+    ProjectSideFile, Severity,
 };
 use poly_engine_api::language::Language;
 use skif::{ConfigOverrides, Linter, RunOptions};
@@ -57,7 +60,7 @@ pub const ENGINE_NAME: &str = "skif";
 /// Cache-key identity: the wrapped crate version plus a marker for this backend's own mapping.
 ///
 /// Bump the suffix whenever the diagnostic or fix mapping changes, and the version whenever `skif` is upgraded.
-const VERSION: &str = "skif-0.1.1+poly2";
+const VERSION: &str = "skif-0.1.1+poly3";
 
 /// The directory skif is run on, relative to the project root.
 const DEFAULT_DIR: &str = ".";
@@ -75,15 +78,28 @@ const LOCK_FILES: &[(&str, &str)] = &[
 /// not unresolved, only when skif can see the `.gitignore` that names it.
 const IGNORE_FILES: &[&str] = &[".gitignore", ".ignore"];
 
-/// Rules that judge a dependency by what an installed package provides: its binaries and the peers it hosts.
+/// Rules that judge a binary by what an installed package provides.
 ///
-/// The run is hermetic, so `node_modules` is never there, and what skif falls back on (a lock file) records
-/// peers for pnpm, npm, bun and yarn berry but binary *names* only for npm, bun and berry; pnpm records that a
-/// package has one and skif assumes it is named like the package. A dependency used through a binary named
-/// otherwise (`@acme/toolkit` running `kit`), or only as a peer of another dependency, is then reported as
-/// unused or its binary as unlisted. They are off unless the project asks for them: in `select`, in
-/// `[engines.skif.rules.<id>]`, or in its own `skif.toml` `[rules]`.
-const NEEDS_INSTALLED_PACKAGES: &[&str] = &["unlisted-binaries", "unused-dependencies", "unused-dev-dependencies"];
+/// The run is hermetic, so `node_modules` is never there and nothing says which package ships a binary named
+/// otherwise than the package (`@acme/toolkit` running `kit`). Off unless the project asks for them: in `select`,
+/// in `[engines.skif.rules.<id>]`, or in its own `skif.toml` `[rules]`.
+const NEEDS_INSTALLED_PACKAGES: &[&str] = &["unlisted-binaries"];
+
+/// Rules that also need to know which binaries and peers a dependency provides, to tell a dependency that is
+/// only run as a script binary (or only the peer of another dependency) from an unused one.
+///
+/// skif falls back on a lock file when nothing is installed. `package-lock.json`, `bun.lock` and a Berry
+/// `yarn.lock` record binary names and peers; `pnpm-lock.yaml` records that a package has a binary and skif
+/// assumes it is named like the package, a classic `yarn.lock` records neither, and no lock file records
+/// nothing. These rules are on when the lock file in effect records them, and otherwise off like
+/// [`NEEDS_INSTALLED_PACKAGES`].
+const NEEDS_RECORDED_BINARIES: &[&str] = &["unused-dependencies", "unused-dev-dependencies"];
+
+/// The lock files in the order skif consults them: it reads the first that exists.
+const LOCK_PRECEDENCE: &[&str] = &["pnpm-lock.yaml", "package-lock.json", "bun.lock", "yarn.lock"];
+
+/// The id of the note that names the rules left off by default.
+pub const DEFAULTED_OFF_CODE: &str = "rules-defaulted-off";
 
 /// The files skif reads: sources (single-file components included, which skif counts as code), manifests,
 /// `tsconfig`, `pnpm-workspace.yaml` and `skif.toml`. `.mdx` is not among them: skif has no use for it.
@@ -108,6 +124,9 @@ pub struct Analysis {
     pub findings: Vec<(PathBuf, Vec<Diagnostic>)>,
     /// Every lookup skif made, against the files the request carried.
     pub log: ReadLog,
+    /// One info-level finding naming the rules left off by default, on the workspace's root `package.json`,
+    /// or `None` when every rule ran.
+    pub note: Option<(PathBuf, Diagnostic)>,
 }
 
 /// skif dependency and monorepo linter. See the module docs.
@@ -188,7 +207,14 @@ impl Engine for SkifEngine {
     }
 
     fn project_check(&self, req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {
-        analyze(req).map(|analysis| analysis.findings)
+        let Analysis { mut findings, note, .. } = analyze(req)?;
+        if let Some((path, note)) = note {
+            match findings.iter_mut().find(|(found, _)| *found == path) {
+                Some((_, diagnostics)) => diagnostics.push(note),
+                None => findings.push((path, vec![note])),
+            }
+        }
+        Ok(findings)
     }
 }
 
@@ -203,6 +229,7 @@ pub fn analyze(req: &ProjectRequest<'_>) -> anyhow::Result<Analysis> {
     let nothing = || Analysis {
         findings: Vec::new(),
         log: ReadLog::default(),
+        note: None,
     };
     if req.config.options.get("enabled").and_then(toml::Value::as_bool) != Some(true) {
         return Ok(nothing());
@@ -222,13 +249,15 @@ pub fn analyze(req: &ProjectRequest<'_>) -> anyhow::Result<Analysis> {
         Err(error) => return Err(error).context("locating the JavaScript workspace"),
     };
     let mut config = skif::load_config(&root, &fs, &settings.overrides).context("loading the skif configuration")?;
+    let records_binaries = lock_records_binaries(req.files, &root);
     let off: Vec<String> = NEEDS_INSTALLED_PACKAGES
         .iter()
+        .chain(NEEDS_RECORDED_BINARIES.iter().filter(|_| !records_binaries))
         .filter(|id| !settings.asked_for.contains(**id) && config.rule(id).is_none())
         .map(|id| (*id).to_owned())
         .collect();
     config
-        .apply(&ConfigOverrides::default().with_ignore_rules(off))
+        .apply(&ConfigOverrides::default().with_ignore_rules(off.clone()))
         .context("turning off the rules that need installed packages")?;
     let linter = Linter::with_fs(&config, Arc::new(fs.clone())).context("building the skif linter")?;
 
@@ -249,9 +278,59 @@ pub fn analyze(req: &ProjectRequest<'_>) -> anyhow::Result<Analysis> {
         }
     };
     let findings = map::findings(&report, &workspace, &fs, &host_path);
+    let note = defaulted_off_note(&off, records_binaries).map(|note| (host_path(Path::new("package.json")), note));
     Ok(Analysis {
         findings,
         log: fs.log(),
+        note,
+    })
+}
+
+/// Whether the lock file skif reads in the workspace `root` records the binary names and peers of its packages.
+/// Looked up in the request's own files, so it adds nothing to the log of what skif read.
+fn lock_records_binaries(files: &[poly_engine_api::engine::ProjectFile], root: &Path) -> bool {
+    let Some((name, lock)) = LOCK_PRECEDENCE.iter().find_map(|name| {
+        let wanted = root.join(name);
+        files
+            .iter()
+            .find(|file| absolute(&file.path) == wanted)
+            .map(|file| (*name, file))
+    }) else {
+        return false;
+    };
+    match name {
+        "package-lock.json" | "bun.lock" => true,
+        "yarn.lock" => lock.content.contains("__metadata:"),
+        _ => false,
+    }
+}
+
+/// The info-level finding that makes the defaulting visible: which rules were left off and how to turn them on.
+fn defaulted_off_note(off: &[String], records_binaries: bool) -> Option<Diagnostic> {
+    if off.is_empty() {
+        return None;
+    }
+    let list = off.iter().map(|id| format!("`{id}`")).collect::<Vec<_>>().join(", ");
+    let why = if records_binaries {
+        "they judge a dependency by the binaries an installed package provides, which this run cannot see"
+    } else {
+        "they judge a dependency by the binaries and peers an installed package provides, which this run cannot see \
+         and the lock file does not record"
+    };
+    Some(Diagnostic {
+        engine: ENGINE_NAME.to_owned(),
+        code: Some(DEFAULTED_OFF_CODE.to_owned()),
+        severity: Severity::Info,
+        title: format!("skif left {list} off: {why}"),
+        description: Some(
+            "Turn a rule on by naming it in `select`, or in `[engines.skif.rules.<id>]` (`level = \"warning\"`), \
+             or in the project's `skif.toml` `[rules]`."
+                .to_owned(),
+        ),
+        span: None,
+        url: None,
+        fix: Vec::new(),
+        metadata: std::collections::BTreeMap::new(),
     })
 }
 

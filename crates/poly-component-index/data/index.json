@@ -583,7 +583,7 @@
             "fix": false,
             "project": true
           },
-          "version": "skif-0.1.1+poly2",
+          "version": "skif-0.1.1+poly3",
           "option_keys": [
             {
               "table": "Lint",
