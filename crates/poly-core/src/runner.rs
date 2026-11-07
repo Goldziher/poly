@@ -123,7 +123,14 @@ pub fn lint_run(
     let selection = EngineSelection::new(&opts.only, &opts.skip);
     validate_selection(&configs, crate::components::run_index(opts), &opts.only, &opts.skip)?;
     let (files, discovery) = discover_reporting(paths, &configs, &opts.exclude, opts.force_exclude);
-    let plan = plan_by_config_language(&files, &configs, Kind::Lint, selection, opts);
+    let plan = plan_by_config_language(
+        &files,
+        &configs,
+        Kind::Lint,
+        selection,
+        opts,
+        &project::ancestor_configs(&configs, paths),
+    );
     prefetch_tier2_grammars(&plan);
     // Rule-declared `ignores:` globs (the built-in ast-grep pack's, plus any a
     // user rule file declares) layer in beneath the config's own
@@ -349,7 +356,7 @@ pub fn format_run(
         .into_iter()
         .filter(|f| explicit.contains(f.path.as_path()) || !is_generated_lockfile(&f.path))
         .collect();
-    let plan = plan_by_config_language(&files, &configs, Kind::Format, selection, opts);
+    let plan = plan_by_config_language(&files, &configs, Kind::Format, selection, opts, &[]);
     prefetch_tier2_grammars(&plan);
     // Same key, same resolution, same phase-agnostic answer as `lint_run`.
     let act_on_generated = acts_on_generated(&configs, opts.generated);

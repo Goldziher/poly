@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use alef_component_runtime::ComponentManager;
@@ -13,7 +14,8 @@ use poly_component_host::{ComponentHost, ComponentTransport, HostOptions, Transp
 use poly_component_index::{Component, ComponentIndex, ComponentKind};
 use poly_component_protocol::{
     Describe, PROTOCOL_VERSION, Payload, Request, Response, WireCapabilities, WireDiagnostic, WireEngineDesc,
-    WireFileDiagnostics, WireSeverity, decode_request, encode_describe, encode_response,
+    WireFileDiagnostics, WireProjectDirs, WireProjectInputs, WireSeverity, decode_request, encode_describe,
+    encode_response,
 };
 use poly_core::components::ComponentInjection;
 use poly_core::{Config, RunOptions};
@@ -162,5 +164,122 @@ fn a_component_served_project_check_reports_its_findings() {
         SEEN_THREADS.load(Ordering::SeqCst),
         1,
         "the run's `jobs = 1` must reach the component's project check"
+    );
+}
+
+/// The file names of every `ProjectCheck` the recording component received.
+static SEEN_CALLS: Mutex<Vec<Vec<String>>> = Mutex::new(Vec::new());
+
+fn whole_tree_desc() -> WireEngineDesc {
+    WireEngineDesc {
+        project_inputs: WireProjectInputs {
+            gate_key: None,
+            files: Vec::new(),
+            dirs: Some(WireProjectDirs {
+                dir_key: "dir".into(),
+                dir_default: ".".into(),
+                paths_key: None,
+                recursive_key: None,
+                recursive_default: true,
+                whole_tree: true,
+                file_names: Vec::new(),
+                list_unserved: false,
+            }),
+        },
+        ..desc()
+    }
+}
+
+/// Records the files of each project check and reports nothing.
+struct Recorder;
+
+impl ComponentTransport for Recorder {
+    fn describe(&self) -> anyhow::Result<Vec<u8>> {
+        Ok(encode_describe(&Describe {
+            protocol: PROTOCOL_VERSION,
+            component_version: "1.0.0".into(),
+            engines: vec![whole_tree_desc()],
+        })?)
+    }
+
+    fn call(&self, header: &[u8], _body: &[u8]) -> anyhow::Result<Vec<u8>> {
+        let payload = match decode_request(header)? {
+            Request::Init { .. } => Payload::Init {
+                protocol: PROTOCOL_VERSION,
+                component_version: "1.0.0".into(),
+            },
+            Request::ProjectCheck { files, .. } => {
+                SEEN_CALLS
+                    .lock()
+                    .unwrap()
+                    .push(files.iter().map(|f| f.path.clone()).collect());
+                Payload::Project(Vec::new())
+            }
+            _ => Payload::Ok,
+        };
+        Ok(encode_response(&Response {
+            result: Ok(payload),
+            logs: Vec::new(),
+        })?)
+    }
+}
+
+struct RecorderConnector;
+
+impl TransportConnector for RecorderConnector {
+    fn connect(&self, _: &ComponentManager, _: &str) -> anyhow::Result<Arc<dyn ComponentTransport>> {
+        Ok(Arc::new(Recorder))
+    }
+}
+
+#[test]
+fn a_run_on_a_nested_directory_gives_a_component_the_whole_tree_of_the_ancestor_config() {
+    let mut component_index = index();
+    component_index.components[0].engines = vec![whole_tree_desc()];
+    let cache = tempfile::tempdir().unwrap();
+    let mut host_options = HostOptions::new(lock(), PathBuf::from(cache.path()));
+    host_options.target = Some(TARGET.into());
+    host_options.gate_loads = true;
+    let host = ComponentHost::new(host_options)
+        .unwrap()
+        .with_connector(Arc::new(RecorderConnector));
+    let options = RunOptions {
+        component_injection: Some(ComponentInjection::new(host, component_index)),
+        no_cache: true,
+        jobs: Some(1),
+        ..RunOptions::default()
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let write = |name: &str, contents: &str| {
+        let path = dir.path().join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
+    };
+    write("poly.toml", "[workspace]\nroot = true\n");
+    write("packages/a/poly.toml", "[format]\n");
+    write("packages/a/a.py", "a = 1\n");
+    write("packages/b/b.py", "b = 1\n");
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+
+    SEEN_CALLS.lock().unwrap().clear();
+    let run = poly_core::lint_run(
+        &[dir.path().join("packages/a")],
+        &Config::default(),
+        &options,
+        false,
+        false,
+    )
+    .unwrap();
+    assert!(run.errors.is_empty(), "{:?}", run.errors);
+
+    let calls = SEEN_CALLS.lock().unwrap().clone();
+    let mut seen: Vec<String> = calls.concat();
+    seen.sort();
+    let names: Vec<&str> = seen.iter().map(|p| p.rsplit('/').next().unwrap()).collect();
+    assert_eq!(
+        names,
+        ["a.py", "b.py"],
+        "the root config judges the whole tree: {calls:?}"
     );
 }

@@ -121,7 +121,8 @@ pub(super) fn expected_describe(component: &Component) -> Describe {
     }
 }
 
-/// Resolve the components `files` need under `configs`.
+/// Resolve the components `files` need under `configs`, and the ones the `ancestors` configs need for
+/// the languages of `files`.
 ///
 /// This is the only pass that installs anything. It runs before planning and outside the
 /// workers, ensures each needed component once, then seals the host it built. The policy is the
@@ -131,7 +132,12 @@ pub(super) fn expected_describe(component: &Component) -> Describe {
 /// stand-in that skips its files (charged to the skip budget); `on_missing = "fail"` still fails
 /// the run, through [`ComponentsReport::blocking`]. A component whose install was attempted and
 /// failed becomes a stand-in that errors on each of its files.
-pub(crate) fn resolve(files: &[DiscoveredFile], configs: &ConfigSet, opts: &RunOptions) -> ResolvedComponents {
+pub(crate) fn resolve(
+    files: &[DiscoveredFile],
+    configs: &ConfigSet,
+    opts: &RunOptions,
+    ancestors: &[usize],
+) -> ResolvedComponents {
     let injected = opts.component_injection.as_ref();
     let index: &ComponentIndex = super::seam::run_index(opts);
     let mut seen: FxHashSet<(usize, Language)> = FxHashSet::default();
@@ -140,6 +146,17 @@ pub(crate) fn resolve(files: &[DiscoveredFile], configs: &ConfigSet, opts: &RunO
         let pair = (file.config_id, file.language.clone());
         if seen.insert(pair.clone()) {
             pairs.push(pair);
+        }
+    }
+    // A config above a named path owns no file of the run, yet its whole-tree project engines are planned
+    // for every language the run saw.
+    let languages: FxHashSet<Language> = files.iter().map(|file| file.language.clone()).collect();
+    for &config_id in ancestors {
+        for language in &languages {
+            let pair = (config_id, language.clone());
+            if seen.insert(pair.clone()) {
+                pairs.push(pair);
+            }
         }
     }
     let all: Vec<&Config> = configs.iter().collect();

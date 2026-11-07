@@ -147,7 +147,7 @@ fn is_whole_tree(engine: &dyn Engine) -> bool {
 ///
 /// `poly lint packages/a` never discovers a file of the root config, yet the root config is what
 /// decides a whole-tree check about the workspace `packages/a` is part of.
-fn ancestor_configs(configs: &ConfigSet, paths: &[PathBuf]) -> Vec<usize> {
+pub(super) fn ancestor_configs(configs: &ConfigSet, paths: &[PathBuf]) -> Vec<usize> {
     let named: Vec<PathBuf> = paths
         .iter()
         .map(|path| {
