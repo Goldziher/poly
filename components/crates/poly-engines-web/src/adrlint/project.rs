@@ -3,7 +3,7 @@
 //!
 //! These rules judge a whole ADR log, so they run as a project check over the Markdown files the
 //! host discovered, not per file. The component reads nothing: `adrlint.lock` arrives as one more
-//! [`ProjectFile`] (the host loads it, see `PROJECT_SIDE_INPUTS` in `poly-core`), which is also
+//! [`ProjectFile`] (the host loads it, as `Engine::project_inputs` declares), which is also
 //! what makes the result cacheable, since the project-check cache key folds in the digest of every
 //! file handed over, the lock and each sibling ADR included.
 //!

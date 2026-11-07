@@ -405,8 +405,16 @@ fn a_directory_other_than_the_default_is_the_one_judged() {
 /// has no gap, but handed only the second the check would report one.
 #[test]
 fn naming_one_record_still_judges_the_whole_log() {
-    let (_project, adrs, template) = project();
+    let (project, adrs, template) = project();
     fs::write(adrs.join("0002-use-go.md"), &template).expect("write");
+    // A positive control in the same run: the lock disagrees with the named record, so the check
+    // demonstrably ran over it.
+    let stale = lock_text(&[(
+        "docs/adr/0002-use-go.md",
+        2,
+        &template.replace("Rust, because", "Zig, because"),
+    )]);
+    fs::write(project.path().join("adrlint.lock"), stale).expect("write lock");
     common::register();
     let options = poly_core::RunOptions {
         jobs: Some(1),
@@ -422,7 +430,11 @@ fn naming_one_record_still_judges_the_whole_log() {
         .filter(|d| d.engine == "adrlint")
         .map(|d| d.code.clone().unwrap_or_default())
         .collect();
-    assert_eq!(codes, Vec::<String>::new(), "no false gap from a one-file run");
+    assert_eq!(
+        codes,
+        ["ADR50"],
+        "the check ran, and found no false gap from a one-file run"
+    );
 }
 
 /// Files outside the declared ADR directory are neither judged nor listed.
@@ -432,5 +444,100 @@ fn files_outside_the_declared_directory_are_not_listed() {
     fs::create_dir_all(project.path().join("elsewhere")).expect("mkdir");
     fs::write(project.path().join("elsewhere/notes.txt"), "x\n").expect("write");
     fs::write(project.path().join("notes.txt"), "x\n").expect("write");
-    assert_eq!(run(project.path()), []);
+    fs::write(project.path().join("docs/adr/stray.txt"), "x\n").expect("write");
+    assert_eq!(
+        run(project.path()),
+        [pair("stray.txt", "MADR42")],
+        "the check ran: the stray file inside the directory is the only one listed"
+    );
+}
+
+#[test]
+fn a_readme_in_the_adr_directory_is_not_a_finding() {
+    let (project, adrs, template) = project();
+    fs::write(adrs.join("README.md"), "# Decisions\n\nThe index.\n").expect("write readme");
+    fs::write(adrs.join("0003-gap.md"), &template).expect("write gap");
+    assert_eq!(
+        run(project.path()),
+        [pair("0003-gap.md", "MADR41b")],
+        "the check ran, and the README is neither numbered nor stray"
+    );
+}
+
+#[test]
+fn the_project_phase_does_not_run_unless_adrlint_is_enabled() {
+    let (project, adrs, template) = project();
+    fs::write(adrs.join("0003-gap.md"), &template).expect("write gap");
+    assert_eq!(
+        run(project.path()),
+        [pair("0003-gap.md", "MADR41b")],
+        "enabled: reported"
+    );
+    fs::write(
+        project.path().join("poly.toml"),
+        "[workspace]\nroot = true\n\n[engines.adrlint]\nselect = [\"MADR4\"]\n",
+    )
+    .expect("write config");
+    assert_eq!(run(project.path()), [], "not enabled: the same tree is not judged");
+}
+
+#[test]
+fn recursive_takes_the_subdirectories_of_the_log() {
+    let (project, adrs, template) = project();
+    fs::create_dir_all(adrs.join("sub")).expect("mkdir");
+    fs::write(adrs.join("sub/0003-gap.md"), &template).expect("write nested");
+    assert_eq!(run(project.path()), [], "a nested record is outside a flat log");
+    fs::write(
+        project.path().join("poly.toml"),
+        "[workspace]\nroot = true\n\n[engines.adrlint]\nenabled = true\nrecursive = true\nselect = [\"MADR41\"]\n",
+    )
+    .expect("write config");
+    assert_eq!(
+        run(project.path()),
+        [pair("0003-gap.md", "MADR41a")],
+        "recursive: the nested record is part of the log"
+    );
+}
+
+/// A lock that exists but cannot be used must fail the run, not switch `ADR50`/`ADR51` off.
+#[cfg(unix)]
+#[test]
+fn a_symlinked_lock_and_an_escaping_directory_are_run_errors() {
+    let (project, _, _) = project();
+    let outside = tempfile::tempdir().expect("outside");
+    fs::write(outside.path().join("real.lock"), "").expect("write");
+    std::os::unix::fs::symlink(outside.path().join("real.lock"), project.path().join("adrlint.lock")).expect("symlink");
+    common::register();
+    let lint = |root: &Path| {
+        poly_core::lint_run(
+            &[root.to_path_buf()],
+            &poly_core::Config::default(),
+            &poly_core::RunOptions {
+                jobs: Some(1),
+                ..poly_core::RunOptions::default()
+            },
+            false,
+            false,
+        )
+        .expect("lint run")
+    };
+    let run = lint(project.path());
+    assert!(
+        run.errors.iter().any(|e| e.message.contains("adrlint.lock")),
+        "{:?}",
+        run.errors
+    );
+
+    fs::remove_file(project.path().join("adrlint.lock")).expect("remove");
+    fs::write(
+        project.path().join("poly.toml"),
+        "[workspace]\nroot = true\n\n[engines.adrlint]\nenabled = true\ndir = \"../adr\"\n",
+    )
+    .expect("write config");
+    let run = lint(project.path());
+    assert!(
+        run.errors.iter().any(|e| e.message.contains("inside the project root")),
+        "{:?}",
+        run.errors
+    );
 }

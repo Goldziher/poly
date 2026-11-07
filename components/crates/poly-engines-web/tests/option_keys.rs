@@ -9,7 +9,7 @@
 //!    does, through `poly.toml` key checking with the provider registered.
 //! 3. **Liveness** - setting a declared key changes what the engine produces.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use poly_core::config::{Config, Kind};
@@ -291,18 +291,67 @@ fn keys_read_by(engine: &str) -> BTreeSet<String> {
     read
 }
 
-/// Option keys an engine hands to the host through `project_inputs` instead of reading itself.
-fn host_read_keys(engine: &dyn Engine) -> BTreeSet<String> {
+const TABLES: [OptionTable; 3] = [OptionTable::Lint, OptionTable::Format, OptionTable::CrossCuttingLint];
+
+/// The type `table` declares for `key`, if it declares it.
+fn declared_type(engine: &dyn Engine, key: &str) -> Option<OptionType> {
+    TABLES.into_iter().find_map(|table| {
+        engine
+            .option_keys(table)
+            .declared_keys()
+            .iter()
+            .find(|(name, _)| *name == key)
+            .map(|(_, declared)| *declared)
+    })
+}
+
+/// Option keys an engine hands to the host through `project_inputs` instead of reading itself, each
+/// with the type its role requires: the directory and side-file options are strings, the paths
+/// option an array, the recursive option a boolean. The gate key is not here: the engine still
+/// reads it, so it goes through the source-read check like any other key.
+fn host_read_keys(engine: &dyn Engine) -> BTreeMap<String, OptionType> {
     let inputs = engine.project_inputs();
-    let mut keys = BTreeSet::new();
-    keys.extend(inputs.gate_key);
-    keys.extend(inputs.files.into_iter().map(|file| file.option_key));
+    let mut keys = BTreeMap::new();
+    for file in inputs.files {
+        keys.insert(file.option_key, OptionType::STRING);
+    }
     if let Some(dirs) = inputs.dirs {
-        keys.insert(dirs.dir_key);
-        keys.extend(dirs.paths_key);
-        keys.extend(dirs.recursive_key);
+        keys.insert(dirs.dir_key, OptionType::STRING);
+        if let Some(key) = dirs.paths_key {
+            keys.insert(key, OptionType::ARRAY);
+        }
+        if let Some(key) = dirs.recursive_key {
+            keys.insert(key, OptionType::BOOLEAN);
+        }
     }
     keys
+}
+
+#[test]
+fn project_input_keys_are_declared_at_the_type_their_role_needs() {
+    // The host reads these, so the source-read check cannot vouch for them; this is the check
+    // that stops a wrong or missing declaration from hiding behind that exemption.
+    for engine in web_engines() {
+        let inputs = engine.project_inputs();
+        if let Some(gate) = &inputs.gate_key {
+            assert!(
+                declared_type(engine.as_ref(), gate).is_some(),
+                "`{}` gates its project check on `{gate}`, which it does not declare",
+                engine.name()
+            );
+        }
+        for (key, required) in host_read_keys(engine.as_ref()) {
+            let declared = declared_type(engine.as_ref(), &key);
+            assert_eq!(
+                declared,
+                Some(required),
+                "`{}` hands `{key}` to the host as {}, but declares {}",
+                engine.name(),
+                required.describe(),
+                declared.map_or_else(|| "nothing".to_owned(), OptionType::describe)
+            );
+        }
+    }
 }
 
 #[test]
@@ -324,9 +373,10 @@ fn every_declared_option_key_is_one_the_backend_reads_at_the_declared_type() {
         let host_read = host_read_keys(engine.as_ref());
         for table in [OptionTable::Lint, OptionTable::Format, OptionTable::CrossCuttingLint] {
             for (key, declared) in engine.option_keys(table).declared_keys() {
-                // Keys named in `project_inputs` are read by the host, which loads the files
-                // they select; the backend never sees the option, only the files it names.
-                if host_read.contains(*key) {
+                // Keys the host reads for `project_inputs` never reach the backend; their
+                // declaration is checked against the role they play in
+                // `project_input_keys_are_declared_at_the_type_their_role_needs`.
+                if host_read.contains_key(*key) {
                     continue;
                 }
                 assert!(
