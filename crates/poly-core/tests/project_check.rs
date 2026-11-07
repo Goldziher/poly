@@ -1244,6 +1244,14 @@ mod whole_tree {
 
     const NAME: &str = "graph-check";
 
+    /// `path` with `/` separators on every OS, so expectations are written once.
+    fn slashed(path: &Path) -> String {
+        path.components()
+            .map(|part| part.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/")
+    }
+
     /// Reports on every served file the sorted list of files (relative names) it was handed, so a test
     /// reads what the engine saw from the finding itself.
     struct Graph {
@@ -1301,7 +1309,7 @@ mod whole_tree {
             let mut seen: Vec<String> = req
                 .files
                 .iter()
-                .map(|f| f.path.strip_prefix(req.root).unwrap_or(&f.path).display().to_string())
+                .map(|f| slashed(f.path.strip_prefix(req.root).unwrap_or(&f.path)))
                 .collect();
             seen.sort();
             let title = seen.join(",");
@@ -1371,7 +1379,7 @@ mod whole_tree {
             run.results
                 .iter()
                 .flat_map(|r| {
-                    let name = r.path.strip_prefix(dir.path()).unwrap().display().to_string();
+                    let name = slashed(r.path.strip_prefix(dir.path()).unwrap());
                     r.diagnostics
                         .iter()
                         .filter(|d| d.engine == NAME)
@@ -1464,7 +1472,7 @@ mod whole_tree {
                 .results
                 .iter()
                 .flat_map(|r| {
-                    let name = r.path.strip_prefix(dir).unwrap_or(&r.path).display().to_string();
+                    let name = slashed(r.path.strip_prefix(dir).unwrap_or(&r.path));
                     r.diagnostics
                         .iter()
                         .filter(|d| names.contains(&d.engine.as_str()))

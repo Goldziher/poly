@@ -498,7 +498,10 @@ impl Engine for ComponentEngine {
         let mut files = Vec::with_capacity(req.files.len());
         let mut originals: HashMap<String, PathBuf> = HashMap::with_capacity(req.files.len());
         for file in req.files {
-            let rel = relative(&file.path).display().to_string();
+            let rel = relative(&file.path)
+                .display()
+                .to_string()
+                .replace(std::path::MAIN_SEPARATOR, "/");
             files.push(WireFileSlice {
                 path: rel.clone(),
                 language: file.language.id().to_owned(),
