@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 )
 
 const (
@@ -36,7 +37,11 @@ func main() {
 
 // run serves frames until the host closes stdin.
 func run(in io.Reader, out io.Writer, manifest componentManifest) error {
-	srv := newServer(manifest.Identity.Version)
+	return serve(in, out, manifest, newServer(manifest.Identity.Version))
+}
+
+// serve is run over a given server, which tests use to inject a formatter.
+func serve(in io.Reader, out io.Writer, manifest componentManifest, srv *server) error {
 	reader := bufio.NewReader(in)
 	for {
 		frame, err := readFrame(reader)
@@ -54,6 +59,13 @@ func run(in io.Reader, out io.Writer, manifest componentManifest) error {
 		body, err := json.Marshal(answer)
 		if err != nil {
 			return fmt.Errorf("encode reply: %w", err)
+		}
+		if len(body) > maxFrame {
+			// The host would reject the frame and stop this process; a per-call error keeps it serving.
+			body, err = json.Marshal(failed("reply of %d bytes exceeds the %d-byte frame limit", len(body), maxFrame))
+			if err != nil {
+				return fmt.Errorf("encode reply: %w", err)
+			}
 		}
 		if err := writeFrame(out, body); err != nil {
 			return err
@@ -78,7 +90,16 @@ func handle(srv *server, manifest componentManifest, req envelope) (reply, error
 	}
 }
 
-func handleCall(srv *server, req envelope) reply {
+// handleCall answers one `call` op. A panic in the parser or printer becomes a
+// failed reply, so one bad file does not stop the process and fail every
+// later file.
+func handleCall(srv *server, req envelope) (answer reply) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "poly-sh: panic: %v\n%s", r, debug.Stack())
+			answer = failed("internal error: %v", r)
+		}
+	}()
 	if req.Contract != contractPoly {
 		return failed("contract %q is not provided", req.Contract)
 	}

@@ -13,10 +13,14 @@ type server struct {
 	componentVersion string
 	initialized      bool
 	configs          map[uint32]engineConfig
+	format           formatFunc
 }
 
+// formatFunc is formatSource's shape; tests substitute it.
+type formatFunc func(path string, src []byte, opts formatOptions) (formatted string, changed bool, err error)
+
 func newServer(componentVersion string) *server {
-	return &server{componentVersion: componentVersion, configs: make(map[uint32]engineConfig)}
+	return &server{componentVersion: componentVersion, configs: make(map[uint32]engineConfig), format: formatSource}
 }
 
 // describe answers the `describe` method.
@@ -105,7 +109,7 @@ func (s *server) handleFormat(fields msgpack.RawMessage, body []byte) (any, []wi
 	if cfg.useTabs {
 		indent = 0
 	}
-	formatted, changed, err := formatSource(req.File.Path, body, formatOptions{indent: indent})
+	formatted, changed, err := s.format(req.File.Path, body, formatOptions{indent: indent})
 	if err != nil {
 		// Like the host tool's non-zero exit: a file that does not parse is
 		// left alone, with the reason at debug level.
