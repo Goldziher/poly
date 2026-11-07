@@ -173,6 +173,32 @@ extra_paths = ["stubs"]    # searched before first-party code
 
 ty's own `ty.toml` and `[tool.ty]` are not read.
 
+### JavaScript and TypeScript workspaces
+
+`[engines.skif]` is opt-in dependency, manifest, version-policy and dead-code linting for npm, pnpm, yarn and bun
+workspaces, a project-check engine in the `web` component (preset aliases `skif` and `js-deps`). A project's own
+`skif.toml` is honored; the keys below override it.
+
+```toml
+[engines.skif]
+enabled = true
+dir = "."                       # the workspace, relative to the project root
+ignore = ["empty-dependencies"] # skif rule ids to turn off
+select = ["catalog-mismatch"]   # run only these rules
+ignore_packages = ["@scope/legacy-*"]
+ignore_dependencies = ["left-pad"]
+production = false              # judge production dependencies only
+js = true                       # false turns the source (import) analysis off
+threads = 1                     # skif's own pool; 1 spawns no threads
+pnpm_lock = "pnpm-lock.yaml"    # also npm_lock, yarn_lock, bun_lock
+```
+
+skif reads only the files poly hands it: sources, manifests, `tsconfig`, `pnpm-workspace.yaml` and `skif.toml`
+under `dir`, plus the lock files, never `node_modules`. The result is cached on all of them, so editing any member
+`package.json` re-runs the check, and it does not depend on what is installed on the machine. `poly lint --fix`
+applies skif's safe fixes to the manifest a finding is in; fixes that are unsafe, need a choice or edit another file
+stay suggestions. Set `[engines.skif.rules.<id>] level` to move a finding's severity.
+
 ## `[workspace]`
 
 | Key | Type | Default | Meaning |
