@@ -82,6 +82,9 @@ pub(super) struct ProjectFinding {
     path: PathBuf,
     config_id: usize,
     diagnostics: Vec<Diagnostic>,
+    /// The content the engine was given for `path`, which its edits are offsets into. `None` for a file
+    /// it was not given (or was given by name only).
+    loaded: Option<Arc<str>>,
 }
 
 /// Whether `--fix` applies the edits project findings carry, and whether it may rewrite a file that
@@ -97,8 +100,6 @@ pub(super) struct FixMode {
 pub(super) struct ProjectOutcome {
     /// Findings, one entry per file an engine reported on.
     pub(super) findings: Vec<ProjectFinding>,
-    /// Content of every file an engine was given, for resolving inline directives.
-    contents: FxHashMap<PathBuf, Arc<str>>,
     /// Engines whose check failed outright.
     pub(super) errors: Vec<LintError>,
 }
@@ -168,6 +169,22 @@ fn plan_project_engines(
     }
     plans.sort_by(|a, b| (a.config_id, a.engine.name()).cmp(&(b.config_id, b.engine.name())));
     plans
+}
+
+/// Whether plan `at` is for a whole-tree engine that another plan, rooted above it, already covers.
+///
+/// A nested `poly.toml` makes its own scope, and so its own plan; a check about the whole tree walked
+/// from the nested directory would judge a fragment of the graph the outer plan judges whole, and
+/// report the same files twice.
+fn nested_in_whole_tree_plan(plans: &[ProjectPlan], roots: &[PathBuf], at: usize) -> bool {
+    let whole = |plan: &ProjectPlan| plan.engine.project_inputs().dirs.is_some_and(|dirs| dirs.whole_tree);
+    whole(&plans[at])
+        && plans.iter().enumerate().any(|(other, plan)| {
+            other != at
+                && plan.engine.name() == plans[at].engine.name()
+                && roots[at] != roots[other]
+                && roots[at].starts_with(&roots[other])
+        })
 }
 
 /// The project root for a config scope: the directory holding its `poly.toml`, else the run root,
@@ -258,6 +275,9 @@ pub(super) struct RunInputs<'a> {
     pub(super) act_on_generated: &'a [bool],
     pub(super) paths: &'a [PathBuf],
     pub(super) exclude: &'a [String],
+    /// `[per-file-ignores]` per config, and the directories their globs are relative to.
+    pub(super) ignores: &'a [PerFileIgnores],
+    pub(super) ignore_bases: &'a [Vec<PathBuf>],
 }
 
 impl<'a> RunInputs<'a> {
@@ -266,12 +286,15 @@ impl<'a> RunInputs<'a> {
         act_on_generated: &'a [bool],
         paths: &'a [PathBuf],
         exclude: &'a [String],
+        filters: (&'a [PerFileIgnores], &'a [Vec<PathBuf>]),
     ) -> Self {
         Self {
             configs,
             act_on_generated,
             paths,
             exclude,
+            ignores: filters.0,
+            ignore_bases: filters.1,
         }
     }
 }
@@ -320,10 +343,16 @@ fn collect_findings(
     plan: &ProjectPlan,
     reported: Vec<(PathBuf, Vec<Diagnostic>)>,
     narrowed_to: Option<&scope::RunScope>,
+    covered: Option<&FxHashSet<PathBuf>>,
+    loaded: &[ProjectFile],
     findings: &mut Vec<ProjectFinding>,
 ) {
     let remap = build_severity_remap(&plan.config);
     for (path, mut diagnostics) in reported {
+        if covered.is_some_and(|covered| !covered.contains(&scope::canonical(&path))) {
+            continue;
+        }
+        let content = inputs::content_of(loaded, &path);
         let path = match narrowed_to {
             Some(run_scope) => match run_scope.admit(&path) {
                 Some(admitted) => admitted,
@@ -338,6 +367,7 @@ fn collect_findings(
             path,
             config_id: plan.config_id,
             diagnostics,
+            loaded: content,
         });
     }
 }
@@ -357,7 +387,11 @@ pub(super) fn run_project_phase(
     }
     let run_scope = scope::RunScope::new(run.paths);
     let mut environments: FxHashMap<PathBuf, ProjectEnvironment> = FxHashMap::default();
-    for plan in &plans {
+    let roots: Vec<PathBuf> = plans.iter().map(|plan| root_for(run.configs, plan.config_id)).collect();
+    for (at, plan) in plans.iter().enumerate() {
+        if nested_in_whole_tree_plan(&plans, &roots, at) {
+            continue;
+        }
         let served = plan.engine.languages();
         let scoped: Vec<&DiscoveredFile> = files
             .iter()
@@ -406,19 +440,78 @@ pub(super) fn run_project_phase(
             }
         };
         let narrowed = dirs.is_some().then_some(&run_scope);
-        collect_findings(plan, reported, narrowed, &mut outcome.findings);
-        for file in loaded {
-            outcome.contents.entry(file.path).or_insert(file.content);
-        }
+        // A whole-tree check saw files the run's excludes drop; it reports only on the ones the run covers.
+        let covered = dirs
+            .as_ref()
+            .is_some_and(|dirs| dirs.whole_tree)
+            .then(|| scope::covered(files, &reported));
+        collect_findings(
+            plan,
+            reported,
+            narrowed,
+            covered.as_ref(),
+            &loaded,
+            &mut outcome.findings,
+        );
     }
     outcome
 }
 
+/// One file's project findings, from every engine that reported on it, before `--fix` acts on them.
+struct Pending {
+    config_id: usize,
+    loaded: Option<Arc<str>>,
+    diagnostics: Vec<Diagnostic>,
+    suppressed: Vec<SuppressedDiagnostic>,
+}
+
+/// Run the project phase and fold its findings into `linted`, returning the checks that failed.
+///
+/// Under `--fix` the edits are committed to disk, which moves every offset a remaining finding of the
+/// same file carries and can expose findings the old content hid. So when a pass fixed anything the
+/// phase runs once more over the rewritten files, and only that second pass is reported: its findings
+/// have spans into the files as they now are, and the groups the first pass deferred (they overlapped
+/// another edit) are tried again. It is the last pass, never a loop.
+pub(super) fn run_and_merge(
+    linted: &mut Vec<LintResult>,
+    files: &[DiscoveredFile],
+    run: &RunInputs<'_>,
+    selection: EngineSelection<'_>,
+    cache: &ResultCache,
+    components: &ResolvedComponents,
+    fix: FixMode,
+) -> Vec<LintError> {
+    let (ignores, ignore_bases) = (run.ignores, run.ignore_bases);
+    let mut phase = run_project_phase(files, run, selection, cache, components);
+    let mut errors = std::mem::take(&mut phase.errors);
+    if !fix.apply {
+        merge_findings(linted, phase, ignores, ignore_bases, fix);
+        return errors;
+    }
+    let mut first_pass = Vec::new();
+    merge_findings(&mut first_pass, phase, ignores, ignore_bases, fix);
+    if first_pass.iter().all(|result| result.fixed == 0) {
+        fold(linted, first_pass);
+        return errors;
+    }
+    // What the first pass fixed stays counted; what it still found is superseded by the second pass.
+    for result in &mut first_pass {
+        result.diagnostics.clear();
+        result.suppressed.clear();
+    }
+    fold(linted, first_pass);
+    let mut again = run_project_phase(files, run, selection, cache, components);
+    errors = std::mem::take(&mut again.errors);
+    merge_findings(linted, again, ignores, ignore_bases, fix);
+    errors
+}
+
 /// Fold project findings into the per-file results, applying inline `poly: allow` directives and
-/// `[per-file-ignores]` exactly as the per-file tier does.
+/// `[per-file-ignores]` exactly as the per-file tier does, then `--fix`.
 ///
 /// A finding for a file the per-file tier never produced a result for (it was skipped, or lies
-/// outside the discovered set) gets a result of its own.
+/// outside the discovered set) gets a result of its own. Findings of one file from several engines
+/// are fixed together, so the edits of all of them are applied against the same content.
 pub(super) fn merge_findings(
     linted: &mut Vec<LintResult>,
     outcome: ProjectOutcome,
@@ -426,17 +519,15 @@ pub(super) fn merge_findings(
     ignore_bases: &[Vec<PathBuf>],
     fix: FixMode,
 ) {
-    let ProjectOutcome {
-        findings, mut contents, ..
-    } = outcome;
-    let mut index: FxHashMap<PathBuf, usize> = linted.iter().enumerate().map(|(i, r)| (r.path.clone(), i)).collect();
-    for finding in findings {
+    let mut order: Vec<PathBuf> = Vec::new();
+    let mut pending: FxHashMap<PathBuf, Pending> = FxHashMap::default();
+    for finding in outcome.findings {
         let ProjectFinding {
             path,
             config_id,
             mut diagnostics,
+            loaded,
         } = finding;
-        let loaded = contents.remove(&path);
         let content = loaded
             .clone()
             .or_else(|| std::fs::read_to_string(&path).ok().map(Arc::from));
@@ -452,30 +543,75 @@ pub(super) fn merge_findings(
             let rel = relative_for_match(&path, bases);
             this_ignores.apply(&rel, &path, &mut diagnostics, &mut suppressed);
         }
+        match pending.get_mut(&path) {
+            Some(entry) => {
+                // Edits are offsets into the content their engine read; a different read cannot share a commit.
+                if entry.loaded != loaded {
+                    for diagnostic in &mut diagnostics {
+                        diagnostic.fix.clear();
+                    }
+                }
+                entry.diagnostics.append(&mut diagnostics);
+                entry.suppressed.append(&mut suppressed);
+            }
+            None => {
+                order.push(path.clone());
+                pending.insert(
+                    path,
+                    Pending {
+                        config_id,
+                        loaded,
+                        diagnostics,
+                        suppressed,
+                    },
+                );
+            }
+        }
+    }
+    let mut results = Vec::new();
+    for path in order {
+        let Some(Pending {
+            config_id,
+            loaded,
+            mut diagnostics,
+            suppressed,
+        }) = pending.remove(&path)
+        else {
+            continue;
+        };
         let applied = fixes::resolve(&path, loaded.as_deref(), &mut diagnostics, fix);
         if diagnostics.is_empty() && suppressed.is_empty() && applied.fixed == 0 {
             continue;
         }
-        match index.get(&path) {
+        results.push(LintResult {
+            path,
+            config: config_id,
+            diagnostics,
+            suppressed,
+            fix_withheld_generated: applied.withheld_generated,
+            fixed: applied.fixed,
+            skipped: None,
+            error: None,
+            debug: None,
+        });
+    }
+    fold(linted, results);
+}
+
+/// Add `results` to `linted`, joining a file the per-file tier already has a result for.
+fn fold(linted: &mut Vec<LintResult>, results: Vec<LintResult>) {
+    let mut index: FxHashMap<PathBuf, usize> = linted.iter().enumerate().map(|(i, r)| (r.path.clone(), i)).collect();
+    for mut result in results {
+        match index.get(&result.path) {
             Some(&at) => {
-                linted[at].diagnostics.append(&mut diagnostics);
-                linted[at].suppressed.append(&mut suppressed);
-                linted[at].fixed += applied.fixed;
-                linted[at].fix_withheld_generated |= applied.withheld_generated;
+                linted[at].diagnostics.append(&mut result.diagnostics);
+                linted[at].suppressed.append(&mut result.suppressed);
+                linted[at].fixed += result.fixed;
+                linted[at].fix_withheld_generated |= result.fix_withheld_generated;
             }
             None => {
-                index.insert(path.clone(), linted.len());
-                linted.push(LintResult {
-                    path,
-                    config: config_id,
-                    diagnostics,
-                    suppressed,
-                    fix_withheld_generated: applied.withheld_generated,
-                    fixed: applied.fixed,
-                    skipped: None,
-                    error: None,
-                    debug: None,
-                });
+                index.insert(result.path.clone(), linted.len());
+                linted.push(result);
             }
         }
     }

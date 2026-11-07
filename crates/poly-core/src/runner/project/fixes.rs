@@ -40,6 +40,10 @@ pub(super) fn resolve(path: &Path, loaded: Option<&str>, diagnostics: &mut Vec<D
     }
     for diagnostic in diagnostics.iter_mut() {
         diagnostic.fix.clear();
+        // The rewrite moved every offset in the file: a span into the old content would point elsewhere.
+        if applied.fixed > 0 {
+            diagnostic.span = None;
+        }
     }
     applied
 }

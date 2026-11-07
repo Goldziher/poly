@@ -371,6 +371,8 @@ mod tree {
                     paths_key: Some("paths".to_owned()),
                     recursive_key: Some("recursive".to_owned()),
                     recursive_default: false,
+                    whole_tree: false,
+                    file_names: Vec::new(),
                     list_unserved: true,
                 }),
             }
@@ -679,4 +681,368 @@ fn fix_leaves_a_hash_stamped_generated_file_alone() {
         assert!(result.fix_withheld_generated);
         assert_eq!(project_findings(&run).len(), 1);
     });
+}
+
+mod fix_passes {
+    //! `--fix` for project findings across engines and passes: every engine's edits to a file are
+    //! committed together, and the report is the check's verdict on the files as `--fix` left them.
+
+    use super::*;
+
+    /// Flags [`Self::marker`] in Python files; the fix deletes it. A second engine on the same file.
+    struct Marker {
+        name: &'static str,
+        marker: &'static str,
+    }
+
+    impl Engine for Marker {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+        fn languages(&self) -> &'static [Language] {
+            &[Language::Python]
+        }
+        fn capabilities(&self) -> Capabilities {
+            Capabilities {
+                project: true,
+                ..Capabilities::default()
+            }
+        }
+        fn version(&self) -> &str {
+            "1"
+        }
+        fn project_check(&self, req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {
+            let mut reported = Vec::new();
+            for file in req.files {
+                let found: Vec<Diagnostic> = file
+                    .content
+                    .match_indices(self.marker)
+                    .map(|(at, _)| Diagnostic {
+                        engine: self.name.to_owned(),
+                        fix: vec![Edit {
+                            start_byte: at,
+                            end_byte: at + self.marker.len(),
+                            replacement: String::new(),
+                        }],
+                        ..finding(1)
+                    })
+                    .collect();
+                if !found.is_empty() {
+                    reported.push((file.path.clone(), found));
+                }
+            }
+            Ok(reported)
+        }
+    }
+
+    /// Fixable lines start with `DROP` (the fix deletes the line), `a` becomes `b` and `b` becomes `c`
+    /// (each a fix), and `KEEP_ME` is reported without one. Every finding carries the line it is on.
+    struct Lines;
+
+    impl Engine for Lines {
+        fn name(&self) -> &'static str {
+            "line-check"
+        }
+        fn languages(&self) -> &'static [Language] {
+            &[Language::Python]
+        }
+        fn capabilities(&self) -> Capabilities {
+            Capabilities {
+                project: true,
+                ..Capabilities::default()
+            }
+        }
+        fn version(&self) -> &str {
+            "1"
+        }
+        fn project_check(&self, req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {
+            let mut reported = Vec::new();
+            for file in req.files {
+                let mut offset = 0;
+                let mut found = Vec::new();
+                for (index, line) in file.content.split_inclusive('\n').enumerate() {
+                    let text = line.trim_end();
+                    let fix = |replacement: &str, end: usize| {
+                        vec![Edit {
+                            start_byte: offset,
+                            end_byte: offset + end,
+                            replacement: replacement.to_owned(),
+                        }]
+                    };
+                    let edits = match text {
+                        _ if text.starts_with("DROP") => Some(fix("", line.len())),
+                        "a" => Some(fix("b", 1)),
+                        "b" => Some(fix("c", 1)),
+                        "KEEP_ME" | "c" => Some(Vec::new()),
+                        _ => None,
+                    };
+                    if let Some(fix) = edits {
+                        found.push(Diagnostic {
+                            engine: "line-check".to_owned(),
+                            title: text.to_owned(),
+                            fix,
+                            ..finding(index as u32 + 1)
+                        });
+                    }
+                    offset += line.len();
+                }
+                if !found.is_empty() {
+                    reported.push((file.path.clone(), found));
+                }
+            }
+            Ok(reported)
+        }
+    }
+
+    fn fix_run(engines: Vec<Arc<dyn Engine>>, file: &str, content: &str) -> (String, LintRun) {
+        with_extra_project_engines(engines, || {
+            let cache_home = tempfile::tempdir().unwrap();
+            // SAFETY: `with_extra_project_engines` serialises every caller in this process.
+            unsafe {
+                std::env::set_var("POLY_CACHE_HOME", cache_home.path());
+            }
+            let dir = tempfile::tempdir().unwrap();
+            let path = write(dir.path(), file, content);
+            let run = lint_run(
+                &[dir.path().to_path_buf()],
+                &Config::default(),
+                &opts(true),
+                true,
+                false,
+            )
+            .unwrap();
+            (fs::read_to_string(path).unwrap(), run)
+        })
+    }
+
+    #[test]
+    fn two_engines_flagging_one_file_both_get_their_fix_applied() {
+        let engines: Vec<Arc<dyn Engine>> = vec![
+            Arc::new(Marker {
+                name: "marker-one",
+                marker: "FLAG_ME",
+            }),
+            Arc::new(Marker {
+                name: "marker-two",
+                marker: "FLAG_TWO",
+            }),
+        ];
+        let (after, run) = fix_run(engines, "a.py", "FLAG_ME = 1\nFLAG_TWO = 2\nFLAG_ME = 3\n");
+        assert_eq!(after, " = 1\n = 2\n = 3\n");
+        let fixed: usize = run.results.iter().map(|r| r.fixed).sum();
+        assert_eq!(fixed, 3);
+        let left: usize = run.results.iter().map(|r| r.diagnostics.len()).sum();
+        assert_eq!(left, 0, "{:?}", run.results);
+    }
+
+    #[test]
+    fn a_remaining_finding_is_reported_at_its_line_in_the_fixed_file() {
+        let (after, run) = fix_run(vec![Arc::new(Lines)], "a.py", "DROP one\nDROP two\nKEEP_ME\n");
+        assert_eq!(after, "KEEP_ME\n");
+        let result = &run.results[0];
+        assert_eq!(result.fixed, 2);
+        let spans: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.engine == "line-check")
+            .map(|d| (d.title.clone(), d.span.map(|s| s.start_line)))
+            .collect();
+        assert_eq!(
+            spans,
+            [("KEEP_ME".to_owned(), Some(1))],
+            "it moved from line 3 to line 1"
+        );
+    }
+
+    #[test]
+    fn a_finding_the_first_pass_exposes_is_fixed_in_one_more_pass_and_no_further() {
+        let (after, run) = fix_run(vec![Arc::new(Lines)], "a.py", "a\n");
+        assert_eq!(after, "c\n", "a -> b in the first pass, b -> c in the one extra pass");
+        let result = &run.results[0];
+        assert_eq!(result.fixed, 2);
+        // A third pass would report `c`, which `Lines` flags without a fix.
+        let left: Vec<_> = result.diagnostics.iter().filter(|d| d.engine == "line-check").collect();
+        assert!(left.is_empty(), "the extra pass is the last one: {left:?}");
+    }
+
+    #[test]
+    fn a_run_without_fixes_to_apply_runs_the_check_once() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let engine: Arc<dyn Engine> = Arc::new(Synthetic { calls: calls.clone() });
+        with_extra_project_engines(vec![engine], || {
+            let cache_home = tempfile::tempdir().unwrap();
+            // SAFETY: serialised by `with_extra_project_engines`.
+            unsafe {
+                std::env::set_var("POLY_CACHE_HOME", cache_home.path());
+            }
+            let dir = tempfile::tempdir().unwrap();
+            write(dir.path(), "a.py", "x = 1\n");
+            lint_run(
+                &[dir.path().to_path_buf()],
+                &Config::default(),
+                &opts(true),
+                true,
+                false,
+            )
+            .unwrap();
+        });
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+mod whole_tree {
+    //! An engine whose verdict is about the whole tree (a workspace graph) must see what `.gitignore`
+    //! and the pruned directories leave, not what `[discovery] exclude`, `--exclude` or a nested
+    //! `poly.toml` carve out; the run's files only decide which findings are reported.
+
+    use super::*;
+    use poly_core::engine::{ProjectDirs, ProjectInputs};
+
+    const NAME: &str = "graph-check";
+
+    /// Reports on every served file the sorted list of files (relative names) it was handed, so a test
+    /// reads what the engine saw from the finding itself.
+    struct Graph {
+        whole_tree: bool,
+    }
+
+    impl Engine for Graph {
+        fn name(&self) -> &'static str {
+            NAME
+        }
+        fn languages(&self) -> &'static [Language] {
+            &[Language::Markdown]
+        }
+        fn capabilities(&self) -> Capabilities {
+            Capabilities {
+                project: true,
+                ..Capabilities::default()
+            }
+        }
+        fn version(&self) -> &str {
+            "1"
+        }
+        fn project_inputs(&self) -> ProjectInputs {
+            ProjectInputs {
+                gate_key: None,
+                files: Vec::new(),
+                dirs: Some(ProjectDirs {
+                    dir_key: "dir".to_owned(),
+                    dir_default: ".".to_owned(),
+                    paths_key: None,
+                    recursive_key: None,
+                    recursive_default: true,
+                    whole_tree: self.whole_tree,
+                    file_names: vec![".graphignore".to_owned()],
+                    list_unserved: false,
+                }),
+            }
+        }
+        fn project_check(&self, req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {
+            let mut seen: Vec<String> = req
+                .files
+                .iter()
+                .map(|f| f.path.strip_prefix(req.root).unwrap().display().to_string())
+                .collect();
+            seen.sort();
+            let title = seen.join(",");
+            Ok(req
+                .files
+                .iter()
+                .filter(|f| f.language == Language::Markdown)
+                .map(|f| {
+                    (
+                        f.path.clone(),
+                        vec![Diagnostic {
+                            engine: NAME.to_owned(),
+                            title: title.clone(),
+                            ..finding(1)
+                        }],
+                    )
+                })
+                .collect())
+        }
+    }
+
+    fn project() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "poly.toml",
+            "[workspace]\nroot = true\n\n[discovery]\nexclude = [\"legacy/**\"]\n",
+        );
+        write(dir.path(), ".gitignore", "gen/\n");
+        write(dir.path(), ".graphignore", "x\n");
+        write(dir.path(), "app/a.md", "# a\n");
+        write(dir.path(), "legacy/old.md", "# old\n");
+        write(dir.path(), "legacy/.graphignore", "y\n");
+        write(dir.path(), "gen/out.md", "# generated\n");
+        write(dir.path(), "extra/e.md", "# extra\n");
+        write(dir.path(), "nested/poly.toml", "[format]\n");
+        write(dir.path(), "nested/n.md", "# nested\n");
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        dir
+    }
+
+    fn run_with(whole_tree: bool, exclude: &[&str]) -> (Vec<(String, String)>, tempfile::TempDir) {
+        let dir = project();
+        let engine: Arc<dyn Engine> = Arc::new(Graph { whole_tree });
+        let found = with_extra_project_engines(vec![engine], || {
+            let cache_home = tempfile::tempdir().unwrap();
+            // SAFETY: `with_extra_project_engines` serialises every caller in this process.
+            unsafe {
+                std::env::set_var("POLY_CACHE_HOME", cache_home.path());
+            }
+            let options = RunOptions {
+                jobs: Some(1),
+                exclude: exclude.iter().map(|glob| (*glob).to_owned()).collect(),
+                ..RunOptions::default()
+            };
+            let run = lint_run(&[dir.path().to_path_buf()], &Config::default(), &options, false, false).unwrap();
+            run.results
+                .iter()
+                .flat_map(|r| {
+                    let name = r.path.strip_prefix(dir.path()).unwrap().display().to_string();
+                    r.diagnostics
+                        .iter()
+                        .filter(|d| d.engine == NAME)
+                        .map(move |d| (name.clone(), d.title.clone()))
+                })
+                .collect::<Vec<_>>()
+        });
+        (found, dir)
+    }
+
+    fn names(found: &[(String, String)]) -> Vec<&str> {
+        let mut files: Vec<&str> = found.iter().map(|(file, _)| file.as_str()).collect();
+        files.sort_unstable();
+        files
+    }
+
+    #[test]
+    fn excludes_and_nested_configs_do_not_cut_the_graph_and_gitignore_does() {
+        let (found, _dir) = run_with(true, &["extra/**"]);
+        let everything = ".graphignore,app/a.md,extra/e.md,legacy/.graphignore,legacy/old.md,nested/n.md";
+        assert!(!found.is_empty());
+        for (file, seen) in &found {
+            assert_eq!(seen, everything, "what the engine saw when reporting on {file}");
+        }
+        assert_eq!(
+            names(&found),
+            ["app/a.md", "nested/n.md"],
+            "an excluded file is seen but not reported on; a gitignored one is neither"
+        );
+    }
+
+    #[test]
+    fn a_tree_that_is_not_whole_keeps_honoring_excludes_and_the_config_split() {
+        let (mut found, _dir) = run_with(false, &["extra/**"]);
+        found.sort();
+        let row = |file: &str, seen: &str| (file.to_owned(), seen.to_owned());
+        assert_eq!(
+            found,
+            [row("app/a.md", ".graphignore,app/a.md"), row("nested/n.md", "n.md"),],
+            "the root scope misses legacy/, extra/ and nested/; nested/ is a scope of its own"
+        );
+    }
 }
