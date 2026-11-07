@@ -871,3 +871,40 @@ fn the_pipeline_reports_the_defaulting_note_once_per_run() {
         "a project that did not enable skif hears nothing from it"
     );
 }
+
+#[test]
+fn a_lock_file_skif_gets_no_packages_from_does_not_keep_the_unused_dependency_rules_on() {
+    let v1 = r#"{"name":"r","lockfileVersion":1,"dependencies":{"left-pad":{"version":"1.0.0"}}}"#;
+    for (name, lock) in [
+        ("package-lock.json", v1),
+        ("package-lock.json", "{ not json"),
+        ("bun.lock", "{ not json"),
+    ] {
+        let (root, files) = with_lock(name, lock);
+        let analysis = run(&root, &files, &cfg(&[]));
+        assert_eq!(summary(&root, &analysis).len(), 0, "{name} {lock}: the rules stay off");
+        let note = analysis.note.expect("rules were left off").1;
+        assert!(note.title.contains("unused-dependencies"), "{name}: {}", note.title);
+    }
+    let (root, files) = with_lock("package-lock.json", NPM_LOCK);
+    assert_eq!(
+        rules_found(&root, &files, &cfg(&[])),
+        [pair("packages/host/package.json", "unused-dependencies")]
+    );
+}
+
+#[test]
+fn a_rule_the_project_ignored_is_not_named_in_the_defaulting_note() {
+    let (root, files) = inline(&unknowable_members());
+    let ignore = ("ignore", toml::Value::Array(vec!["unused-dependencies".into()]));
+    let note = run(&root, &files, &cfg(&[ignore]))
+        .note
+        .expect("other rules were left off")
+        .1;
+    assert!(!note.title.contains("`unused-dependencies`"), "{}", note.title);
+    assert!(note.title.contains("`unlisted-binaries`"), "{}", note.title);
+
+    let all = ["unlisted-binaries", "unused-dependencies", "unused-dev-dependencies"].map(toml::Value::from);
+    let ignore = ("ignore", toml::Value::Array(all.to_vec()));
+    assert!(run(&root, &files, &cfg(&[ignore])).note.is_none());
+}

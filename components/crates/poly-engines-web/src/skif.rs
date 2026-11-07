@@ -60,7 +60,7 @@ pub const ENGINE_NAME: &str = "skif";
 /// Cache-key identity: the wrapped crate version plus a marker for this backend's own mapping.
 ///
 /// Bump the suffix whenever the diagnostic or fix mapping changes, and the version whenever `skif` is upgraded.
-const VERSION: &str = "skif-0.1.1+poly3";
+const VERSION: &str = "skif-0.1.1+poly4";
 
 /// The directory skif is run on, relative to the project root.
 const DEFAULT_DIR: &str = ".";
@@ -299,10 +299,28 @@ fn lock_records_binaries(files: &[poly_engine_api::engine::ProjectFile], root: &
         return false;
     };
     match name {
-        "package-lock.json" | "bun.lock" => true,
+        "package-lock.json" => names_locked_packages(&lock.content, "node_modules/"),
+        "bun.lock" => names_locked_packages(&strip_trailing_commas(&lock.content), ""),
         "yarn.lock" => lock.content.contains("__metadata:"),
         _ => false,
     }
+}
+
+/// Whether `json` is a lock whose `packages` object has a key containing `marker`: skif reads nothing
+/// from a lockfileVersion 1 `package-lock.json` (it has `dependencies`, not `packages`) or from a malformed file,
+/// and a lock it gets no package data from records no binaries.
+fn names_locked_packages(json: &str, marker: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()
+        .and_then(|value| value.get("packages").and_then(serde_json::Value::as_object).cloned())
+        .is_some_and(|packages| packages.keys().any(|key| key.contains(marker)))
+}
+
+/// `bun.lock` is JSONC: drops the commas that precede a closing bracket so it parses as JSON.
+fn strip_trailing_commas(text: &str) -> String {
+    static TRAILING: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let pattern = TRAILING.get_or_init(|| regex::Regex::new(r",(\s*[}\]])").expect("a valid pattern"));
+    pattern.replace_all(text, "$1").into_owned()
 }
 
 /// The info-level finding that makes the defaulting visible: which rules were left off and how to turn them on.
