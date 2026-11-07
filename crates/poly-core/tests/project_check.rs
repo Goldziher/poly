@@ -865,6 +865,161 @@ mod fix_passes {
         assert!(left.is_empty(), "the extra pass is the last one: {left:?}");
     }
 
+    /// Reports `WATCH` lines without a fix, counts its runs, and fails its first run when `fail_first` is set.
+    struct Watcher {
+        name: &'static str,
+        calls: Arc<AtomicUsize>,
+        fail_first: bool,
+    }
+
+    impl Engine for Watcher {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+        fn languages(&self) -> &'static [Language] {
+            &[Language::Python]
+        }
+        fn capabilities(&self) -> Capabilities {
+            Capabilities {
+                project: true,
+                ..Capabilities::default()
+            }
+        }
+        fn version(&self) -> &str {
+            "1"
+        }
+        fn project_check(&self, req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 && self.fail_first {
+                anyhow::bail!("{} could not run", self.name);
+            }
+            Ok(req
+                .files
+                .iter()
+                .filter(|file| file.content.contains("WATCH"))
+                .map(|file| {
+                    let found = Diagnostic {
+                        engine: self.name.to_owned(),
+                        ..finding(1)
+                    };
+                    (file.path.clone(), vec![found])
+                })
+                .collect())
+        }
+    }
+
+    fn two_file_run(no_cache: bool, watched: &str, watcher: Watcher) -> (LintRun, usize) {
+        let calls = watcher.calls.clone();
+        let engines: Vec<Arc<dyn Engine>> = vec![
+            Arc::new(Marker {
+                name: "marker-one",
+                marker: "FLAG_ME",
+            }),
+            Arc::new(watcher),
+        ];
+        let run = with_extra_project_engines(engines, || {
+            let cache_home = tempfile::tempdir().unwrap();
+            // SAFETY: `with_extra_project_engines` serialises every caller in this process.
+            unsafe {
+                std::env::set_var("POLY_CACHE_HOME", cache_home.path());
+            }
+            let dir = tempfile::tempdir().unwrap();
+            write(dir.path(), "a.py", "FLAG_ME = 1\n");
+            write(dir.path(), watched, "WATCH = 1\n");
+            lint_run(
+                &[dir.path().to_path_buf()],
+                &Config::default(),
+                &opts(no_cache),
+                true,
+                false,
+            )
+            .unwrap()
+        });
+        (run, calls.load(Ordering::SeqCst))
+    }
+
+    fn watched_findings(run: &LintRun, engine: &str) -> usize {
+        run.results
+            .iter()
+            .flat_map(|r| &r.diagnostics)
+            .filter(|d| d.engine == engine)
+            .count()
+    }
+
+    #[test]
+    fn an_engine_that_fixed_nothing_and_saw_no_rewritten_file_is_not_run_again() {
+        for no_cache in [true, false] {
+            let watcher = Watcher {
+                name: "watcher",
+                calls: Arc::new(AtomicUsize::new(0)),
+                fail_first: false,
+            };
+            let (run, calls) = two_file_run(no_cache, "b.py", watcher);
+            assert_eq!(calls, 1, "no_cache = {no_cache}: its input did not change");
+            assert_eq!(
+                watched_findings(&run, "watcher"),
+                1,
+                "its first-pass finding stands, once"
+            );
+            let fixed: usize = run.results.iter().map(|r| r.fixed).sum();
+            assert_eq!(fixed, 1);
+        }
+    }
+
+    #[test]
+    fn an_engine_with_a_finding_in_a_rewritten_file_runs_again() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let engines: Vec<Arc<dyn Engine>> = vec![
+            Arc::new(Marker {
+                name: "marker-one",
+                marker: "FLAG_ME",
+            }),
+            Arc::new(Watcher {
+                name: "watcher",
+                calls: calls.clone(),
+                fail_first: false,
+            }),
+        ];
+        let run = with_extra_project_engines(engines, || {
+            let cache_home = tempfile::tempdir().unwrap();
+            // SAFETY: `with_extra_project_engines` serialises every caller in this process.
+            unsafe {
+                std::env::set_var("POLY_CACHE_HOME", cache_home.path());
+            }
+            let dir = tempfile::tempdir().unwrap();
+            write(dir.path(), "a.py", "FLAG_ME WATCH = 1\n");
+            lint_run(
+                &[dir.path().to_path_buf()],
+                &Config::default(),
+                &opts(true),
+                true,
+                false,
+            )
+            .unwrap()
+        });
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "its view of a.py changed");
+        assert_eq!(
+            watched_findings(&run, "watcher"),
+            1,
+            "reported once, from the second pass"
+        );
+    }
+
+    #[test]
+    fn a_first_pass_error_survives_the_second_pass() {
+        let watcher = Watcher {
+            name: "flaky",
+            calls: Arc::new(AtomicUsize::new(0)),
+            fail_first: true,
+        };
+        let (run, _) = two_file_run(true, "b.py", watcher);
+        let messages: Vec<&str> = run.errors.iter().map(|e| e.message.as_str()).collect();
+        assert!(
+            messages.iter().any(|m| m.contains("flaky could not run")),
+            "the engine failed once and was not asked again: {messages:?}"
+        );
+        assert_eq!(messages.len(), 1, "{messages:?}");
+    }
+
     #[test]
     fn a_run_without_fixes_to_apply_runs_the_check_once() {
         let calls = Arc::new(AtomicUsize::new(0));
@@ -903,12 +1058,24 @@ mod whole_tree {
     /// Reports on every served file the sorted list of files (relative names) it was handed, so a test
     /// reads what the engine saw from the finding itself.
     struct Graph {
+        name: &'static str,
         whole_tree: bool,
+        file_names: Vec<String>,
+    }
+
+    impl Graph {
+        fn new(whole_tree: bool) -> Self {
+            Self {
+                name: NAME,
+                whole_tree,
+                file_names: vec![".graphignore".to_owned()],
+            }
+        }
     }
 
     impl Engine for Graph {
         fn name(&self) -> &'static str {
-            NAME
+            self.name
         }
         fn languages(&self) -> &'static [Language] {
             &[Language::Markdown]
@@ -933,7 +1100,7 @@ mod whole_tree {
                     recursive_key: None,
                     recursive_default: true,
                     whole_tree: self.whole_tree,
-                    file_names: vec![".graphignore".to_owned()],
+                    file_names: self.file_names.clone(),
                     list_unserved: false,
                 }),
             }
@@ -954,7 +1121,7 @@ mod whole_tree {
                     (
                         f.path.clone(),
                         vec![Diagnostic {
-                            engine: NAME.to_owned(),
+                            engine: self.name.to_owned(),
                             title: title.clone(),
                             ..finding(1)
                         }],
@@ -986,7 +1153,7 @@ mod whole_tree {
 
     fn run_with(whole_tree: bool, exclude: &[&str]) -> (Vec<(String, String)>, tempfile::TempDir) {
         let dir = project();
-        let engine: Arc<dyn Engine> = Arc::new(Graph { whole_tree });
+        let engine: Arc<dyn Engine> = Arc::new(Graph::new(whole_tree));
         let found = with_extra_project_engines(vec![engine], || {
             let cache_home = tempfile::tempdir().unwrap();
             // SAFETY: `with_extra_project_engines` serialises every caller in this process.
@@ -1044,5 +1211,199 @@ mod whole_tree {
             [row("app/a.md", ".graphignore,app/a.md"), row("nested/n.md", "n.md"),],
             "the root scope misses legacy/, extra/ and nested/; nested/ is a scope of its own"
         );
+    }
+
+    /// A project with a nested config, the engine on for the whole tree, and the nested `poly.toml` set to `nested`.
+    fn nested_project(root: &str, nested: &str) -> tempfile::TempDir {
+        let dir = project();
+        write(
+            dir.path(),
+            "poly.toml",
+            &format!("[workspace]\nroot = true\n\n[discovery]\nexclude = [\"legacy/**\"]\n\n{root}"),
+        );
+        write(dir.path(), "nested/poly.toml", nested);
+        dir
+    }
+
+    /// Lint `paths` under `dir` with `engines` registered; `(file relative to dir, severity, code, title)` of
+    /// every finding by the engines named in `names`.
+    fn lint_findings(
+        dir: &Path,
+        paths: &[&str],
+        engines: Vec<Arc<dyn Engine>>,
+        names: &[&str],
+    ) -> (Vec<(String, Severity, String, String)>, LintRun) {
+        with_extra_project_engines(engines, || {
+            let cache_home = tempfile::tempdir().unwrap();
+            // SAFETY: `with_extra_project_engines` serialises every caller in this process.
+            unsafe {
+                std::env::set_var("POLY_CACHE_HOME", cache_home.path());
+            }
+            let options = RunOptions {
+                jobs: Some(1),
+                no_cache: true,
+                ..RunOptions::default()
+            };
+            let paths: Vec<PathBuf> = paths.iter().map(|path| dir.join(path)).collect();
+            let run = lint_run(&paths, &Config::default(), &options, false, false).unwrap();
+            let mut found: Vec<_> = run
+                .results
+                .iter()
+                .flat_map(|r| {
+                    let name = r.path.strip_prefix(dir).unwrap().display().to_string();
+                    r.diagnostics
+                        .iter()
+                        .filter(|d| names.contains(&d.engine.as_str()))
+                        .map(move |d| {
+                            (
+                                name.clone(),
+                                d.severity,
+                                d.code.clone().unwrap_or_default(),
+                                d.title.clone(),
+                            )
+                        })
+                })
+                .collect();
+            found.sort_by(|a, b| (&a.0, &a.2, &a.3).cmp(&(&b.0, &b.2, &b.3)));
+            (found, run)
+        })
+    }
+
+    fn graph() -> Vec<Arc<dyn Engine>> {
+        vec![Arc::new(Graph::new(true))]
+    }
+
+    fn files_of(found: &[(String, Severity, String, String)]) -> Vec<&str> {
+        found.iter().map(|(file, ..)| file.as_str()).collect()
+    }
+
+    #[test]
+    fn a_nested_config_that_disables_the_engine_silences_its_own_subtree() {
+        let dir = nested_project("", "[engines.graph-check]\nenabled = false\n");
+        let (found, _) = lint_findings(dir.path(), &["."], graph(), &[NAME]);
+        assert_eq!(
+            files_of(&found),
+            ["app/a.md", "extra/e.md"],
+            "nested/n.md is governed by the config that turned it off"
+        );
+    }
+
+    #[test]
+    fn a_nested_per_file_ignore_and_rule_level_apply_to_the_nested_files() {
+        let dir = nested_project("", "[per-file-ignores]\n\"n.md\" = [\"PRJ001\"]\n");
+        let (found, run) = lint_findings(dir.path(), &["."], graph(), &[NAME]);
+        assert_eq!(files_of(&found), ["app/a.md", "extra/e.md"]);
+        assert!(run.suppressed.iter().any(|s| s.path.ends_with("nested/n.md")));
+
+        let dir = nested_project("", "[engines.graph-check.rules.PRJ001]\nlevel = \"error\"\n");
+        let (found, _) = lint_findings(dir.path(), &["."], graph(), &[NAME]);
+        let severities: Vec<_> = found
+            .iter()
+            .map(|(file, severity, ..)| (file.as_str(), *severity))
+            .collect();
+        assert_eq!(
+            severities,
+            [
+                ("app/a.md", Severity::Warning),
+                ("extra/e.md", Severity::Warning),
+                ("nested/n.md", Severity::Error)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_nested_option_the_outer_plan_overrides_is_reported_on_the_nested_config() {
+        let dir = nested_project("", "[engines.graph-check]\ndir = \"sub\"\n");
+        let (found, _) = lint_findings(dir.path(), &["."], graph(), &[NAME]);
+        let notice: Vec<_> = found
+            .iter()
+            .filter(|(_, _, code, _)| code == "nested-options-ignored")
+            .collect();
+        assert_eq!(notice.len(), 1, "{found:?}");
+        assert_eq!(notice[0].0, "nested/poly.toml");
+        assert_eq!(notice[0].1, Severity::Warning);
+
+        let quiet = nested_project("", "[engines.graph-check]\nenabled = true\n");
+        let (found, _) = lint_findings(quiet.path(), &["."], graph(), &[NAME]);
+        assert!(
+            found.iter().all(|(_, _, code, _)| code != "nested-options-ignored"),
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn a_run_on_a_nested_directory_judges_the_same_tree_as_a_run_on_the_project() {
+        let dir = nested_project("", "[format]\n");
+        let (whole, _) = lint_findings(dir.path(), &["."], graph(), &[NAME]);
+        let (scoped, _) = lint_findings(dir.path(), &["nested"], graph(), &[NAME]);
+        let nested_of_whole: Vec<_> = whole
+            .iter()
+            .filter(|(file, ..)| file.starts_with("nested/"))
+            .cloned()
+            .collect();
+        assert_eq!(files_of(&scoped), ["nested/n.md"]);
+        assert_eq!(scoped, nested_of_whole, "the fragment under nested/ is not the verdict");
+    }
+
+    #[test]
+    fn a_nested_config_the_outer_directory_does_not_reach_is_analysed_on_its_own() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "poly.toml",
+            "[workspace]\nroot = true\n\n[engines.graph-check]\ndir = \"frontend\"\n",
+        );
+        write(dir.path(), "frontend/f.md", "# f\n");
+        write(dir.path(), "backend/poly.toml", "[engines.graph-check]\ndir = \".\"\n");
+        write(dir.path(), "backend/b.md", "# b\n");
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let (found, _) = lint_findings(dir.path(), &["."], graph(), &[NAME]);
+        let seen: Vec<_> = found
+            .iter()
+            .map(|(file, _, _, title)| (file.as_str(), title.as_str()))
+            .collect();
+        assert_eq!(
+            seen,
+            [("backend/b.md", "b.md"), ("frontend/f.md", "frontend/f.md")],
+            "frontend is judged from the root, backend from its own config"
+        );
+    }
+
+    #[test]
+    fn a_file_name_an_engine_declared_is_not_handed_to_another_engine() {
+        let dir = project();
+        let plain = Graph {
+            name: "plain-check",
+            whole_tree: true,
+            file_names: Vec::new(),
+        };
+        let engines: Vec<Arc<dyn Engine>> = vec![Arc::new(Graph::new(true)), Arc::new(plain)];
+        let (_, run) = lint_findings(dir.path(), &["."], engines, &[NAME, "plain-check"]);
+        let seen = |engine: &str| -> Vec<String> {
+            run.results
+                .iter()
+                .flat_map(|r| &r.diagnostics)
+                .filter(|d| d.engine == engine)
+                .map(|d| d.title.clone())
+                .collect()
+        };
+        let (declaring, other) = (seen(NAME), seen("plain-check"));
+        assert!(!declaring.is_empty() && !other.is_empty());
+        assert!(declaring.iter().all(|t| t.contains(".graphignore")), "{declaring:?}");
+        assert!(other.iter().all(|t| !t.contains(".graphignore")), "{other:?}");
+    }
+
+    #[test]
+    fn a_nested_gitignore_prunes_its_own_subtree_of_the_graph() {
+        let dir = project();
+        write(dir.path(), "app/.gitignore", "skipped/\n");
+        write(dir.path(), "app/skipped/x.md", "# skipped\n");
+        write(dir.path(), "app/kept/y.md", "# kept\n");
+        let (found, _) = lint_findings(dir.path(), &["."], graph(), &[NAME]);
+        assert!(!found.is_empty());
+        for (file, _, _, seen) in &found {
+            assert!(!seen.contains("skipped"), "{file} saw an ignored file: {seen}");
+            assert!(seen.contains("app/kept/y.md"), "{file}: {seen}");
+        }
     }
 }
