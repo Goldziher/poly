@@ -9,6 +9,13 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **pyrefly type checking.** `[engines.python-types] backend = "pyrefly"` selects pyrefly instead of ty, from its own
+  opt-in `pyrefly` component. The two engines declare which `backend` value picks them (`Engine::selection`), so the
+  planner runs one and fetches only its component. pyrefly reads no `pyrefly.toml`, starts no process (the interpreter
+  query is forced off and the host passes the `site-packages` paths) and is built without its bundled third-party
+  stubs. The component lives in its own cargo workspace, `components-pyrefly/`, because pyrefly's `tikv-jemallocator 0.7`
+  cannot share a lockfile with the jemalloc 0.6 that rumdl links; see
+  [ADR 0042](adrs/0042-pyrefly-in-its-own-workspace.md).
 - **adrlint tree-wide rules.** The `adrlint` engine now runs `MADR41a`, `MADR41b`, `MADR42`, `MADR43`,
   `MADR44` and the immutability lock rules `ADR50`/`ADR51` as a project check over the ADR log
   (`dir`, default `docs/adr`, or `paths`; `adrlint.lock` is read by the host). The result is cached
