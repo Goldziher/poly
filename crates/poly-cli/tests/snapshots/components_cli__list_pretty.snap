@@ -6,7 +6,7 @@ flavor      partial
 cache       <cache>
 offline     false
 lock        none (this build embeds no component lock)
-web        unavailable  adrlint, malva, markup_fmt, oxc, rumdl, taplo, yaml  [this build embeds no component lock]
+web        unavailable  adrlint, malva, markup_fmt, oxc, rumdl, skif, taplo, yaml  [this build embeds no component lock]
 python     bundled      python-types, ruff
 sql        bundled      sqruff
 php        bundled      mago

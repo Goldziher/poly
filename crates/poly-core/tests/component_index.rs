@@ -94,6 +94,9 @@ const ALIASES: &[(&str, &[&str])] = &[
     ("js", &["javascript", "jsx"]),
     ("ts", &["typescript", "tsx"]),
     ("json", &["json", "jsonc"]),
+    // Presets for the skif project check, which lives in the `web` component and reads these files.
+    ("skif", &["javascript", "jsx", "typescript", "tsx", "json"]),
+    ("js-deps", &["javascript", "jsx", "typescript", "tsx", "json"]),
     ("css", &["css", "scss", "less"]),
     ("markdown", &["markdown", "mdx"]),
     ("yaml", &["yaml"]),

@@ -118,7 +118,7 @@ fn a_comma_separated_list_selects_every_name_in_it() {
 
 /// Every engine the `web` component serves. A `poly.toml` in the walk is a TOML file, so it is the
 /// cheapest way to make a run discover files whose engines live in that component.
-const WEB_ENGINES: &str = "adrlint,malva,markup_fmt,oxc,rumdl,taplo,yaml";
+const WEB_ENGINES: &str = "adrlint,malva,markup_fmt,oxc,rumdl,skif,taplo,yaml";
 
 /// A Python file with an unused import beside a `poly.toml`, whose TOML the `web` component would lint.
 fn repo_with_poly_toml() -> TempDir {

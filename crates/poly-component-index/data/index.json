@@ -105,6 +105,7 @@
               "dir_default": "docs/adr",
               "paths_key": "paths",
               "recursive_key": "recursive",
+              "recursive_default": false,
               "list_unserved": true
             }
           }
@@ -557,6 +558,133 @@
             "gate_key": null,
             "files": [],
             "dirs": null
+          }
+        },
+        {
+          "name": "skif",
+          "languages": ["javascript", "typescript", "jsx", "tsx", "json", "jsonc", "yaml", "toml"],
+          "capabilities": {
+            "lint": false,
+            "format": false,
+            "fix": false,
+            "project": true
+          },
+          "version": "skif-0.1.1+poly1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "enabled",
+                  "types": 1
+                },
+                {
+                  "name": "dir",
+                  "types": 8
+                },
+                {
+                  "name": "threads",
+                  "types": 2
+                },
+                {
+                  "name": "select",
+                  "types": 16
+                },
+                {
+                  "name": "ignore",
+                  "types": 16
+                },
+                {
+                  "name": "ignore_packages",
+                  "types": 16
+                },
+                {
+                  "name": "ignore_dependencies",
+                  "types": 16
+                },
+                {
+                  "name": "production",
+                  "types": 1
+                },
+                {
+                  "name": "js",
+                  "types": 1
+                },
+                {
+                  "name": "pnpm_lock",
+                  "types": 8
+                },
+                {
+                  "name": "npm_lock",
+                  "types": 8
+                },
+                {
+                  "name": "yarn_lock",
+                  "types": 8
+                },
+                {
+                  "name": "bun_lock",
+                  "types": 8
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": false,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 0,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": "enabled",
+            "files": [
+              {
+                "option_key": "pnpm_lock",
+                "default_path": "pnpm-lock.yaml"
+              },
+              {
+                "option_key": "npm_lock",
+                "default_path": "package-lock.json"
+              },
+              {
+                "option_key": "yarn_lock",
+                "default_path": "yarn.lock"
+              },
+              {
+                "option_key": "bun_lock",
+                "default_path": "bun.lock"
+              }
+            ],
+            "dirs": {
+              "dir_key": "dir",
+              "dir_default": ".",
+              "paths_key": null,
+              "recursive_key": null,
+              "recursive_default": true,
+              "list_unserved": false
+            }
           }
         },
         {
@@ -2387,12 +2515,14 @@
     "hcl": ["misc"],
     "html": ["web"],
     "js": ["web"],
+    "js-deps": ["web"],
     "json": ["web"],
     "markdown": ["web"],
     "nix": ["nix"],
     "php": ["php"],
     "python": ["python"],
     "ruby": ["ruby"],
+    "skif": ["web"],
     "sql": ["sql"],
     "toml": ["web"],
     "ts": ["web"],

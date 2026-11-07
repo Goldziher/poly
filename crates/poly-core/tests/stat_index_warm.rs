@@ -65,9 +65,9 @@ impl Project {
         RunOptions {
             jobs: Some(2),
             explicit_config: true,
-            // The taplo engine lives in the `web` component; skipping it keeps `poly.toml` from
+            // The taplo and skif engines live in the `web` component; skipping both keeps `poly.toml` from
             // planning a component a core build has no lock for. The core config check still answers it.
-            skip: vec!["taplo".to_owned()],
+            skip: vec!["taplo".to_owned(), "skif".to_owned()],
             ..RunOptions::default()
         }
     }

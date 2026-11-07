@@ -5,6 +5,9 @@
 //! the test thread and compares `/proc/self/task` against the count taken before any call, after
 //! every call.
 //!
+//! skif's project check is held to the same bar: its default `threads = 1` runs discovery and every rule on
+//! the calling thread, so the count after an analysis must not exceed the baseline either.
+//!
 //! Audit: oxc (`LintService::run_source` used a `rayon::scope`, now replaced by `src/oxc/run.rs`,
 //! which drives `Linter::run` directly with no `LintService`, so no rayon scope and no global pool:
 //! `Runtime::new` builds one with `ThreadPoolBuilder::build_global`).
@@ -14,9 +17,10 @@
 #![cfg(target_os = "linux")]
 
 use poly_engine_api::config::{EngineConfig, GlobalDefaults};
-use poly_engine_api::engine::{Engine, SourceFile};
+use poly_engine_api::engine::{Engine, ProjectEnvironment, ProjectFile, ProjectRequest, SourceFile};
 use poly_engine_api::language::Language;
 use poly_engines_web::OxcEngine;
+use poly_engines_web::skif::analyze;
 
 /// Number of threads in this process.
 fn thread_count() -> usize {
@@ -90,6 +94,42 @@ fn oxc_lint_does_not_grow_the_thread_count() {
         observed.iter().any(|(diagnostics, _)| *diagnostics > 0),
         "the oxc fixtures produced no diagnostics, so the engine may not have run"
     );
+
+    // skif on an in-memory workspace: `a` declares an empty `devDependencies`, so the run must report it.
+    let manifest = |path: &str, content: &str| ProjectFile {
+        path: path.into(),
+        language: Language::Json,
+        content: content.into(),
+    };
+    let workspace = [
+        manifest(
+            "/ws/package.json",
+            r#"{"name":"r","private":true,"workspaces":["packages/*"]}"#,
+        ),
+        manifest(
+            "/ws/packages/a/package.json",
+            r#"{"name":"a","version":"1.0.0","devDependencies":{}}"#,
+        ),
+    ];
+    let skif_cfg = EngineConfig {
+        options: toml::from_str("enabled = true").unwrap(),
+        ..plain_cfg(2)
+    };
+    let environment = ProjectEnvironment::default();
+    for _ in 0..2 {
+        let request = ProjectRequest {
+            root: std::path::Path::new("/ws"),
+            files: &workspace,
+            config: &skif_cfg,
+            environment: &environment,
+        };
+        let analysis = analyze(&request).unwrap();
+        assert!(
+            analysis.findings.iter().any(|(_, found)| !found.is_empty()),
+            "the skif fixture produced no findings, so the engine may not have run"
+        );
+        observed.push((1, thread_count()));
+    }
 
     for (_, threads) in &observed {
         assert!(

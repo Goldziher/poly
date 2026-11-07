@@ -39,11 +39,15 @@ fn described() -> Vec<WireEngineDesc> {
 
 #[test]
 fn the_provider_serves_the_web_languages_only() {
-    assert_eq!(described().len(), 7, "every web engine is reached by a sample language");
+    assert_eq!(described().len(), 8, "every web engine is reached by a sample language");
     assert!(engines_for(&Language::Python).is_empty());
     assert!(engines_for(&Language::Ruby).is_empty());
     let toml: Vec<_> = engines_for(&Language::Toml).iter().map(|e| e.name()).collect();
-    assert_eq!(toml, ["taplo"], "poly.toml key checking stays a core engine");
+    assert_eq!(
+        toml,
+        ["taplo", "skif"],
+        "poly.toml key checking stays a core engine; skif reads skif.toml"
+    );
 }
 
 #[test]

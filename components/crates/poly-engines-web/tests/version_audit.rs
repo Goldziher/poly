@@ -14,7 +14,9 @@ use std::path::Path;
 
 use poly_engine_api::engine::Engine;
 use poly_engine_api::language::Language;
-use poly_engines_web::{AdrlintEngine, MalvaEngine, MarkupFmtEngine, OxcEngine, RumdlEngine, TaploEngine, YamlEngine};
+use poly_engines_web::{
+    AdrlintEngine, MalvaEngine, MarkupFmtEngine, OxcEngine, RumdlEngine, SkifEngine, TaploEngine, YamlEngine,
+};
 
 /// A resolved package as recorded in `Cargo.lock`.
 struct LockEntry {
@@ -134,6 +136,7 @@ fn engine_versions_track_cargo_lock() {
             vec![("oxc_formatter_yaml", Git)],
         ),
         ("oxc", OxcEngine.version().to_owned(), vec![("oxc_formatter", Git)]),
+        ("skif", SkifEngine.version().to_owned(), vec![("skif", Registry)]),
     ];
     let audited: BTreeSet<&str> = checks.iter().map(|(name, ..)| *name).collect();
     assert_eq!(
