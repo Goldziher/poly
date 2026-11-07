@@ -1442,6 +1442,7 @@
       "name": "pyrefly",
       "kind": "engines",
       "opt_in": true,
+      "download_only": true,
       "features": ["engine-pyrefly"],
       "engines": [
         {

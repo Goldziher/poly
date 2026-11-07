@@ -38,6 +38,7 @@ fn component(name: &str, feature: &str, opt_in: bool, engines: Vec<WireEngineDes
         name: name.into(),
         kind: ComponentKind::Engines,
         opt_in,
+        download_only: false,
         features: vec![feature.into()],
         engines,
         lock_sha: None,

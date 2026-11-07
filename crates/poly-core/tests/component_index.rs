@@ -63,6 +63,9 @@ const PLACEMENT: &[(&str, Placement)] = &[
 /// entries against the real engines.
 const EXTERNAL_COMPONENTS: &[&str] = &["biome", "pyrefly", "ruby", "web"];
 
+/// Components built outside the `components/` workspace: no bundled build can link them.
+const DOWNLOAD_ONLY: &[&str] = &["pyrefly"];
+
 /// Components in index order: name, kind, opt-in, cargo features.
 const COMPONENTS: &[(&str, ComponentKind, bool, &[&str])] = &[
     ("web", ComponentKind::Engines, false, &["engine-web"]),
@@ -165,6 +168,7 @@ fn regenerate(committed: &ComponentIndex) -> ComponentIndex {
                 name: (*name).to_owned(),
                 kind: *kind,
                 opt_in: *opt_in,
+                download_only: DOWNLOAD_ONLY.contains(name),
                 features: features.iter().map(|f| (*f).to_owned()).collect(),
                 engines,
                 lock_sha: committed.component(name).and_then(|c| c.lock_sha.clone()),

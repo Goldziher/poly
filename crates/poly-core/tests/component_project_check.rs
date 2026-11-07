@@ -55,6 +55,7 @@ fn index() -> ComponentIndex {
             name: "checker".into(),
             kind: ComponentKind::Engines,
             opt_in: false,
+            download_only: false,
             features: vec!["engine-checker".into()],
             engines: vec![desc()],
             lock_sha: None,

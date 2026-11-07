@@ -304,6 +304,7 @@ mod tests {
                 name: "alt".into(),
                 kind: ComponentKind::Engines,
                 opt_in: true,
+                download_only: false,
                 features: vec!["engine-alt".into()],
                 engines: vec![desc],
                 lock_sha: None,

@@ -31,6 +31,10 @@ fn the_committed_index_describes_the_pyrefly_component() {
         .component("pyrefly")
         .expect("the index declares the pyrefly component");
     assert!(component.opt_in, "pyrefly is opt-in: ty is the default type checker");
+    assert!(
+        component.download_only,
+        "pyrefly lives outside `components/`, so no bundled build links it"
+    );
     assert_eq!(
         component.engines, described,
         "the committed index is stale for pyrefly; regenerate it with \

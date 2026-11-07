@@ -37,6 +37,9 @@ pub struct Component {
     /// Not part of the `all` preset; installed only when asked for.
     #[serde(default)]
     pub opt_in: bool,
+    /// Always downloaded: it is built outside the `components/` workspace, so no bundled build can link it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub download_only: bool,
     /// The `poly-core` cargo features (engine families) the component is built from.
     #[serde(default)]
     pub features: Vec<String>,

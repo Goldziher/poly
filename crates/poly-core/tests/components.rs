@@ -63,6 +63,7 @@ fn index_of(desc: WireEngineDesc) -> ComponentIndex {
             name: "demo".into(),
             kind: ComponentKind::Engines,
             opt_in: false,
+            download_only: false,
             features: vec!["engine-demo".into()],
             engines: vec![desc],
             lock_sha: None,
