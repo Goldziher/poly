@@ -4,7 +4,7 @@ use poly_component_index::{Component, ComponentIndex, ComponentKind};
 use poly_component_protocol::{WireCapabilities, WireEngineDesc, WireSelection};
 use poly_config::v2::{ComponentsConfig, Enable, EngineTable};
 
-use super::needed::needed_components;
+use super::needed::{needed_components, needed_components_with_ancestors};
 use super::{ComponentsReport, MissingComponent, selected_components};
 use crate::config::Config;
 use crate::language::Language;
@@ -583,4 +583,46 @@ fn the_shared_table_name_deselects_the_component_of_the_routed_engine() {
     );
     assert_eq!(python_names_under(&config, &["pyrefly"], &[]), ["pyrefly"]);
     assert_eq!(python_names_under(&config, &[], &["pyrefly"]), ["python"]);
+}
+
+fn whole_tree(mut desc: WireEngineDesc) -> WireEngineDesc {
+    desc.capabilities.project = true;
+    desc.project_inputs.dirs = Some(poly_component_protocol::WireProjectDirs {
+        dir_key: "dir".into(),
+        dir_default: ".".into(),
+        paths_key: None,
+        recursive_key: None,
+        recursive_default: true,
+        whole_tree: true,
+        file_names: Vec::new(),
+        list_unserved: false,
+    });
+    desc
+}
+
+#[test]
+fn an_ancestor_pair_fetches_a_component_only_when_its_whole_tree_engine_serves_the_language() {
+    let index = ComponentIndex {
+        schema: 1,
+        components: vec![component(
+            "mixed",
+            "engine-mixed",
+            false,
+            vec![engine("pyfile", &["python"]), whole_tree(engine("rstree", &["rust"]))],
+        )],
+        presets: BTreeMap::new(),
+    };
+    let auto = Config::default();
+    let ancestors_of = |language: Language| {
+        names(needed_components_with_ancestors(
+            &index,
+            &[&auto],
+            &[],
+            &[(0, language)],
+            &linked,
+            &|_, _| true,
+        ))
+    };
+    assert_eq!(ancestors_of(Language::Rust), ["mixed"]);
+    assert!(ancestors_of(Language::Python).is_empty());
 }

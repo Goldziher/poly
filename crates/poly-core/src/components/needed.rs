@@ -221,16 +221,17 @@ pub(crate) fn selected_components<'a>(
         .filter(|c| {
             // A component named outright serves whatever language its engines are asked for; one
             // derived from the language needs an engine for that language.
-            let serves = |desc: &WireEngineDesc| {
-                named.contains(c.name.as_str())
-                    || desc.languages.is_empty()
-                    || desc.languages.iter().any(|l| l == language.id())
-            };
+            let serves = |desc: &WireEngineDesc| named.contains(c.name.as_str()) || serves_language(desc, language);
             c.engines
                 .iter()
                 .any(|desc| serves(desc) && engine_in_play(config, Some(language), desc, selected))
         })
         .collect()
+}
+
+/// Whether `desc` is asked for `language`: it names no language (cross-cutting) or names this one.
+fn serves_language(desc: &WireEngineDesc, language: &Language) -> bool {
+    desc.languages.is_empty() || desc.languages.iter().any(|l| l == language.id())
 }
 
 /// The subset of [`selected_components`] hosting an engine that checks the whole tree of its config. A config above
@@ -247,7 +248,9 @@ pub(crate) fn selected_whole_tree_components<'a>(
         .into_iter()
         .filter(|component| {
             component.engines.iter().any(|desc| {
-                desc.project_inputs.dirs.as_ref().is_some_and(|dirs| dirs.whole_tree)
+                desc.capabilities.project
+                    && serves_language(desc, language)
+                    && desc.project_inputs.dirs.as_ref().is_some_and(|dirs| dirs.whole_tree)
                     && engine_in_play(config, Some(language), desc, selected)
             })
         })
