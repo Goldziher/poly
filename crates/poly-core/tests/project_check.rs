@@ -867,6 +867,7 @@ mod fix_passes {
 
     /// Reports `WATCH` lines without a fix, counts its runs, and fails its first run when `fail_first` is set.
     struct Watcher {
+        languages: &'static [Language],
         name: &'static str,
         calls: Arc<AtomicUsize>,
         fail_first: bool,
@@ -877,7 +878,7 @@ mod fix_passes {
             self.name
         }
         fn languages(&self) -> &'static [Language] {
-            &[Language::Python]
+            self.languages
         }
         fn capabilities(&self) -> Capabilities {
             Capabilities {
@@ -949,11 +950,12 @@ mod fix_passes {
     fn an_engine_that_fixed_nothing_and_saw_no_rewritten_file_is_not_run_again() {
         for no_cache in [true, false] {
             let watcher = Watcher {
+                languages: &[Language::Markdown],
                 name: "watcher",
                 calls: Arc::new(AtomicUsize::new(0)),
                 fail_first: false,
             };
-            let (run, calls) = two_file_run(no_cache, "b.py", watcher);
+            let (run, calls) = two_file_run(no_cache, "b.md", watcher);
             assert_eq!(calls, 1, "no_cache = {no_cache}: its input did not change");
             assert_eq!(
                 watched_findings(&run, "watcher"),
@@ -966,6 +968,26 @@ mod fix_passes {
     }
 
     #[test]
+    fn an_engine_handed_a_rewritten_file_runs_again_without_a_finding_in_it() {
+        for no_cache in [true, false] {
+            let watcher = Watcher {
+                languages: &[Language::Python],
+                name: "watcher",
+                calls: Arc::new(AtomicUsize::new(0)),
+                fail_first: false,
+            };
+            // It reads a.py, which marker-one rewrites, and reports only on b.py.
+            let (run, calls) = two_file_run(no_cache, "b.py", watcher);
+            assert_eq!(calls, 2, "no_cache = {no_cache}: a.py changed under it");
+            assert_eq!(
+                watched_findings(&run, "watcher"),
+                1,
+                "reported once, from the second pass"
+            );
+        }
+    }
+
+    #[test]
     fn an_engine_with_a_finding_in_a_rewritten_file_runs_again() {
         let calls = Arc::new(AtomicUsize::new(0));
         let engines: Vec<Arc<dyn Engine>> = vec![
@@ -974,6 +996,7 @@ mod fix_passes {
                 marker: "FLAG_ME",
             }),
             Arc::new(Watcher {
+                languages: &[Language::Python],
                 name: "watcher",
                 calls: calls.clone(),
                 fail_first: false,
@@ -1007,6 +1030,7 @@ mod fix_passes {
     #[test]
     fn a_first_pass_error_survives_the_second_pass() {
         let watcher = Watcher {
+            languages: &[Language::Python],
             name: "flaky",
             calls: Arc::new(AtomicUsize::new(0)),
             fail_first: true,
@@ -1109,7 +1133,7 @@ mod whole_tree {
             let mut seen: Vec<String> = req
                 .files
                 .iter()
-                .map(|f| f.path.strip_prefix(req.root).unwrap().display().to_string())
+                .map(|f| f.path.strip_prefix(req.root).unwrap_or(&f.path).display().to_string())
                 .collect();
             seen.sort();
             let title = seen.join(",");
@@ -1250,7 +1274,7 @@ mod whole_tree {
                 .results
                 .iter()
                 .flat_map(|r| {
-                    let name = r.path.strip_prefix(dir).unwrap().display().to_string();
+                    let name = r.path.strip_prefix(dir).unwrap_or(&r.path).display().to_string();
                     r.diagnostics
                         .iter()
                         .filter(|d| names.contains(&d.engine.as_str()))
@@ -1309,6 +1333,22 @@ mod whole_tree {
                 ("nested/n.md", Severity::Error)
             ]
         );
+    }
+
+    #[test]
+    fn a_file_named_by_a_roundabout_path_is_still_governed_by_its_nested_config() {
+        let dir = nested_project("", "[engines.graph-check]\nenabled = true\n");
+        let (found, _) = lint_findings(dir.path(), &["app/../nested/n.md"], graph(), &[NAME]);
+        assert_eq!(found.len(), 1, "the roundabout path is reported: {found:?}");
+
+        let dir = nested_project("", "[engines.graph-check]\nenabled = false\n");
+        let (found, _) = lint_findings(dir.path(), &["app/../nested/n.md"], graph(), &[NAME]);
+        assert_eq!(files_of(&found), [] as [&str; 0], "{found:?}");
+
+        let dir = nested_project("", "[per-file-ignores]\n\"n.md\" = [\"PRJ001\"]\n");
+        let (found, run) = lint_findings(dir.path(), &["app/../nested/n.md"], graph(), &[NAME]);
+        assert_eq!(files_of(&found), [] as [&str; 0], "{found:?}");
+        assert!(run.suppressed.iter().any(|s| s.path.ends_with("n.md")));
     }
 
     #[test]

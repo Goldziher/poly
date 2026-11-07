@@ -43,6 +43,15 @@ pub(super) fn covered(files: &[DiscoveredFile], reported: &[(PathBuf, Vec<Diagno
         .collect()
 }
 
+/// Whether any of `read` is one of the `rewritten` files (canonical paths). Only files sharing a name
+/// with a rewritten one are resolved, for the reason [`covered`] gives.
+pub(super) fn reads_any(read: &[PathBuf], rewritten: &FxHashSet<PathBuf>) -> bool {
+    let names: FxHashSet<&std::ffi::OsStr> = rewritten.iter().filter_map(|path| path.file_name()).collect();
+    read.iter()
+        .filter(|path| path.file_name().is_some_and(|name| names.contains(name)))
+        .any(|path| rewritten.contains(&canonical(path)))
+}
+
 impl RunScope {
     pub(super) fn new(paths: &[PathBuf]) -> Self {
         let mut scope = Self {

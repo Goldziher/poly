@@ -110,6 +110,8 @@ pub(super) struct ProjectOutcome {
     pub(super) findings: Vec<ProjectFinding>,
     /// Engines whose check failed outright.
     pub(super) errors: Vec<LintError>,
+    /// Per engine that ran, the files it was handed.
+    pub(super) reads: Vec<(&'static str, Vec<PathBuf>)>,
 }
 
 /// Whether `engine` is switched on in `config`: not `enabled = false`, and past its gate key.
@@ -469,7 +471,14 @@ impl<'a> Governing<'a> {
     /// The config governing `path` and the remap of its engine table; `None` when that config switches
     /// the engine off, so a nested `enabled = false` silences its own subtree.
     fn of(&mut self, path: &Path) -> (usize, Option<&crate::filter::SeverityRemap>) {
-        let id = self.configs.config_id_for(path);
+        let id = self.configs.config_id_containing(path).unwrap_or_else(|| {
+            // Outside every nested config: the root config governs what sits under the root, and a
+            // file elsewhere (an engine `dir` pointing out of the tree) takes the plan's own config.
+            match self.configs.config_dir(0) {
+                Some(root) if path.starts_with(root) => 0,
+                _ => self.plan.config_id,
+            }
+        });
         let (plan, configs) = (self.plan, self.configs);
         let remap = self.remaps.entry(id).or_insert_with(|| {
             let config = if id == plan.config_id {
@@ -507,6 +516,9 @@ fn collect_findings(
             continue;
         }
         let content = inputs::content_of(loaded, &path);
+        // The engine spells a path as the config directory it walked does, which is how config
+        // lookup is keyed; the admitted spelling is the run's own and serves display only.
+        let governing_path = path.clone();
         let path = match narrowed_to {
             Some(run_scope) => match run_scope.admit(&path) {
                 Some(admitted) => admitted,
@@ -515,7 +527,7 @@ fn collect_findings(
             None => path,
         };
         let config_id = if covered.is_some() {
-            match governing.of(&path) {
+            match governing.of(&governing_path) {
                 (_, None) => continue,
                 (id, Some(remap)) => {
                     if !remap.is_empty() {
@@ -612,6 +624,10 @@ pub(super) fn run_project_phase(
                 continue;
             }
         };
+        outcome.reads.push((
+            plan.engine.name(),
+            loaded.iter().map(|file| file.path.clone()).collect(),
+        ));
         let narrowed = dirs.is_some().then_some(&run_scope);
         // A whole-tree check saw files the run's excludes drop; it reports only on the ones the run covers.
         let covered = dirs
@@ -645,9 +661,10 @@ struct Pending {
 /// same file carries and can expose findings the old content hid. So when a pass rewrote a file the
 /// engines that reported on it run once more over the rewritten tree, and only that second pass is
 /// reported for them: its findings have spans into the files as they now are, and the groups the first
-/// pass deferred (they overlapped another edit) are tried again. Every other engine's first-pass
-/// findings stand: its input did not change, so running it again would repeat the walk, the read and
-/// the hash for the same answer. It is the last pass, never a loop.
+/// pass deferred (they overlapped another edit) are tried again. An engine that was handed a rewritten
+/// file runs again even with no finding in it, since a whole-tree verdict may depend on a file it never
+/// reports on. Every other engine's first-pass findings stand: its input did not change, so running it
+/// again would repeat the walk, the read and the hash for the same answer. It is the last pass, never a loop.
 pub(super) fn run_and_merge(
     linted: &mut Vec<LintResult>,
     files: &[DiscoveredFile],
@@ -665,6 +682,7 @@ pub(super) fn run_and_merge(
         return errors;
     }
     let first_findings = phase.findings.clone();
+    let first_reads = std::mem::take(&mut phase.reads);
     let mut first_pass = Vec::new();
     merge_findings(&mut first_pass, phase, ignores, ignore_bases, fix);
     let rewritten: FxHashSet<&Path> = first_pass
@@ -676,11 +694,18 @@ pub(super) fn run_and_merge(
         fold(linted, first_pass);
         return errors;
     }
-    let rerun: FxHashSet<&'static str> = first_findings
+    let rewritten_files: FxHashSet<PathBuf> = rewritten.iter().map(|path| scope::canonical(path)).collect();
+    let mut rerun: FxHashSet<&'static str> = first_findings
         .iter()
         .filter(|finding| rewritten.contains(finding.path.as_path()))
         .map(|finding| finding.engine)
         .collect();
+    rerun.extend(
+        first_reads
+            .iter()
+            .filter(|(_, read)| scope::reads_any(read, &rewritten_files))
+            .map(|(engine, _)| *engine),
+    );
     // What the first pass fixed stays counted; what it still found is superseded by the second pass.
     for result in &mut first_pass {
         result.diagnostics.clear();
