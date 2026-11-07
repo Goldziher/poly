@@ -48,6 +48,7 @@ fn desc_for(language: &str) -> WireEngineDesc {
         supersedes_generic_formatter: false,
         batch_shard_floor: 2,
         project_inputs: Default::default(),
+        selection: None,
     }
 }
 
@@ -62,6 +63,7 @@ fn index_of(desc: WireEngineDesc) -> ComponentIndex {
             name: "demo".into(),
             kind: ComponentKind::Engines,
             opt_in: false,
+            download_only: false,
             features: vec!["engine-demo".into()],
             engines: vec![desc],
             lock_sha: None,
@@ -516,4 +518,159 @@ fn only_still_rejects_a_name_neither_the_build_nor_the_index_knows() {
         .expect_err("an unknown engine name must be rejected");
     assert!(error.to_string().contains("demos"), "{error}");
     assert_eq!(f.connector.connects.load(Ordering::SeqCst), 0);
+}
+
+fn shell_desc() -> WireEngineDesc {
+    let mut desc = desc_for("shell");
+    desc.name = "shfmt".into();
+    desc.capabilities.lint = false;
+    desc
+}
+
+fn sidecar_index() -> ComponentIndex {
+    let mut index = index_of(shell_desc());
+    index.components[0].name = "sh".into();
+    index.components[0].kind = ComponentKind::Sidecar;
+    index.components[0].features = vec!["engine-sidecar-test".into()];
+    index
+}
+
+fn sidecar_lock() -> String {
+    lock().replace("\"component\":\"demo\"", "\"component\":\"sh\"")
+}
+
+/// Formats every shell file to a text the host `shfmt` can never produce.
+struct ShFake {
+    formats: AtomicUsize,
+}
+
+impl ComponentTransport for ShFake {
+    fn describe(&self) -> anyhow::Result<Vec<u8>> {
+        Ok(encode_describe(&Describe {
+            protocol: PROTOCOL_VERSION,
+            component_version: "1.0.0".into(),
+            engines: vec![shell_desc()],
+        })?)
+    }
+
+    fn call(&self, header: &[u8], _body: &[u8]) -> anyhow::Result<Vec<u8>> {
+        let payload = match decode_request(header)? {
+            Request::Init { .. } => Payload::Init {
+                protocol: PROTOCOL_VERSION,
+                component_version: "1.0.0".into(),
+            },
+            Request::Format { .. } => {
+                self.formats.fetch_add(1, Ordering::SeqCst);
+                Payload::Formatted(WireFormatOutput::Formatted("SIDECAR\n".into()))
+            }
+            _ => Payload::Ok,
+        };
+        Ok(encode_response(&Response {
+            result: Ok(payload),
+            logs: Vec::new(),
+        })?)
+    }
+}
+
+struct ShConnector(Arc<ShFake>);
+
+impl TransportConnector for ShConnector {
+    fn connect(&self, _: &ComponentManager, _: &str) -> anyhow::Result<Arc<dyn ComponentTransport>> {
+        Ok(self.0.clone())
+    }
+}
+
+fn sidecar_fixture(offline: bool) -> (ComponentHost, Arc<ShFake>, tempfile::TempDir) {
+    let cache = tempfile::tempdir().unwrap();
+    let mut options = HostOptions::new(sidecar_lock(), PathBuf::from(cache.path()));
+    options.target = Some(TARGET.into());
+    options.offline = offline;
+    options.gate_loads = true;
+    options.sidecars = vec!["sh".into()];
+    let fake = Arc::new(ShFake {
+        formats: AtomicUsize::new(0),
+    });
+    let host = ComponentHost::new(options)
+        .unwrap()
+        .with_connector(Arc::new(ShConnector(fake.clone())));
+    (host, fake, cache)
+}
+
+fn shell_project() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("run.sh"), "echo hi\n").unwrap();
+    dir
+}
+
+#[test]
+fn a_sidecar_formats_shell_in_place_of_the_host_tool() {
+    let (host, fake, _cache) = sidecar_fixture(false);
+    let dir = shell_project();
+    let run = format(dir.path(), &default_config(), &inject(host, sidecar_index()));
+    assert_eq!(run.components.used, ["sh"]);
+    assert!(run.errors.is_empty(), "{:?}", run.errors);
+    assert!(fake.formats.load(Ordering::SeqCst) >= 1);
+    assert!(
+        run.results[0].changed,
+        "the sidecar's output replaced the already-formatted source; the host shfmt would leave it"
+    );
+}
+
+#[test]
+fn disabling_the_sidecar_brings_the_host_tool_back() {
+    let (host, fake, _cache) = sidecar_fixture(false);
+    let dir = shell_project();
+    let mut config = default_config();
+    config.components.disable = vec!["sh".into()];
+    let run = format(dir.path(), &config, &inject(host, sidecar_index()));
+    assert!(run.components.is_empty(), "{:?}", run.components);
+    assert_eq!(fake.formats.load(Ordering::SeqCst), 0);
+    assert!(!run.results[0].changed);
+}
+
+#[test]
+fn a_missing_sidecar_fails_the_run_instead_of_falling_back_to_the_host_tool() {
+    let (host, fake, _cache) = sidecar_fixture(true);
+    let dir = shell_project();
+    let run = format(dir.path(), &default_config(), &inject(host, sidecar_index()));
+    assert!(run.components.blocking(), "the CLI turns this into exit 2");
+    assert_eq!(
+        run.checked, 0,
+        "neither the host shfmt nor the reindenter inspected the file"
+    );
+    assert_eq!(run.skipped[0].reason, "component not installed: sh (offline)");
+    assert_eq!(fake.formats.load(Ordering::SeqCst), 0);
+}
+
+/// Indented the way the tier-2 reindenter would fix and the sidecar's fake never does.
+const UNDENTED_SHELL: &str = "if true; then\necho hi\nfi\n";
+
+#[test]
+fn switching_shfmt_off_leaves_shell_alone_instead_of_reindenting_it() {
+    let (host, fake, _cache) = sidecar_fixture(false);
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("run.sh"), UNDENTED_SHELL).unwrap();
+    let mut config = default_config();
+    config.fmt = toml::from_str("[shell.shfmt]\nenabled = false\n").unwrap();
+    let run = format(dir.path(), &config, &inject(host, sidecar_index()));
+    assert_eq!(fake.formats.load(Ordering::SeqCst), 0, "the sidecar is not called");
+    assert!(run.errors.is_empty(), "{:?}", run.errors);
+    assert_eq!(
+        run.skipped
+            .iter()
+            .map(|skip| (skip.path.file_name().and_then(|n| n.to_str()), skip.reason.as_str()))
+            .collect::<Vec<_>>(),
+        [(Some("run.sh"), "every engine disabled by config: [fmt.shell.shfmt]")],
+        "the file is a counted skip naming the key, not silent"
+    );
+    assert!(poly_core::is_withdrawal_reason(&run.skipped[0].reason));
+    assert!(
+        run.results.iter().all(|result| !result.changed),
+        "the tree-sitter reindenter does not take shell over: {:?}",
+        run.results
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("run.sh")).unwrap(),
+        UNDENTED_SHELL
+    );
 }

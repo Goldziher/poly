@@ -202,6 +202,7 @@ fn sample_requests() -> Vec<Request> {
             files: vec![slice(0)],
             config: 3,
             environment: vec![("K".into(), "V".into())],
+            threads: Some(4),
         },
         Request::SkipReason {
             engine: "yaml".into(),
@@ -368,6 +369,7 @@ fn describe_without_project_inputs_or_files_still_decodes() {
                 files: vec![],
                 dirs: None,
             },
+            selection: None,
         }],
     };
     let mut value = serde_json::to_value(&describe).unwrap();
@@ -423,9 +425,56 @@ fn describe_round_trips() {
             supersedes_generic_formatter: true,
             batch_shard_floor: 2,
             project_inputs: Default::default(),
+            selection: None,
         }],
     };
     assert_eq!(decode_describe(&encode_describe(&describe).unwrap()).unwrap(), describe);
+}
+
+/// An engine no table chooses between omits `selection`; one that declares it carries it across the wire.
+#[test]
+fn describe_carries_the_selection_an_engine_declares() {
+    let describe = |selection| Describe {
+        protocol: PROTOCOL_VERSION,
+        component_version: "1".into(),
+        engines: vec![WireEngineDesc {
+            name: "pyrefly".into(),
+            languages: vec!["python".into()],
+            capabilities: WireCapabilities {
+                lint: false,
+                format: false,
+                fix: false,
+                project: true,
+            },
+            version: "1".into(),
+            option_keys: vec![],
+            hooks: 0,
+            takes_over_tier_one: false,
+            claimed_paths: vec![],
+            host_hook: "none".into(),
+            supplements_tier_one: false,
+            self_manages_enabled: false,
+            supersedes_generic_formatter: false,
+            batch_shard_floor: 2,
+            project_inputs: Default::default(),
+            selection,
+        }],
+    };
+    let none = describe(None);
+    assert!(
+        serde_json::to_value(&none).unwrap()["engines"][0]
+            .get("selection")
+            .is_none()
+    );
+    assert_eq!(decode_describe(&encode_describe(&none).unwrap()).unwrap(), none);
+
+    let chosen = describe(Some(WireSelection {
+        table: "python-types".into(),
+        key: "backend".into(),
+        value: "pyrefly".into(),
+        default: false,
+    }));
+    assert_eq!(decode_describe(&encode_describe(&chosen).unwrap()).unwrap(), chosen);
 }
 
 #[test]
@@ -545,4 +594,53 @@ fn committed_schema_matches_generated() {
         committed == generated,
         "schemas/component-protocol.json is stale; regenerate with `UPDATE_SCHEMA=1 cargo test -p poly-component-protocol committed_schema`"
     );
+}
+
+mod sidecar_payload {
+    use crate::sidecar::{PayloadError, pack_call, unpack_call};
+
+    #[test]
+    fn a_packed_call_splits_back_into_its_header_and_body() {
+        let cases: &[(&[u8], &[u8])] = &[(b"header", b"body"), (b"", b"body"), (b"header", b""), (b"", b"")];
+        for (header, body) in cases {
+            let payload = pack_call(header, body).unwrap();
+            assert_eq!(unpack_call(&payload).unwrap(), (*header, *body), "{header:?} {body:?}");
+        }
+    }
+
+    #[test]
+    fn the_length_prefix_is_four_little_endian_bytes() {
+        let payload = pack_call(&[7; 258], b"x").unwrap();
+        assert_eq!(payload[..4], [2, 1, 0, 0]);
+        assert_eq!(payload.len(), 4 + 258 + 1);
+    }
+
+    #[test]
+    fn a_payload_that_cannot_be_split_is_refused() {
+        assert_eq!(unpack_call(&[1, 0]), Err(PayloadError::TooShort));
+        assert_eq!(unpack_call(&[]), Err(PayloadError::TooShort));
+        assert_eq!(
+            unpack_call(&[9, 0, 0, 0, 1, 2, 3]),
+            Err(PayloadError::HeaderOverrun {
+                declared: 9,
+                available: 3
+            })
+        );
+    }
+}
+
+#[test]
+fn the_go_sidecar_speaks_the_protocol_version_of_this_crate() {
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../components/sidecars/sh/protocol.go"),
+    )
+    .expect("the sh sidecar's protocol.go");
+    let version: u32 = source
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("const protocolVersion = "))
+        .expect("protocol.go declares `const protocolVersion = N`")
+        .trim()
+        .parse()
+        .expect("protocolVersion is an integer");
+    assert_eq!(version, PROTOCOL_VERSION);
 }

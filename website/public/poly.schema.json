@@ -5015,9 +5015,6 @@
     "fmt_shfmt": {
       "type": "object",
       "properties": {
-        "batch": {
-          "type": "boolean"
-        },
         "enabled": {
           "type": "boolean"
         },

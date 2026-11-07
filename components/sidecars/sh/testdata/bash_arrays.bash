@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+declare -A m=([a]=1 [b]=2)
+arr=(  one two   three )
+for k in "${!m[@]}"; do
+echo "$k=${m[$k]}"; done
+[[ $x == a* ]] && echo   ok
+diff <(echo a) <(echo   b)

@@ -206,14 +206,15 @@ impl Actions {
     }
 }
 
-/// `bundled` when every engine component is linked, `core` when none is, else `partial`.
+/// `bundled` when every engine component a bundled build can link is linked, `core` when none is, else
+/// `partial`. A `download_only` component never counts: no build links it.
 #[must_use]
 pub fn flavor(env: &Env<'_>) -> &'static str {
     let engines: Vec<&Component> = env
         .index
         .components
         .iter()
-        .filter(|c| c.kind == ComponentKind::Engines)
+        .filter(|c| c.kind.hosts_engines() && !c.download_only)
         .collect();
     let linked = engines.iter().filter(|c| (env.linked)(c)).count();
     if linked == 0 {
@@ -260,6 +261,7 @@ fn row(env: &Env<'_>, component: &Component, cached: &[alef_component_runtime::C
         kind: match component.kind {
             ComponentKind::Engines => "engines",
             ComponentKind::Frontend => "frontend",
+            ComponentKind::Sidecar => "sidecar",
         },
         state,
         opt_in: component.opt_in,

@@ -19,29 +19,33 @@
 
 mod fixes;
 mod inputs;
+mod merge;
 mod scope;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use poly_cache::{Namespace, ResultCache};
+use poly_component_index::ComponentIndex;
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::plan::build_severity_remap;
 use super::selection::EngineSelection;
-use super::skips::is_lock_file;
+use super::skips::{SkippedFile, is_lock_file};
 use super::types::{LintError, LintResult};
 use crate::components::ResolvedComponents;
 use crate::config::{EngineConfig, Kind};
 use crate::discover::DiscoveredFile;
-use crate::engine::{Diagnostic, ENABLED_OPTION_KEY, Engine, ProjectEnvironment, ProjectFile, ProjectRequest};
+use crate::engine::{
+    Diagnostic, ENABLED_OPTION_KEY, Engine, ProjectEnvironment, ProjectFile, ProjectRequest, WireSelection,
+};
 use crate::engine_guard::guard_engine_panic;
-use crate::filter::{PerFileIgnores, Suppressions, is_binary, is_generated_source, relative_for_match};
+use crate::filter::{PerFileIgnores, is_binary, is_generated_source};
 use crate::language::Language;
 use crate::registry::engines_for;
 use crate::resolve::ConfigSet;
-use crate::runner::SuppressedDiagnostic;
+use merge::{fold, merge_findings};
 
 /// Engines a test registered on top of the compiled-in registry; see
 /// [`with_extra_project_engines`].
@@ -112,6 +116,15 @@ pub(super) struct ProjectOutcome {
     pub(super) errors: Vec<LintError>,
     /// Per engine that ran, the files it was handed.
     pub(super) reads: Vec<(&'static str, Vec<PathBuf>)>,
+    /// Selections the run asked for that left nothing to run, charged to the skip budget.
+    pub(super) skips: Vec<SkippedFile>,
+}
+
+impl ProjectOutcome {
+    /// Take the errors and the counted skips, leaving the findings to merge.
+    pub(super) fn take_reports(&mut self) -> (Vec<LintError>, Vec<SkippedFile>) {
+        (std::mem::take(&mut self.errors), std::mem::take(&mut self.skips))
+    }
 }
 
 /// Whether `engine` is switched on in `config`: not `enabled = false`, and past its gate key.
@@ -174,7 +187,8 @@ fn plan_project_engines(
     selection: EngineSelection<'_>,
     components: &ResolvedComponents,
     paths: &[PathBuf],
-) -> Vec<ProjectPlan> {
+    index: &ComponentIndex,
+) -> (Vec<ProjectPlan>, Vec<LintError>, Vec<SkippedFile>) {
     let mut scopes: Vec<(usize, Language)> = files
         .iter()
         .map(|f| (f.config_id, f.language.clone()))
@@ -193,6 +207,10 @@ fn plan_project_engines(
     let extras: Vec<Arc<dyn Engine>> = EXTRA_ENGINES.lock().unwrap_or_else(PoisonError::into_inner).clone();
     let mut seen: FxHashSet<(usize, &'static str)> = FxHashSet::default();
     let mut plans = Vec::new();
+    let mut errors = Vec::new();
+    let mut skips = Vec::new();
+    let mut errored: FxHashSet<(usize, String)> = FxHashSet::default();
+    let mut checked_tables: FxHashSet<(usize, String)> = FxHashSet::default();
     for (config_id, language) in &scopes {
         let ancestor = !owning.contains(config_id);
         let registered = engines_for(language)
@@ -211,16 +229,38 @@ fn plan_project_engines(
                 served.is_empty() || served.contains(language)
             })
             .cloned();
-        for engine in registered.chain(from_components).chain(injected) {
-            if !selection.selects(engine.name()) || (ancestor && !is_whole_tree(&*engine)) {
+        let candidates: Vec<Arc<dyn Engine>> = registered.chain(from_components).chain(injected).collect();
+        let declared_here: Vec<WireSelection> = candidates.iter().filter_map(|engine| engine.selection()).collect();
+        for engine in candidates {
+            let declared = engine.selection();
+            let table = declared.as_ref().map_or_else(|| engine.name(), |s| s.table.as_str());
+            if !selection.selects_declared(engine.name(), Some(table))
+                || (ancestor && !is_whole_tree(&*engine))
+                || !seen.insert((*config_id, engine.name()))
+            {
                 continue;
             }
-            if !seen.insert((*config_id, engine.name())) {
+            let config = configs.config(*config_id).engine_config(language, table, Kind::Lint);
+            if config.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool) == Some(false) {
                 continue;
             }
-            let config = configs
-                .config(*config_id)
-                .engine_config(language, engine.name(), Kind::Lint);
+            if let Some(declared) = &declared {
+                match picked(declared, &config.options, &declared_here, index) {
+                    Pick::Mine => {}
+                    Pick::Other => continue,
+                    Pick::Unavailable(value) => {
+                        errored.insert((*config_id, table.to_owned()));
+                        errors.extend(unavailable_backend(
+                            (&declared.table, &declared.key),
+                            &value,
+                            selection,
+                            (*config_id, configs),
+                            index,
+                        ));
+                        continue;
+                    }
+                }
+            }
             if !is_active(&*engine, &config) {
                 continue;
             }
@@ -232,9 +272,158 @@ fn plan_project_engines(
                 ancestor,
             });
         }
+        for (table, key) in declared_tables(index, language) {
+            if ancestor || !checked_tables.insert((*config_id, table.clone())) {
+                continue;
+            }
+            let config = configs.config(*config_id).engine_config(language, &table, Kind::Lint);
+            if config.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool) == Some(false) {
+                continue;
+            }
+            let served = plans
+                .iter()
+                .filter(|plan| plan.config_id == *config_id)
+                .any(|plan| plan.engine.selection().is_some_and(|s| s.table == table));
+            if served || errored.contains(&(*config_id, table.clone())) {
+                continue;
+            }
+            let value = config.options.get(&key).and_then(toml::Value::as_str);
+            if let Some(value) = value
+                && let Some(error) = unavailable_backend((&table, &key), value, selection, (*config_id, configs), index)
+            {
+                errors.push(error);
+                continue;
+            }
+            skips.extend(only_selects_nothing(
+                (&table, &key),
+                value,
+                selection,
+                (*config_id, configs),
+                index,
+            ));
+        }
     }
     plans.sort_by(|a, b| (a.config_id, a.engine.name()).cmp(&(b.config_id, b.engine.name())));
-    plans
+    (plans, errors, skips)
+}
+
+/// The `(table, key)` pairs of the selections that engines of `index` serving `language` declare, sorted.
+fn declared_tables(index: &ComponentIndex, language: &Language) -> Vec<(String, String)> {
+    let mut tables: Vec<(String, String)> = index
+        .components
+        .iter()
+        .flat_map(|component| component.engines.iter())
+        .filter(|engine| engine.languages.iter().any(|l| l == language.id()))
+        .filter_map(|engine| engine.selection.as_ref())
+        .map(|s| (s.table.clone(), s.key.clone()))
+        .collect();
+    tables.sort();
+    tables.dedup();
+    tables
+}
+
+/// The counted skip for a run whose `--only` names a table, or an engine that shares it, though the config
+/// leaves that table with no engine to run.
+///
+/// `--only` narrows by design, so this is not an error; but a run that was asked for a type check and ran none
+/// must say so, and being a skip outside the withdrawal reasons it is charged to `--deny-skips`.
+fn only_selects_nothing(
+    (table, key): (&str, &str),
+    value: Option<&str>,
+    selection: EngineSelection<'_>,
+    (config_id, configs): (usize, &ConfigSet),
+    index: &ComponentIndex,
+) -> Option<SkippedFile> {
+    let names = |entry: &String| {
+        entry == table
+            || index
+                .engine_descs(entry)
+                .any(|desc| desc.selection.as_ref().is_some_and(|s| s.table == table))
+    };
+    let asked = selection.only().iter().find(|entry| names(entry))?;
+    if selection.skip().iter().any(names) {
+        return None;
+    }
+    let current = value.map_or_else(|| "unset".to_owned(), |v| format!("\"{v}\""));
+    Some(SkippedFile {
+        path: root_for(configs, config_id),
+        reason: format!("`--only {asked}` selects nothing here: `[{table}] {key}` is {current}"),
+    })
+}
+
+/// What the table options say about the engine that declared a selection.
+enum Pick {
+    /// The engine's own `value`, or a value no engine declares and the engine is the default (it then reports
+    /// that value as unknown).
+    Mine,
+    /// Another candidate's value, or no value: engines that share a table are opt-in.
+    Other,
+    /// A value an engine of the component index declares, though no candidate in this run does: the engine is
+    /// not available here, and the default engine must not stand down silently.
+    Unavailable(String),
+}
+
+/// Which engine the table options pick, for the engine that declared `selection`.
+///
+/// A present value that is not a string (`backend = 1`) is a value no engine declares, so the default engine
+/// is picked and reports it.
+fn picked(
+    selection: &WireSelection,
+    options: &toml::Table,
+    siblings: &[WireSelection],
+    index: &ComponentIndex,
+) -> Pick {
+    let Some(value) = options.get(&selection.key) else {
+        return Pick::Other;
+    };
+    let chosen = value.as_str();
+    if chosen == Some(selection.value.as_str()) {
+        return Pick::Mine;
+    }
+    if !selection.default {
+        return Pick::Other;
+    }
+    let Some(chosen) = chosen else {
+        return Pick::Mine;
+    };
+    let claimed = |other: &WireSelection| other.table == selection.table && other.key == selection.key;
+    if siblings.iter().any(|other| claimed(other) && other.value == chosen) {
+        return Pick::Other;
+    }
+    if index.claims_selection(&selection.table, &selection.key, chosen) {
+        return Pick::Unavailable(chosen.to_owned());
+    }
+    Pick::Mine
+}
+
+/// The error for a backend the config names but this run has no engine for, when the run asked for it.
+///
+/// The component hosting it is disabled (`[components] disable`) or not part of this build; either way the run
+/// would otherwise type-check nothing and read as clean. A run that deselected the backend with `--skip`, or
+/// that `--only` leaves it out of, asked for that and gets no error.
+fn unavailable_backend(
+    (table, key): (&str, &str),
+    value: &str,
+    selection: EngineSelection<'_>,
+    (config_id, configs): (usize, &ConfigSet),
+    index: &ComponentIndex,
+) -> Option<LintError> {
+    let (component, engine) = index.claiming_component(table, key, value)?;
+    if !selection.selects_declared(&engine.name, Some(table)) {
+        return None;
+    }
+    Some(LintError {
+        path: root_for(configs, config_id),
+        message: format!(
+            "`{key} = \"{value}\"` in `[{table}]` needs the `{engine}` engine of the `{component}` component, which is \
+             not available in this run: it is disabled (remove `{component}` from `[components] disable`) or this \
+             build does not include it (use a build that does, or set `{key}` to another backend)",
+            key = key,
+            table = table,
+            engine = engine.name,
+            component = component.name,
+        ),
+    })
 }
 
 /// The plan, rooted above plan `at`, of the same whole-tree engine whose directories contain `at`'s root,
@@ -392,6 +581,8 @@ pub(super) struct RunInputs<'a> {
     /// `[per-file-ignores]` per config, and the directories their globs are relative to.
     pub(super) ignores: &'a [PerFileIgnores],
     pub(super) ignore_bases: &'a [Vec<PathBuf>],
+    /// The component index the run resolved its engines against.
+    pub(super) index: &'a ComponentIndex,
 }
 
 impl<'a> RunInputs<'a> {
@@ -399,16 +590,17 @@ impl<'a> RunInputs<'a> {
         configs: &'a ConfigSet,
         act_on_generated: &'a [bool],
         paths: &'a [PathBuf],
-        exclude: &'a [String],
+        opts: &'a crate::RunOptions,
         filters: (&'a [PerFileIgnores], &'a [Vec<PathBuf>]),
     ) -> Self {
         Self {
             configs,
             act_on_generated,
             paths,
-            exclude,
+            exclude: &opts.exclude,
             ignores: filters.0,
             ignore_bases: filters.1,
+            index: crate::components::run_index(opts),
         }
     }
 }
@@ -434,6 +626,7 @@ fn report_for(
         files: loaded,
         config: &plan.config,
         environment,
+        threads: Some(rayon::current_num_threads()),
     };
     let reported =
         guard_engine_panic(plan.engine.name(), root, || plan.engine.project_check(&request)).map_err(|error| {
@@ -561,8 +754,13 @@ pub(super) fn run_project_phase(
     components: &ResolvedComponents,
     only: Option<&FxHashSet<&'static str>>,
 ) -> ProjectOutcome {
-    let plans = plan_project_engines(files, run.configs, selection, components, run.paths);
-    let mut outcome = ProjectOutcome::default();
+    let (plans, unavailable, skips) =
+        plan_project_engines(files, run.configs, selection, components, run.paths, run.index);
+    let mut outcome = ProjectOutcome {
+        errors: unavailable,
+        skips,
+        ..ProjectOutcome::default()
+    };
     if plans.is_empty() {
         return outcome;
     }
@@ -647,15 +845,8 @@ pub(super) fn run_project_phase(
     outcome
 }
 
-/// One file's project findings, from every engine that reported on it, before `--fix` acts on them.
-struct Pending {
-    config_id: usize,
-    loaded: Option<Arc<str>>,
-    diagnostics: Vec<Diagnostic>,
-    suppressed: Vec<SuppressedDiagnostic>,
-}
-
-/// Run the project phase and fold its findings into `linted`, returning the checks that failed.
+/// Run the project phase and fold its findings into `linted`, returning the checks that failed and the
+/// selections that left nothing to run.
 ///
 /// Under `--fix` the edits are committed to disk, which moves every offset a remaining finding of the
 /// same file carries and can expose findings the old content hid. So when a pass rewrote a file the
@@ -673,13 +864,13 @@ pub(super) fn run_and_merge(
     cache: &ResultCache,
     components: &ResolvedComponents,
     fix: FixMode,
-) -> Vec<LintError> {
+) -> (Vec<LintError>, Vec<SkippedFile>) {
     let (ignores, ignore_bases) = (run.ignores, run.ignore_bases);
     let mut phase = run_project_phase(files, run, selection, cache, components, None);
-    let errors = std::mem::take(&mut phase.errors);
+    let (errors, skips) = phase.take_reports();
     if !fix.apply {
         merge_findings(linted, phase, ignores, ignore_bases, fix);
-        return errors;
+        return (errors, skips);
     }
     let first_findings = phase.findings.clone();
     let first_reads = std::mem::take(&mut phase.reads);
@@ -692,7 +883,7 @@ pub(super) fn run_and_merge(
         .collect();
     if rewritten.is_empty() {
         fold(linted, first_pass);
-        return errors;
+        return (errors, skips);
     }
     let rewritten_files: FxHashSet<PathBuf> = rewritten.iter().map(|path| scope::canonical(path)).collect();
     let mut rerun: FxHashSet<&'static str> = first_findings
@@ -723,9 +914,11 @@ pub(super) fn run_and_merge(
         }
         finding
     }));
-    let errors = merge_errors(errors, std::mem::take(&mut again.errors));
+    // The second pass plans the same selection again, so its skips repeat the first pass's; they count once.
+    let (again_errors, _) = again.take_reports();
+    let errors = merge_errors(errors, again_errors);
     merge_findings(linted, again, ignores, ignore_bases, fix);
-    errors
+    (errors, skips)
 }
 
 /// `first` followed by what `second` adds: the same failure reported by both passes counts once.
@@ -741,154 +934,5 @@ fn merge_errors(mut first: Vec<LintError>, second: Vec<LintError>) -> Vec<LintEr
     first
 }
 
-/// Fold project findings into the per-file results, applying inline `poly: allow` directives and
-/// `[per-file-ignores]` exactly as the per-file tier does, then `--fix`.
-///
-/// A finding for a file the per-file tier never produced a result for (it was skipped, or lies
-/// outside the discovered set) gets a result of its own. Findings of one file from several engines
-/// are fixed together, so the edits of all of them are applied against the same content.
-pub(super) fn merge_findings(
-    linted: &mut Vec<LintResult>,
-    outcome: ProjectOutcome,
-    ignores: &[PerFileIgnores],
-    ignore_bases: &[Vec<PathBuf>],
-    fix: FixMode,
-) {
-    let mut order: Vec<PathBuf> = Vec::new();
-    let mut pending: FxHashMap<PathBuf, Pending> = FxHashMap::default();
-    for finding in outcome.findings {
-        let ProjectFinding {
-            path,
-            config_id,
-            mut diagnostics,
-            loaded,
-            ..
-        } = finding;
-        let content = loaded
-            .clone()
-            .or_else(|| std::fs::read_to_string(&path).ok().map(Arc::from));
-        let mut suppressed: Vec<SuppressedDiagnostic> = Vec::new();
-        if let Some(content) = &content {
-            let directives = Suppressions::parse(content);
-            if !directives.is_empty() {
-                directives.apply_directives(&path, &mut diagnostics, &mut suppressed);
-            }
-        }
-        if let Some(this_ignores) = ignores.get(config_id).filter(|set| !set.is_empty()) {
-            let bases = ignore_bases.get(config_id).map_or(&[][..], Vec::as_slice);
-            let rel = relative_for_match(&path, bases);
-            this_ignores.apply(&rel, &path, &mut diagnostics, &mut suppressed);
-        }
-        match pending.get_mut(&path) {
-            Some(entry) => {
-                // Edits are offsets into the content their engine read; a different read cannot share a commit.
-                if entry.loaded != loaded {
-                    for diagnostic in &mut diagnostics {
-                        diagnostic.fix.clear();
-                    }
-                }
-                entry.diagnostics.append(&mut diagnostics);
-                entry.suppressed.append(&mut suppressed);
-            }
-            None => {
-                order.push(path.clone());
-                pending.insert(
-                    path,
-                    Pending {
-                        config_id,
-                        loaded,
-                        diagnostics,
-                        suppressed,
-                    },
-                );
-            }
-        }
-    }
-    let mut results = Vec::new();
-    for path in order {
-        let Some(Pending {
-            config_id,
-            loaded,
-            mut diagnostics,
-            suppressed,
-        }) = pending.remove(&path)
-        else {
-            continue;
-        };
-        let applied = fixes::resolve(&path, loaded.as_deref(), &mut diagnostics, fix);
-        if diagnostics.is_empty() && suppressed.is_empty() && applied.fixed == 0 {
-            continue;
-        }
-        results.push(LintResult {
-            path,
-            config: config_id,
-            diagnostics,
-            suppressed,
-            fix_withheld_generated: applied.withheld_generated,
-            fixed: applied.fixed,
-            skipped: None,
-            error: None,
-            debug: None,
-        });
-    }
-    fold(linted, results);
-}
-
-/// Add `results` to `linted`, joining a file the per-file tier already has a result for.
-fn fold(linted: &mut Vec<LintResult>, results: Vec<LintResult>) {
-    let mut index: FxHashMap<PathBuf, usize> = linted.iter().enumerate().map(|(i, r)| (r.path.clone(), i)).collect();
-    for mut result in results {
-        match index.get(&result.path) {
-            Some(&at) => {
-                linted[at].diagnostics.append(&mut result.diagnostics);
-                linted[at].suppressed.append(&mut result.suppressed);
-                linted[at].fixed += result.fixed;
-                linted[at].fix_withheld_generated |= result.fix_withheld_generated;
-            }
-            None => {
-                index.insert(result.path.clone(), linted.len());
-                linted.push(result);
-            }
-        }
-    }
-}
-
 #[cfg(all(test, feature = "engine-python"))]
-mod gate_tests {
-    use super::*;
-    use crate::config::Config;
-
-    fn planned(config: Config) -> Vec<&'static str> {
-        let files = [DiscoveredFile {
-            path: PathBuf::from("app.py"),
-            language: Language::Python,
-            config_id: 0,
-        }];
-        let configs = ConfigSet::single(config);
-        plan_project_engines(
-            &files,
-            &configs,
-            EngineSelection::new(&[], &[]),
-            &ResolvedComponents::default(),
-            &[],
-        )
-        .iter()
-        .map(|plan| plan.engine.name())
-        .collect()
-    }
-
-    #[test]
-    fn python_types_is_not_planned_without_a_backend() {
-        assert!(!planned(Config::default()).contains(&"python-types"));
-    }
-
-    #[test]
-    fn python_types_is_planned_once_a_backend_is_set() {
-        let lint: toml::Table = toml::from_str("[python.python-types]\nbackend = \"ty\"\n").unwrap();
-        let config = Config {
-            lint,
-            ..Config::default()
-        };
-        assert!(planned(config).contains(&"python-types"));
-    }
-}
+mod tests;

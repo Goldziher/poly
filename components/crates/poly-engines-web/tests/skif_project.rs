@@ -80,6 +80,7 @@ fn run(root: &Path, files: &[ProjectFile], config: &EngineConfig) -> Analysis {
         files,
         config,
         environment: &environment,
+        threads: None,
     };
     analyze(&request).expect("skif runs")
 }
@@ -381,6 +382,7 @@ fn a_bad_option_is_an_error_naming_it() {
             files: &files,
             config: &config,
             environment: &environment,
+            threads: None,
         };
         let error = analyze(&request).expect_err(key);
         assert!(format!("{error:#}").contains(needle), "{key}: {error:#}");

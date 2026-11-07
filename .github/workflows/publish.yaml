@@ -126,6 +126,13 @@ jobs:
             exit 1
           fi
 
+          # The pyrefly workspace is built separately (jemalloc 0.7 cannot share a lockfile with components/).
+          pyrefly_version="$(grep -E '^version = "' components-pyrefly/Cargo.toml | head -1 | cut -d'"' -f2)"
+          if [ "$pyrefly_version" != "$target_version" ]; then
+            echo "::error::components-pyrefly/Cargo.toml version mismatch: expected $target_version, got $pyrefly_version"
+            exit 1
+          fi
+
           plugin_version="$(jq -r '.version' plugin/package.json)"
           if [ "$plugin_version" != "$target_version" ]; then
             echo "::error::Agent plugin version mismatch: expected $target_version, got $plugin_version"
@@ -321,8 +328,11 @@ jobs:
         with:
           key: components-${{ matrix.triple }}
 
-      - name: Setup mise (alef)
+      # go builds the sh component, an executable producer (alef.toml); the manylinux containers get it by mount.
+      - name: Setup mise (alef, go)
         uses: xberg-io/actions/setup-mise@v1
+        with:
+          tools: github:xberg-io/alef go
 
       - name: Download the previous component lock
         uses: actions/download-artifact@v8
@@ -349,6 +359,7 @@ jobs:
             echo "ALEF_IN_CONTAINER=/work/${alef#"$PWD"/}"
             echo "MISE_IN_CONTAINER=/work/${mise_bin#"$PWD"/}"
             echo "JQ_IN_CONTAINER=/work/${jq_bin#"$PWD"/}"
+            echo "GOROOT_ON_HOST=$(go env GOROOT)"
           } >> "$GITHUB_ENV"
 
       # rustup installs into CARGO_HOME/RUSTUP_HOME under the workspace, in the keyless container;
@@ -358,17 +369,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run --rm -v "$PWD":/work -w /work \
+          docker run --rm -v "$PWD":/work -v "$GOROOT_ON_HOST":/opt/go:ro -w /work \
             -e TARGET="${{ matrix.triple }}" -e RUST_TOOLCHAIN -e BUILD_IMAGE -e ALEF="$ALEF_IN_CONTAINER" \
             -e MISE_IN_CONTAINER -e JQ_IN_CONTAINER -e MISE_TASK_RUN_AUTO_INSTALL=false -e MISE_AUTO_INSTALL=false -e MISE_YES=1 \
             -e MISE_TRUSTED_CONFIG_PATHS=/work \
             -e CARGO_HOME=/work/target/components-release/toolchain/cargo \
             -e RUSTUP_HOME=/work/target/components-release/toolchain/rustup \
+            -e GOTOOLCHAIN=local -e GOFLAGS=-modcacherw \
+            -e GOPATH=/work/target/components-release/toolchain/gopath \
+            -e GOCACHE=/work/target/components-release/toolchain/gocache \
             -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
             "${{ matrix.image }}" bash -euo pipefail -c '
               git config --global --add safe.directory /work
               curl -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --target "$TARGET"
-              export PATH="$CARGO_HOME/bin:$(dirname "$MISE_IN_CONTAINER"):$(dirname "$JQ_IN_CONTAINER"):$PATH"
+              export PATH="$CARGO_HOME/bin:/opt/go/bin:$(dirname "$MISE_IN_CONTAINER"):$(dirname "$JQ_IN_CONTAINER"):$PATH"
               mise run components:release plan "$TARGET"
               mise run components:release build "$TARGET"
               chown -R "$HOST_UID:$HOST_GID" target
@@ -391,16 +405,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run --rm -v "$PWD":/work -v "$RUNNER_TEMP/poly-key":/run/poly-key:ro -w /work \
+          docker run --rm -v "$PWD":/work -v "$GOROOT_ON_HOST":/opt/go:ro -v "$RUNNER_TEMP/poly-key":/run/poly-key:ro -w /work \
             -e TARGET="${{ matrix.triple }}" -e RUST_TOOLCHAIN -e BUILD_IMAGE -e ALEF="$ALEF_IN_CONTAINER" \
             -e MISE_IN_CONTAINER -e JQ_IN_CONTAINER -e MISE_TASK_RUN_AUTO_INSTALL=false -e MISE_AUTO_INSTALL=false -e MISE_YES=1 \
             -e MISE_TRUSTED_CONFIG_PATHS=/work \
             -e CARGO_HOME=/work/target/components-release/toolchain/cargo \
             -e RUSTUP_HOME=/work/target/components-release/toolchain/rustup \
+            -e GOTOOLCHAIN=local -e GOFLAGS=-modcacherw \
+            -e GOPATH=/work/target/components-release/toolchain/gopath \
+            -e GOCACHE=/work/target/components-release/toolchain/gocache \
             -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
             "${{ matrix.image }}" bash -euo pipefail -c '
               git config --global --add safe.directory /work
-              export PATH="$CARGO_HOME/bin:$(dirname "$MISE_IN_CONTAINER"):$(dirname "$JQ_IN_CONTAINER"):$PATH"
+              export PATH="$CARGO_HOME/bin:/opt/go/bin:$(dirname "$MISE_IN_CONTAINER"):$(dirname "$JQ_IN_CONTAINER"):$PATH"
               POLY_COMPONENT_SIGNING_KEY="$(cat /run/poly-key)" mise run components:release package "$TARGET"
               chown -R "$HOST_UID:$HOST_GID" target
             '
@@ -638,7 +655,7 @@ jobs:
           # of the components/ workspace (every engine statically linked, including the git-pinned
           # oxc, biome and rubyfmt ones) and is given no POLY_COMPONENT_LOCK_FILE, so it embeds no
           # lock and downloads nothing. CARGO_TARGET_DIR puts its output at target/release/poly.
-          docker run --rm -v "$PWD":/work -w /work \
+          docker run --rm -v "$PWD":/work -v "$GOROOT_ON_HOST":/opt/go:ro -w /work \
             -e CARGO_TARGET_DIR=/work/target \
             -e LIBCLANG_PATH=/usr/lib \
             -e POLY_BUILD_ID="$POLY_BUILD_ID" \

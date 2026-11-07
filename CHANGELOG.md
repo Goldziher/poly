@@ -9,6 +9,14 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **pyrefly type checking.** `[engines.python-types] backend = "pyrefly"` selects pyrefly instead of ty, from its own
+  opt-in `pyrefly` component. The two engines declare which `backend` value picks them (`Engine::selection`), so the
+  planner runs one and fetches only its component. pyrefly reads no `pyrefly.toml`, starts no process (the interpreter
+  query is forced off and the host passes the `site-packages` paths) and is built without its bundled third-party
+  stubs. The component lives in its own cargo workspace, `components-pyrefly/`, because pyrefly's `tikv-jemallocator 0.7`
+  cannot share a lockfile with the jemalloc 0.6 that rumdl links; see
+  [ADR 0042](adrs/0042-pyrefly-in-its-own-workspace.md). `--only pyrefly` (or `--only python-types`) with nothing
+  selected to run is a skip counted by `--deny-skips`, not a clean pass.
 - **skif project check.** The `web` component's new `skif` engine lints JS/TS workspaces (npm, pnpm, yarn, bun) for
   dependency, manifest, version-policy and dead-code findings. Opt in with `[engines.skif] enabled = true`; a project
   `skif.toml` is honored. skif runs on the files the host hands over, so the project-check cache is invalidated by
@@ -24,6 +32,14 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   on every ADR, the lock and a listing of the other files in the log (`MADR42`). Engines declare their
   project-check inputs (`Engine::project_inputs`) instead of the core keeping a table by engine name. Naming a single file reports on it without changing the verdict about the log. Bumps adrlint to 0.5.0; see
   [ADR 0041](adrs/0041-adrlint-tree-wide-rules-as-project-check.md).
+- **`sh` component: shfmt as a sidecar.** Shell is formatted by `mvdan.cc/sh/v3`, shipped as a signed Go
+  executable that poly spawns once and talks to over alef's framed stdio, so output no longer depends on a
+  `shfmt` on `PATH` (byte-identical to shfmt 3.14.1). alef builds, signs and locks it with the other components
+  (`producer_language = "executable"`); `[components] disable = ["sh"]` brings the host `shfmt` back, and the
+  bundled build keeps it. See [ADR 0045](adrs/0045-sidecar-components.md). Files over 3 MiB are skipped (alef
+  carries bytes as JSON number arrays in 16 MiB frames). A crash or timeout of the sidecar stops shell formatting
+  for the rest of the run, because alef does not restart a stdio sidecar; an oversize reply and a panic are
+  failed calls that leave it running.
 - **`poly commit --no-ai-cleanup`.** Disables the built-in removal of AI attribution trailers and banners for one run.
 - **`poly.toml` `[commit]` keys.** `[commit.rules] ai_cleanup`, and `enforce_length` and `enforce_case` under
   `[commit.rules.message]`, matching the keys `.gitfluff.toml` already had. The last two keep the Conventional
@@ -37,8 +53,12 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   `uncomment` and `ini` are no longer in the core: `ini` joins the `misc` component and `uncomment` is its own
   opt-in component (ADR 0043). The component protocol links `schemars` only behind a feature; the core still
   links it through `poly-config` and `poly-host-services`.
+- **`[fmt.shell.shfmt] batch` is gone.** The `sh` component is one long-lived process, so there is no start-up cost
+  to amortize. A leftover `batch` key is reported as an `unknown-config-key` warning and otherwise ignored;
+  delete it. `[fmt.shell.shfmt] enabled = false` still opts out, but with the component it leaves shell
+  unformatted rather than falling back to the tree-sitter reindenter.
 - **Dependencies.** ruff 0.17.4 (`ruff_*` 0.0.21), ty 0.0.21, biome v2.6.5 and rubyfmt v0.14.2-38;
-  alef 0.127.2 for the component build.
+  alef 0.128.0 for the component build.
 - **`python-types` (ty).** ty renamed the diagnostic `unresolved-import` to `import-not-found`;
   update any `poly: allow[unresolved-import]` suppression or `[lint.python.python-types]` rule
   selection that names the old code.

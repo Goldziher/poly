@@ -8,6 +8,7 @@ offline     false
 lock        none (this build embeds no component lock)
 web        unavailable  adrlint, malva, markup_fmt, oxc, rumdl, skif, taplo, yaml  [this build embeds no component lock]
 python     bundled      python-types, ruff
+pyrefly    unavailable  pyrefly  (opt-in)  [this build embeds no component lock]
 sql        bundled      sqruff
 php        bundled      mago
 biome      unavailable  biome  [this build embeds no component lock]
@@ -17,4 +18,5 @@ typos      bundled      typos  (opt-in)
 astgrep    bundled      astgrep
 uncomment  bundled      uncomment  (opt-in)
 misc       bundled      dockerfile, dotenv, graphql, hcl, ini
+sh         bundled      shfmt
 mcp        unavailable    [this build embeds no component lock]

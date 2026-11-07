@@ -56,8 +56,10 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0039](0039-downloadable-engine-components.md) | Downloadable Engine Components | Accepted |
 | [0040](0040-git-pins-in-components-workspace.md) | Git Pins Live in the Components Workspace | Accepted |
 | [0041](0041-adrlint-tree-wide-rules-as-project-check.md) | adrlint Tree-Wide Rules as a Project Check | Accepted |
+| [0042](0042-pyrefly-in-its-own-workspace.md) | pyrefly Lives in Its Own Cargo Workspace | Accepted |
 | [0043](0043-core-under-14-mib.md) | The Core Stays Under 14 MiB | Accepted |
 | [0044](0044-skif-project-check.md) | skif as an Opt-In Project Check in the web Component | Accepted |
+| [0045](0045-sidecar-components.md) | Sidecar Components: Non-Rust Engines as Out-of-Process Executables | Accepted |
 
 ## Conventions
 

@@ -184,6 +184,23 @@ targets = [
   "x86_64-pc-windows-msvc",
 ]
 
+# pyrefly is a git-pinned dependency whose library crate links tikv-jemallocator 0.7, which cannot share a
+# lockfile with the rumdl in `components/` (one `links = "jemalloc"` crate per lockfile), so its family crate
+# lives in the separate `components-pyrefly/` workspace; alef generates and builds the producer there.
+[[crates.components]]
+name = "pyrefly"
+provides = [{ contract = "poly", implementation = "poly_engines_pyrefly::PyreflyComponent" }]
+source_manifest = "components-pyrefly/crates/poly-engines-pyrefly/Cargo.toml"
+producer_dir = "components-pyrefly/crates/poly-engines-pyrefly-component"
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
 # The MCP server as a frontend component: poly-mcp (rmcp, tokio) lives here instead of in the core
 # binary. It reaches the engines through the host services `poly mcp` registers.
 [[crates.components]]
@@ -198,6 +215,29 @@ targets = [
   "aarch64-unknown-linux-gnu",
   "x86_64-pc-windows-msvc",
 ]
+
+# The sh sidecar: shfmt (mvdan.cc/sh) as a pure-Go executable speaking alef's framed stdio protocol
+# (ADR 0045). alef plans, builds, packages and locks it with the Rust components; the build is the
+# Go cross-compile in mise-tasks/sidecar/build.sh and writes exactly {out}.
+[[crates.components]]
+name = "sh"
+producer_language = "executable"
+producer_dir = "components/sidecars/sh"
+provides = [{ contract = "poly", implementation = "NewShComponent" }]
+features = []
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+executable = { build = "../../../mise-tasks/sidecar/build.sh sh {target} {out}", toolchain_version_cmd = "go version", inputs = [
+  "components/sidecars/sh",
+  "mise-tasks/sidecar/build.sh",
+  "crates/poly-component-protocol",
+  "schemas/component-protocol.json",
+] }
 
 # Release distribution: component archives are GitHub release assets of the tag they were built for
 # ({version} is the version the artifact was packaged at, so an asset reused from an earlier release

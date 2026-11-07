@@ -268,6 +268,19 @@ fn flavor_is_partial_when_some_families_are_linked() {
 }
 
 #[test]
+fn flavor_is_bundled_when_only_a_download_only_component_is_unlinked() {
+    let mut fixture = Fixture::new(true);
+    fixture.index.components = vec![
+        component("baked"),
+        Component {
+            download_only: true,
+            ..component("demo")
+        },
+    ];
+    assert_eq!(ops::flavor(&fixture.env()), "bundled");
+}
+
+#[test]
 fn import_rejects_an_archive_the_lock_does_not_name() {
     let fixture = Fixture::new(true);
     let archive = fixture.tmp.path().join("x.tar.gz");

@@ -13,6 +13,9 @@ exclude = [
   # Saved real tool output, kept byte-for-byte: golangci.json is two JSON documents, not one.
   "crates/poly-core/src/engines/catalog_tool/recipe/output/fixtures/**",
   "**/identify/tags.rs",
+  # Deliberately unformatted shell (and one that does not parse): the sh sidecar's input, with the
+  # host shfmt's output beside it as golden files.
+  "components/sidecars/sh/testdata/**",
   ".ai-rulez/**",
   # Everything `ai-rulez generate --plugin` emits. These are generated bundles,
   # not sources: poly reformatting them and the next generation reverting it is
@@ -95,11 +98,37 @@ files = "components/**/*.rs"
 workspace = true
 serial = "cargo"
 
-# components/ builds the root crates by path, so a dependency change in one of them stales
-# components/Cargo.lock without touching components/; CI's --locked builds then fail.
+# The same gates for components-pyrefly/, the pyrefly workspace (jemalloc 0.7 cannot share components/'s lockfile).
+[hooks.pre-commit.commands.pyrefly-clippy]
+run = "mise run hooks:components-check clippy pyrefly"
+files = "components-pyrefly/**"
+workspace = true
+serial = "cargo"
+
+[hooks.pre-commit.commands.pyrefly-deny]
+run = "mise run hooks:components-check deny pyrefly"
+files = "components-pyrefly/**"
+workspace = true
+serial = "cargo"
+
+[hooks.pre-commit.commands.pyrefly-rustdoc]
+run = "mise run hooks:components-check rustdoc pyrefly"
+files = "components-pyrefly/**/*.rs"
+workspace = true
+serial = "cargo"
+
+# components/ and components-pyrefly/ build the root crates by path, so a dependency change in one of them
+# stales their Cargo.lock without touching either directory; CI's --locked builds then fail.
 [hooks.pre-commit.commands.components-lock]
 run = "mise run check:components-lock"
-files = ["crates/*/Cargo.toml", "Cargo.lock", "components/**/Cargo.toml", "components/Cargo.lock"]
+files = [
+  "crates/*/Cargo.toml",
+  "Cargo.lock",
+  "components/**/Cargo.toml",
+  "components/Cargo.lock",
+  "components-pyrefly/**/Cargo.toml",
+  "components-pyrefly/Cargo.lock",
+]
 workspace = true
 serial = "cargo"
 
@@ -191,3 +220,9 @@ id = "ai-rulez"
 git = "https://github.com/Goldziher/ai-rulez.git"
 revision = "v5"
 hooks = ["ai-rulez-validate", "ai-rulez-plugin-verify"]
+
+# The Go sidecars run golangci-lint (govet, staticcheck, errcheck, gosec: components/sidecars/*/.golangci.yml)
+# beside poly's own gofmt, so the hooks gate them like CI's `mise run sidecar:check`. The tool is installed by mise
+# (see mise.toml); a machine without it gets a warning, not an error.
+[tools.golangci-lint]
+enabled = true

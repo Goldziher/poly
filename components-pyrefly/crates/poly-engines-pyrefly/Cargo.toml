@@ -1,0 +1,39 @@
+[package]
+name = "poly-engines-pyrefly"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+description = "The pyrefly engine family for poly (Python type checking) and its component."
+
+[lib]
+name = "poly_engines_pyrefly"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+poly-engine-api.workspace = true
+poly-engines.workspace = true
+pyrefly.workspace = true
+pyrefly_build.workspace = true
+pyrefly_config.workspace = true
+pyrefly_python.workspace = true
+pyrefly_util.workspace = true
+toml.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+poly-component-host.workspace = true
+poly-component-index.workspace = true
+poly-component-protocol.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

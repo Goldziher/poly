@@ -1,5 +1,5 @@
-//! `poly components` on the bundled binary: every engine family is linked, so nothing is
-//! downloadable, the flavor is `bundled`, and `install` is a no-op that downloads nothing.
+//! `poly components` on the bundled binary: every engine family the build can link is linked, so nothing
+//! it could link is downloadable, the flavor is `bundled`, and `install` is a no-op that downloads nothing.
 #![cfg(unix)]
 
 use std::process::{Command, Output};
@@ -51,7 +51,13 @@ fn list_reports_every_family_as_bundled() {
     // The `mcp` front end hosts no engines and is never linked; only engine components count.
     let engines: Vec<_> = components.iter().filter(|c| c["kind"] == "engines").collect();
     assert!(!engines.is_empty());
-    assert!(engines.iter().all(|c| c["state"] == "bundled"), "{value}");
+    // `pyrefly` is built in its own workspace, so no bundled build links it: it stays downloadable.
+    let (download_only, linkable): (Vec<&&serde_json::Value>, Vec<&&serde_json::Value>) =
+        engines.iter().partition(|c| c["name"] == "pyrefly");
+    assert_eq!(download_only.len(), 1, "{value}");
+    assert_ne!(download_only[0]["state"], "bundled", "{value}");
+    assert!(!linkable.is_empty());
+    assert!(linkable.iter().all(|c| c["state"] == "bundled"), "{value}");
 }
 
 #[test]

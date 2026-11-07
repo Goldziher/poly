@@ -47,6 +47,17 @@ impl ResolvedComponents {
     }
 }
 
+#[cfg(test)]
+impl ResolvedComponents {
+    /// Components serving one `(config, language)` pair with `engines`, for planner tests.
+    pub(crate) fn serving(config_id: usize, language: Language, engines: Vec<ComponentEngine>) -> Self {
+        Self {
+            by_pair: FxHashMap::from_iter([((config_id, language), engines)]),
+            report: ComponentsReport::default(),
+        }
+    }
+}
+
 /// How the host was obtained.
 enum Hosted {
     Host(Arc<ComponentHost>, bool),
@@ -83,7 +94,7 @@ fn incompatible(name: &str, reason: String) -> MissingComponent {
     }
 }
 
-fn open_host(injected: Option<&ComponentInjection>) -> Hosted {
+fn open_host(injected: Option<&ComponentInjection>, index: &ComponentIndex) -> Hosted {
     if let Some(injected) = injected {
         return Hosted::Host(Arc::clone(&injected.host), false);
     }
@@ -91,6 +102,7 @@ fn open_host(injected: Option<&ComponentInjection>) -> Hosted {
         let mut options = HostOptions::new(lock, super::default_cache_root());
         options.offline = network::offline();
         options.gate_loads = true;
+        options.sidecars = super::sidecar_names(index);
         ComponentHost::new(options)
     });
     match built {
@@ -131,10 +143,8 @@ pub(crate) fn resolve(files: &[DiscoveredFile], configs: &ConfigSet, opts: &RunO
         }
     }
     let all: Vec<&Config> = configs.iter().collect();
-    let selected = |name: &str| {
-        (opts.only.is_empty() || opts.only.iter().any(|entry| entry == name))
-            && !opts.skip.iter().any(|entry| entry == name)
-    };
+    let selection = crate::runner::selection::EngineSelection::new(&opts.only, &opts.skip);
+    let selected = |name: &str, table: Option<&str>| selection.selects_declared(name, table);
     let needed = needed_components(index, &all, &pairs, &feature_is_linked, &selected);
     if needed.is_empty() {
         return ResolvedComponents::default();
@@ -143,7 +153,7 @@ pub(crate) fn resolve(files: &[DiscoveredFile], configs: &ConfigSet, opts: &RunO
     let root = &configs.config(0).components;
     let on_missing = opts.on_missing.unwrap_or(root.on_missing);
     let allow_install = opts.install.unwrap_or(root.install) == ComponentInstallPolicy::Auto;
-    let hosted = open_host(injected);
+    let hosted = open_host(injected, index);
 
     let mut report = ComponentsReport::default();
     let mut engines: BTreeMap<&str, Vec<ComponentEngine>> = BTreeMap::new();

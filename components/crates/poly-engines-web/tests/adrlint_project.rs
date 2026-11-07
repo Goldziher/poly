@@ -90,6 +90,7 @@ fn check(root: &Path, files: &[ProjectFile], config: &EngineConfig) -> Vec<(Stri
         files,
         config,
         environment: &environment,
+        threads: None,
     };
     let mut found: Vec<(String, String)> = AdrlintEngine
         .project_check(&request)
@@ -258,6 +259,7 @@ fn a_malformed_lock_is_an_error_not_silence() {
         files: &files,
         config: &config,
         environment: &environment,
+        threads: None,
     };
     assert!(AdrlintEngine.project_check(&request).is_err());
 }

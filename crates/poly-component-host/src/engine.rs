@@ -8,7 +8,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use poly_component_protocol::{
     Payload, Request, WireBatchSupport, WireDiagnostic, WireEngineDesc, WireFile, WireFileSlice, WireFormatOutput,
-    WireKind, WireOptionTable, WireProjectInputs, hooks,
+    WireKind, WireOptionTable, WireProjectInputs, WireSelection, hooks,
 };
 use poly_engine_api::component_wire::OffsetOutOfRange;
 use poly_engine_api::config::EngineConfig;
@@ -61,10 +61,13 @@ pub struct ComponentEngine {
     supersedes_generic_formatter: bool,
     batch_shard_floor: usize,
     project_inputs: ProjectInputs,
+    selection: Option<WireSelection>,
     slot: Arc<ComponentSlot>,
     unavailable: Option<String>,
     unavailable_skips: bool,
     unavailable_noop: bool,
+    max_file_bytes: Option<usize>,
+    lf_output: bool,
 }
 
 fn table_slot(table: OptionTable) -> usize {
@@ -182,10 +185,13 @@ impl ComponentEngine {
             supersedes_generic_formatter: desc.supersedes_generic_formatter,
             batch_shard_floor: usize::try_from(desc.batch_shard_floor).unwrap_or(usize::MAX),
             project_inputs: project_inputs(&desc.project_inputs),
+            selection: desc.selection.clone(),
             slot,
             unavailable: None,
             unavailable_skips: false,
             unavailable_noop: false,
+            max_file_bytes: None,
+            lf_output: false,
         })
     }
 
@@ -263,6 +269,29 @@ impl ComponentEngine {
     #[must_use]
     pub fn declining_reason(&self) -> Option<&str> {
         self.unavailable.as_deref().filter(|_| self.unavailable_skips)
+    }
+
+    /// Decline files larger than `max` bytes with a counted skip, for a component whose transport
+    /// cannot carry them (see [`poly_component_protocol::sidecar::MAX_FILE_BYTES`]).
+    #[must_use]
+    pub fn with_max_file_bytes(mut self, max: usize) -> Self {
+        self.max_file_bytes = Some(max);
+        self
+    }
+
+    /// The byte limit `src` is over, if any. `skip_reason` reports it, but the runner only skips a
+    /// file every planned engine declines, so `lint` and `format` check it again rather than ship
+    /// a frame the component cannot read.
+    fn frame_limit_exceeded(&self, src: &SourceFile) -> Option<usize> {
+        self.max_file_bytes.filter(|&max| src.content.len() > max)
+    }
+
+    /// Collapse `\r\n` to `\n` in formatted output, as the host-tool engines do for the CLI they
+    /// wrap (which may emit CRLF on Windows), so a sidecar that replaces one formats the same bytes.
+    #[must_use]
+    pub fn with_lf_output(mut self) -> Self {
+        self.lf_output = true;
+        self
     }
 
     /// The slot this engine loads its component through.
@@ -379,6 +408,12 @@ impl Engine for ComponentEngine {
         if let Some(reason) = &self.unavailable {
             return self.unavailable_skips.then(|| Cow::Owned(reason.clone()));
         }
+        if let Some(max) = self.frame_limit_exceeded(src) {
+            return Some(Cow::Owned(format!(
+                "larger than the {max}-byte limit of the {} component",
+                self.slot.component_id()
+            )));
+        }
         if !self.hook(hooks::SKIP_REASON) {
             return None;
         }
@@ -405,7 +440,7 @@ impl Engine for ComponentEngine {
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        if self.unavailable_noop {
+        if self.unavailable_noop || self.frame_limit_exceeded(src).is_some() {
             return Ok(Vec::new());
         }
         let connection = self.connect()?;
@@ -427,7 +462,7 @@ impl Engine for ComponentEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        if self.unavailable_noop {
+        if self.unavailable_noop || self.frame_limit_exceeded(src).is_some() {
             return Ok(FormatOutput::Unchanged);
         }
         let connection = self.connect()?;
@@ -443,7 +478,12 @@ impl Engine for ComponentEngine {
             src.content.as_bytes(),
         )?;
         match payload {
-            Payload::Formatted(output) => Ok(format_output(output)),
+            Payload::Formatted(output) => Ok(match format_output(output) {
+                FormatOutput::Formatted(text) if self.lf_output && text.contains('\r') => {
+                    FormatOutput::Formatted(text.replace("\r\n", "\n"))
+                }
+                other => other,
+            }),
             _ => Err(self.unexpected("Format")),
         }
     }
@@ -469,6 +509,7 @@ impl Engine for ComponentEngine {
             originals.insert(rel, file.path.clone());
         }
         let environment = req.environment.to_wire_pairs();
+        let threads = req.threads.map(|n| u32::try_from(n).unwrap_or(u32::MAX));
         let root = req.root.display().to_string();
         let payload = connection.call(
             self.name,
@@ -479,6 +520,7 @@ impl Engine for ComponentEngine {
                 files: files.clone(),
                 config,
                 environment: environment.clone(),
+                threads,
             },
             &body,
         )?;
@@ -619,6 +661,10 @@ impl Engine for ComponentEngine {
             tracing::warn!(engine = self.name, "lint_cache_salt unavailable: {error:#}");
             None
         })
+    }
+
+    fn selection(&self) -> Option<WireSelection> {
+        self.selection.clone()
     }
 
     fn batch_shard_floor(&self) -> usize {

@@ -6,11 +6,15 @@
 //! MessagePack-encoded [`Response`]. A JSON Schema of every message is committed at
 //! `schemas/component-protocol.json` for non-Rust implementers ([`json_schema`]).
 //!
+//! A sidecar component (an executable, not a dylib) carries the same two calls over alef's framed
+//! stdio transport; [`sidecar`] defines how (and the schema's `ProtocolSchema` documents it).
+//!
 //! This crate deliberately has no dependency on `poly-core`; conversions from engine types live
 //! with those types.
 
 mod codec;
 pub mod coverage;
+pub mod sidecar;
 mod value;
 mod wire;
 

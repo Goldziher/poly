@@ -278,6 +278,28 @@ pub struct WireEngineDesc {
     /// `Engine::project_inputs`. Absent in an older description, which reads as "nothing".
     #[serde(default)]
     pub project_inputs: WireProjectInputs,
+    /// `Engine::selection`: how a config table picks this engine among alternatives. Absent for an engine
+    /// no table chooses between, and in an older description.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<WireSelection>,
+}
+
+/// How one config table chooses between the engines that share it.
+///
+/// `[engines.python-types] backend = "pyrefly"` is the engine table `python-types` with its key `backend`
+/// set to `pyrefly`: the engine declaring that value is the one that runs. Engines that declare the same
+/// `table` and `key` are alternatives; none runs until the key is set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct WireSelection {
+    /// The config table the alternatives share (an engine id).
+    pub table: String,
+    /// The key of that table that picks one.
+    pub key: String,
+    /// The key value that picks this engine.
+    pub value: String,
+    /// Runs when the key is set to a value no alternative declares, so it can report that value as unknown.
+    pub default: bool,
 }
 
 /// The answer to `describe()`.
@@ -424,6 +446,10 @@ pub enum Request {
         /// The host-resolved environment as flat pairs (`python.interpreter`,
         /// `python.site_packages`, `python.version`); the component never probes the system.
         environment: Vec<(String, String)>,
+        /// The worker threads the host's run budgets for the check. Absent from an older host, which reads as
+        /// "the component's choice".
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        threads: Option<u32>,
     },
     /// `Engine::skip_reason` for one file (content in `body`).
     SkipReason {
@@ -707,6 +733,11 @@ pub struct Response {
 }
 
 /// Root type used to emit one JSON Schema covering every top-level message.
+///
+/// Transport framing is not part of the messages. A dylib component receives `call(header, body)`
+/// directly. A sidecar executable (alef stdio transport) receives one `invoke_bytes(method, payload)`
+/// per call: method `describe` with an empty payload returns the encoded `describe` message; method
+/// `call` carries `u32_le(header_len) ++ header ++ body` and returns the encoded `response`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ProtocolSchema {
