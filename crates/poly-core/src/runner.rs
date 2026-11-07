@@ -231,7 +231,7 @@ pub fn lint_run(
     // Whole-project engines run after the per-file tier, on the files as the fix passes left them,
     // and their findings join the per-file results before anything is counted or sorted.
     let inputs = project::RunInputs::new(&configs, &act_on_generated, paths, &opts.exclude);
-    let mut project_phase = project::run_project_phase(&files, &inputs, selection, &cache);
+    let mut project_phase = project::run_project_phase(&files, &inputs, selection, &cache, plan.resolved_components());
     let project_errors = std::mem::take(&mut project_phase.errors);
     project::merge_findings(&mut linted, project_phase, &ignores, &ignore_bases);
     linted.sort_by(|a, b| a.path.cmp(&b.path));
