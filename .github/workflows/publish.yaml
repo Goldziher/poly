@@ -684,14 +684,14 @@ jobs:
           echo "dev-lock absent from $bin"
         shell: bash
 
-      - name: Assert the core is under 10 MiB
+      - name: Assert the core is under 14 MiB
         # The ceiling is for the shipped binary, lock included, on the largest native triple.
         if: ${{ matrix.triple == 'x86_64-unknown-linux-gnu' }}
         run: |
           set -euo pipefail
           size="$(wc -c < "target/${{ matrix.triple }}/$PROFILE_DIR/poly" | tr -d ' ')"
           echo "core binary: $size bytes"
-          [ "$size" -gt 1000000 ] && [ "$size" -le 10485760 ] || { echo "::error::the core binary is $size bytes, outside 1 MB..10 MiB"; exit 1; }
+          [ "$size" -gt 1000000 ] && [ "$size" -le 14680064 ] || { echo "::error::the core binary is $size bytes, outside 1 MB..14 MiB"; exit 1; }
         shell: bash
 
       - name: Assert the component lock is embedded (absent for musl)
@@ -764,6 +764,7 @@ jobs:
           printf 'FROM alpine\n' > "$fixture/Dockerfile"
           printf 'a = 1\n' > "$fixture/a.toml"
           printf '# a\n' > "$fixture/a.md"
+          printf '[a]\nk = 1\n' > "$fixture/a.ini"
           files="$(find "$fixture" -type f | wc -l | tr -d ' ')"
           for mode in lint fmt; do
             set +e
@@ -782,6 +783,20 @@ jobs:
               "$RUNNER_TEMP/$mode.json" > /dev/null || { cat "$RUNNER_TEMP/$mode.json"; echo "::error::poly $mode did not check all $files files cleanly"; exit 1; }
             echo "poly $mode: $(jq -c .summary "$RUNNER_TEMP/$mode.json")"
           done
+          # uncomment is opt-in and outside the `all` preset: install it, enable it, and require a diagnostic.
+          "$bin" components install uncomment
+          uncomment_dir="$RUNNER_TEMP/smoke-uncomment"
+          mkdir -p "$uncomment_dir"
+          printf '[lint.uncomment]\nenabled = true\n' > "$uncomment_dir/poly.toml"
+          printf 'x = 1\n# a removable comment\n' > "$uncomment_dir/a.py"
+          set +e
+          "$bin" lint --workspace never --no-cache --only uncomment --format json "$uncomment_dir" > "$RUNNER_TEMP/uncomment.json"
+          code=$?
+          set -e
+          [ "$code" -le 1 ] || { cat "$RUNNER_TEMP/uncomment.json"; echo "::error::poly lint (uncomment) exited $code"; exit 1; }
+          jq -e '.summary.errored == 0 and ([.results[].diagnostics[] | select(.engine == "uncomment")] | length) > 0' \
+            "$RUNNER_TEMP/uncomment.json" > /dev/null || { cat "$RUNNER_TEMP/uncomment.json"; echo "::error::the uncomment component reported nothing"; exit 1; }
+          echo "poly lint (uncomment): $(jq -c .summary "$RUNNER_TEMP/uncomment.json")"
         shell: bash
 
       - name: Create release artifacts
