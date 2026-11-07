@@ -22,9 +22,12 @@ use globset::{GlobBuilder, GlobMatcher};
 
 use crate::config::EngineConfig;
 
+/// The indentation `.editorconfig` asks shfmt for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Indent {
+    /// `indent_style = tab`: shfmt's `-i 0`.
     Tabs,
+    /// `indent_style = space` with this many columns per level.
     Spaces(usize),
 }
 
