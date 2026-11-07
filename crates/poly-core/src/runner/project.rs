@@ -24,6 +24,7 @@ use super::plan::build_severity_remap;
 use super::selection::EngineSelection;
 use super::skips::is_lock_file;
 use super::types::{LintError, LintResult};
+use crate::components::ResolvedComponents;
 use crate::config::{EngineConfig, Kind};
 use crate::discover::DiscoveredFile;
 use crate::engine::{Diagnostic, ENABLED_OPTION_KEY, Engine, ProjectEnvironment, ProjectFile, ProjectRequest};
@@ -87,7 +88,8 @@ pub(super) struct ProjectOutcome {
 }
 
 /// The project engines that apply to this run: those that declare the capability, are not
-/// switched off with `enabled = false`, and survive `--only` / `--skip`.
+/// switched off with `enabled = false`, and survive `--only` / `--skip`. They are the compiled-in
+/// ones and the downloadable components' (`components`).
 ///
 /// One plan per `(config, engine)`. The engine's config is resolved against the first language
 /// (by id) it serves in that config scope, which is the same table the per-file planner reads.
@@ -95,6 +97,7 @@ fn plan_project_engines(
     files: &[DiscoveredFile],
     configs: &ConfigSet,
     selection: EngineSelection<'_>,
+    components: &ResolvedComponents,
 ) -> Vec<ProjectPlan> {
     let mut scopes: Vec<(usize, Language)> = files
         .iter()
@@ -111,6 +114,11 @@ fn plan_project_engines(
             .into_iter()
             .filter(|engine| engine.capabilities().project)
             .map(Arc::<dyn Engine>::from);
+        let from_components = components
+            .engines(*config_id, language)
+            .iter()
+            .filter(|engine| engine.capabilities().project)
+            .map(|engine| Arc::new(engine.clone()) as Arc<dyn Engine>);
         let injected = extras
             .iter()
             .filter(|engine| {
@@ -118,7 +126,7 @@ fn plan_project_engines(
                 served.is_empty() || served.contains(language)
             })
             .cloned();
-        for engine in registered.chain(injected) {
+        for engine in registered.chain(from_components).chain(injected) {
             if !selection.selects(engine.name()) || !seen.insert((*config_id, engine.name())) {
                 continue;
             }
@@ -232,8 +240,9 @@ pub(super) fn run_project_phase(
     selection: EngineSelection<'_>,
     cache: &ResultCache,
     act_on_generated: &[bool],
+    components: &ResolvedComponents,
 ) -> ProjectOutcome {
-    let plans = plan_project_engines(files, configs, selection);
+    let plans = plan_project_engines(files, configs, selection, components);
     let mut outcome = ProjectOutcome::default();
     if plans.is_empty() {
         return outcome;
@@ -384,10 +393,15 @@ mod gate_tests {
             config_id: 0,
         }];
         let configs = ConfigSet::single(config);
-        plan_project_engines(&files, &configs, EngineSelection::new(&[], &[]))
-            .iter()
-            .map(|plan| plan.engine.name())
-            .collect()
+        plan_project_engines(
+            &files,
+            &configs,
+            EngineSelection::new(&[], &[]),
+            &ResolvedComponents::default(),
+        )
+        .iter()
+        .map(|plan| plan.engine.name())
+        .collect()
     }
 
     #[test]
