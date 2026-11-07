@@ -17,4 +17,5 @@ typos      bundled      typos  (opt-in)
 astgrep    bundled      astgrep
 uncomment  bundled      uncomment  (opt-in)
 misc       bundled      dockerfile, dotenv, graphql, hcl, ini
+sh         bundled      shfmt
 mcp        unavailable    [this build embeds no component lock]

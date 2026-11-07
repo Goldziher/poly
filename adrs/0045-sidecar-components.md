@@ -1,4 +1,4 @@
-# 0041 — Sidecar Components: Non-Rust Engines as Out-of-Process Executables
+# 0045 — Sidecar Components: Non-Rust Engines as Out-of-Process Executables
 
 - Status: Accepted
 - Date: 2026-11-06
@@ -14,7 +14,7 @@ poly shells out to. Shell formatting is the case at hand. `shfmt` is `mvdan.cc/s
 and poly's native-toolchain engine (ADR 0014) runs the `shfmt` binary when it is on `PATH`, so its
 output depends on a tool the user installed.
 
-alef 0.127 adds a framed stdio transport (alef ADR-0017): a signed executable payload the host spawns
+alef 0.127 adds a framed stdio transport (alef ADR-0017) and 0.128 builds executable components (alef ADR-0023): a signed executable payload the host spawns
 once and calls with `invoke_bytes(method, payload)`. Issue #83 reserved a `sidecar` component kind for
 this.
 
@@ -59,12 +59,12 @@ existing MessagePack protocol (ADR 0039) over alef's framed stdio.
   stay beside it". The bundled build (`engine-shfmt` in `all-engines`) therefore treats `sh` as linked
   and formats shell with the host `shfmt` when present and the tree-sitter tier otherwise, as before.
   Every other build downloads `sh`.
-- **Build and release.** The sidecar is cross-compiled for the five component triples from one Linux
-  job (`-trimpath -ldflags="-s -w -buildid="`), packaged with `alef component package --component sh
-  --target <triple> --library <exe>`, signed with the same key as the dylib components, and merged into
-  the lock beside them. alef cannot plan, reuse or build a component it does not compile (`alef
-  component plan` rejects Go producers), so the sidecar is rebuilt each release and its lock entries
-  are merged after alef writes the lock for the Rust components.
+- **Build and release.** `alef.toml` declares `sh` with `producer_language = "executable"`: the
+  `executable.build` command runs `mise-tasks/sidecar/build.sh`, which cross-compiles the five component
+  triples with `CGO_ENABLED=0 -trimpath -ldflags="-s -w -buildid="` and writes exactly `{out}`. alef plans,
+  builds, packages, signs and locks it with the Rust components, so one lock covers both and an unchanged
+  sidecar is reused across releases; the fingerprint covers `components/sidecars/sh`, the build script and
+  the output of `go version`. alef generates no producer or bridge for it.
 
 Amendment to ADR 0002: a downloaded component may now be an executable that runs as a child process,
 not only a library loaded into poly. This is a third scoped exception beside native-toolchain
@@ -85,9 +85,8 @@ archive is verified before it is spawned, and poly never runs an executable it d
   keeps the host-tool path, with its tree-sitter fallback.
 - `batch` is no longer a `[fmt.shell.shfmt]` key: a long-lived process has no start-up cost to
   amortize.
-- alef has no component kind for prebuilt executables: `alef.toml` declares `sh` with a Go producer
-  directory (`components/sidecars/alef-sh`) whose generated c-shared bridge is never built, and the
-  release flow packages it by hand. Both go away when alef can declare a prebuilt component.
+- The Go toolchain must be on `PATH` wherever alef builds the `sh` component, including the release
+  containers, and `lock --reuse` does not re-verify the toolchain (alef ADR-0023).
 
 ## Alternatives considered
 
