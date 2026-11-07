@@ -187,8 +187,9 @@ A run never ends up checking nothing when type checking was asked for:
   every component (ADR 0039), and `--deny-skips` applies.
 - `--only` and `--skip` take the engine name (`pyrefly`) or the shared table name (`python-types`) for either backend:
   `--skip python-types` stops whichever is configured, and `--only python-types` keeps it. Like any selection they
-  only narrow: `--only pyrefly` with `backend = "ty"` runs nothing. That is reported as a skip (`--only pyrefly` selects
-  nothing here: `[python-types] backend` is "ty", or "unset") and counted by `--deny-skips` / `--max-skips`, unlike
+  only narrow: `--only pyrefly` with `backend = "ty"` runs nothing. That is reported as a skip that names the backend, or says
+  it is unset (`` `--only pyrefly` selects nothing here: `[python-types] backend` is "ty" ``), and counted by
+  `--deny-skips` / `--max-skips`, unlike
   other `--only` / `--skip` exclusions: you asked for a check and got none, so the run must not read as a pass.
 - pyrefly uses the run's thread budget (`-j/--jobs`, else every core), as passed over the component protocol.
 
