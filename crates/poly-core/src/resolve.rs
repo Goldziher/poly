@@ -202,13 +202,17 @@ impl ConfigSet {
     /// The id of the config governing `file`: the nearest ancestor config
     /// directory, or `0` (the root/fallback config) when none matches.
     pub fn config_id_for(&self, file: &Path) -> usize {
+        self.config_id_containing(file).unwrap_or(0)
+    }
+
+    /// The id of the nearest nested config directory holding `file`, or `None` when no registered
+    /// config directory does (the file then belongs to the root config only if it sits under the root).
+    pub fn config_id_containing(&self, file: &Path) -> Option<usize> {
         let dir = file.parent().unwrap_or(file);
-        for (config_dir, id) in &self.lookup {
-            if dir.starts_with(config_dir) {
-                return *id;
-            }
-        }
-        0
+        self.lookup
+            .iter()
+            .find(|(config_dir, _)| dir.starts_with(config_dir))
+            .map(|(_, id)| *id)
     }
 
     /// Borrow the config with the given id.
@@ -669,6 +673,22 @@ mod tests {
         assert_ne!(front_id, root_id, "the two subtrees must resolve to different configs");
         assert_eq!(set.config(front_id).defaults.line_length, 80, "nested override");
         assert_eq!(set.config(root_id).defaults.line_length, 120, "root default");
+    }
+
+    #[test]
+    fn a_file_outside_every_config_directory_has_no_containing_config() {
+        let root = tempdir().unwrap();
+        write(&root.path().join("poly.toml"), "[workspace]\nroot = true\n");
+        write(
+            &root.path().join("frontend/poly.toml"),
+            "[defaults]\nline_length = 80\n",
+        );
+        let root_config: Config = poly_config::PolyConfig::resolve_for_dir(root.path()).unwrap().into();
+        let set = ConfigSet::build(&[root.path().to_path_buf()], root_config).unwrap();
+        let elsewhere = tempdir().unwrap();
+        assert_eq!(set.config_id_containing(&elsewhere.path().join("x.md")), None);
+        assert_eq!(set.config_id_for(&elsewhere.path().join("x.md")), 0);
+        assert!(set.config_id_containing(&root.path().join("frontend/a.ts")).is_some());
     }
 
     #[test]

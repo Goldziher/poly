@@ -32,7 +32,9 @@ pub use seam::LOCK_ENV;
 pub(crate) use seam::run_index;
 pub use select::{component_is_linked, default_cache_root, host_options, needed_component_names, sidecar_names};
 
-pub(crate) use needed::{feature_is_linked, needed_components, selected_components};
+pub(crate) use needed::{
+    feature_is_linked, needed_components_with_ancestors, selected_components, selected_whole_tree_components,
+};
 
 #[cfg(test)]
 mod tests;

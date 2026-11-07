@@ -123,6 +123,19 @@ pub struct ProjectDirs {
     pub paths_key: Option<String>,
     /// A boolean option that extends the directories to their subdirectories, when the engine has one.
     pub recursive_key: Option<String>,
+    /// Whether the directories extend to their subdirectories when `recursive_key` is unset or the
+    /// engine has none: a tree-wide check such as a JavaScript workspace is about the whole tree.
+    pub recursive_default: bool,
+    /// Whether the check is about the whole tree: the walk then honors only `.gitignore` and the
+    /// always-pruned directories, never `[discovery] exclude`, the run's `--exclude` or the split into
+    /// nested `poly.toml` scopes. A verdict over a workspace graph (is this import resolvable, is this
+    /// package used) is wrong when part of the graph is left out for reasons that concern linting, not
+    /// the graph; the run's own file set then only decides which findings are reported.
+    pub whole_tree: bool,
+    /// File names (not paths) the walk hands over as inputs wherever it finds them, whatever their
+    /// language, with the file name as `Language::Other`. For files the engine reads without serving them
+    /// as sources, such as `.gitignore`; they enter the cache key like any served file.
+    pub file_names: Vec<String>,
     /// Whether the host also lists the files in these directories that the engine does not serve
     /// (every file type, names only, empty content, language `Other("listing")`).
     pub list_unserved: bool,

@@ -60,6 +60,7 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
         ],
     ),
     ("adrlint", &["adrlint.rs", "adrlint/project.rs"]),
+    ("skif", &["skif.rs"]),
 ];
 
 /// Languages whose engines together cover every web engine.
@@ -141,7 +142,7 @@ fn every_web_engine_declares_its_option_keys() {
 #[test]
 fn every_web_engine_has_declared_sources() {
     let engines = web_engines();
-    assert_eq!(engines.len(), 7, "every web engine is reached by a sample language");
+    assert_eq!(engines.len(), 8, "every web engine is reached by a sample language");
     for engine in engines {
         assert!(
             ENGINE_SOURCES.iter().any(|(name, _)| *name == engine.name()),

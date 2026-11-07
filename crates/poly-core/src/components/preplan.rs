@@ -13,7 +13,10 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use super::seam::ComponentInjection;
 #[cfg(feature = "dev-lock")]
 use super::seam::LOCK_ENV;
-use super::{ComponentsReport, MissingComponent, feature_is_linked, needed_components, selected_components};
+use super::{
+    ComponentsReport, MissingComponent, feature_is_linked, needed_components_with_ancestors, selected_components,
+    selected_whole_tree_components,
+};
 use crate::config::Config;
 use crate::discover::DiscoveredFile;
 use crate::engine::Engine;
@@ -121,7 +124,8 @@ pub(super) fn expected_describe(component: &Component) -> Describe {
     }
 }
 
-/// Resolve the components `files` need under `configs`.
+/// Resolve the components `files` need under `configs`, and the ones the `ancestors` configs need for
+/// the languages of `files`.
 ///
 /// This is the only pass that installs anything. It runs before planning and outside the
 /// workers, ensures each needed component once, then seals the host it built. The policy is the
@@ -131,7 +135,12 @@ pub(super) fn expected_describe(component: &Component) -> Describe {
 /// stand-in that skips its files (charged to the skip budget); `on_missing = "fail"` still fails
 /// the run, through [`ComponentsReport::blocking`]. A component whose install was attempted and
 /// failed becomes a stand-in that errors on each of its files.
-pub(crate) fn resolve(files: &[DiscoveredFile], configs: &ConfigSet, opts: &RunOptions) -> ResolvedComponents {
+pub(crate) fn resolve(
+    files: &[DiscoveredFile],
+    configs: &ConfigSet,
+    opts: &RunOptions,
+    ancestors: &[usize],
+) -> ResolvedComponents {
     let injected = opts.component_injection.as_ref();
     let index: &ComponentIndex = super::seam::run_index(opts);
     let mut seen: FxHashSet<(usize, Language)> = FxHashSet::default();
@@ -142,10 +151,22 @@ pub(crate) fn resolve(files: &[DiscoveredFile], configs: &ConfigSet, opts: &RunO
             pairs.push(pair);
         }
     }
+    // A config above a named path owns no file of the run, yet its whole-tree project engines are planned
+    // for every language the run saw.
+    let languages: FxHashSet<Language> = files.iter().map(|file| file.language.clone()).collect();
+    let mut ancestor_pairs = Vec::new();
+    for config_id in crate::runner::without_owning(ancestors.to_vec(), files) {
+        for language in &languages {
+            let pair = (config_id, language.clone());
+            if seen.insert(pair.clone()) {
+                ancestor_pairs.push(pair);
+            }
+        }
+    }
     let all: Vec<&Config> = configs.iter().collect();
     let selection = crate::runner::selection::EngineSelection::new(&opts.only, &opts.skip);
     let selected = |name: &str, table: Option<&str>| selection.selects_declared(name, table);
-    let needed = needed_components(index, &all, &pairs, &feature_is_linked, &selected);
+    let needed = needed_components_with_ancestors(index, &all, &pairs, &ancestor_pairs, &feature_is_linked, &selected);
     if needed.is_empty() {
         return ResolvedComponents::default();
     }
@@ -230,16 +251,22 @@ pub(crate) fn resolve(files: &[DiscoveredFile], configs: &ConfigSet, opts: &RunO
     }
 
     let mut by_pair: FxHashMap<(usize, Language), Vec<ComponentEngine>> = FxHashMap::default();
-    for (config_id, language) in pairs {
+    let per_pair = pairs.into_iter().map(|pair| (pair, false));
+    let whole_tree_only = ancestor_pairs.into_iter().map(|pair| (pair, true));
+    for ((config_id, language), whole_tree_only) in per_pair.chain(whole_tree_only) {
         let config = configs.config(config_id);
-        let serving: Vec<ComponentEngine> =
+        let chosen = if whole_tree_only {
+            selected_whole_tree_components(index, config, &language, &feature_is_linked, &selected)
+        } else {
             selected_components(index, config, &language, &feature_is_linked, &selected)
-                .into_iter()
-                .filter_map(|component| engines.get(component.name.as_str()))
-                .flatten()
-                .filter(|engine| engine.languages().is_empty() || engine.languages().contains(&language))
-                .cloned()
-                .collect();
+        };
+        let serving: Vec<ComponentEngine> = chosen
+            .into_iter()
+            .filter_map(|component| engines.get(component.name.as_str()))
+            .flatten()
+            .filter(|engine| engine.languages().is_empty() || engine.languages().contains(&language))
+            .cloned()
+            .collect();
         if !serving.is_empty() {
             by_pair.insert((config_id, language), serving);
         }

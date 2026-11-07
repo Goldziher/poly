@@ -159,6 +159,9 @@ impl Engine for AdrlintEngine {
                 dir_default: project::DEFAULT_DIR.to_owned(),
                 paths_key: Some("paths".to_owned()),
                 recursive_key: Some("recursive".to_owned()),
+                recursive_default: false,
+                whole_tree: false,
+                file_names: Vec::new(),
                 list_unserved: true,
             }),
         }

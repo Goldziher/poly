@@ -775,7 +775,22 @@ pub fn discover_reporting(
 pub(crate) fn list_files(dir: &Path, configs: &ConfigSet, recursive: bool, extra: &[String]) -> Vec<PathBuf> {
     let frame = configs.match_frame(dir);
     let exclude = configs.excludes_in_frame(&frame, extra, true);
-    let matcher = ExcludeMatcher::new(dir, &exclude);
+    walk_listing(dir, configs, recursive, ExcludeMatcher::new(dir, &exclude))
+}
+
+/// [`list_files`] without any exclude glob: only `.gitignore` and the built-in pruned directories
+/// apply. For a check whose verdict is about the whole tree, where leaving a path out of the graph
+/// for a reason that concerns linting (`[discovery] exclude`, `--exclude`) makes the verdict wrong.
+pub(crate) fn list_tree(dir: &Path, configs: &ConfigSet, recursive: bool) -> Vec<PathBuf> {
+    walk_listing(dir, configs, recursive, None)
+}
+
+fn walk_listing(
+    dir: &Path,
+    configs: &ConfigSet,
+    recursive: bool,
+    matcher: Option<Arc<ExcludeMatcher>>,
+) -> Vec<PathBuf> {
     let policy = PrunePolicy::new(dir, configs.no_prune());
     let mut builder = WalkBuilder::new(dir);
     builder

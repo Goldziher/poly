@@ -186,7 +186,7 @@ fn web_engines_declare_every_hook_they_override() {
     let engines = web_engines();
     assert_eq!(
         engines.len(),
-        7,
+        8,
         "every web engine must be reached by a sample file, got {:?}",
         engines.iter().map(|e| e.name()).collect::<Vec<_>>()
     );

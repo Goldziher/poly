@@ -29,6 +29,7 @@ mod generated;
 mod lint_pass;
 mod plan;
 mod project;
+pub(crate) use project::without_owning;
 pub(crate) mod selection;
 mod skips;
 mod types;
@@ -37,7 +38,7 @@ mod write;
 use crate::fingerprint::{ConfigFingerprint, fingerprints};
 use batch::{BatchPrefill, LintPrefill, PendingLint, prefill, prefill_lint};
 use edits::apply_edits;
-use engine_clock::{EngineClock, EngineTime};
+use engine_clock::{EngineClock, note_slow_engine};
 use fast::{
     FastPath, Outcome, Replay, Resolution, flush_stat_indexes, lint_skip_reason, log_fast_path, replayed_lint_result,
 };
@@ -70,12 +71,6 @@ const MAX_FIX_PASSES: usize = 5;
 /// Minimum engine runtime for which persisting and reloading a cache entry is
 /// expected to cost less than recomputing the result.
 const MIN_CACHE_DURATION: std::time::Duration = std::time::Duration::from_millis(5);
-
-/// Per-file engine runtimes at or above this threshold are useful diagnostic
-/// signals for pathological inputs or backend performance regressions.
-const SLOW_ENGINE_DEBUG: std::time::Duration = std::time::Duration::from_millis(250);
-const SLOW_ENGINE_WARN: std::time::Duration = std::time::Duration::from_secs(2);
-const GENERIC_TIER_ENGINE: &str = "treesitter";
 
 /// Maximum format passes per file. A formatter is not guaranteed to be
 /// idempotent — line-wrap/reflow can shift on a second run (observed with
@@ -129,7 +124,14 @@ pub fn lint_run(
     let selection = EngineSelection::new(&opts.only, &opts.skip);
     validate_selection(&configs, crate::components::run_index(opts), &opts.only, &opts.skip)?;
     let (files, discovery) = discover_reporting(paths, &configs, &opts.exclude, opts.force_exclude);
-    let plan = plan_by_config_language(&files, &configs, Kind::Lint, selection, opts);
+    let plan = plan_by_config_language(
+        &files,
+        &configs,
+        Kind::Lint,
+        selection,
+        opts,
+        &project::ancestor_configs(&configs, paths),
+    );
     prefetch_tier2_grammars(&plan);
     // Rule-declared `ignores:` globs (the built-in ast-grep pack's, plus any a
     // user rule file declares) layer in beneath the config's own
@@ -230,10 +232,20 @@ pub fn lint_run(
     let mut linted: Vec<LintResult> = oks.into_iter().map(Result::unwrap).collect();
     // Whole-project engines run after the per-file tier, on the files as the fix passes left them,
     // and their findings join the per-file results before anything is counted or sorted.
-    let inputs = project::RunInputs::new(&configs, &act_on_generated, paths, opts);
-    let mut project_phase = project::run_project_phase(&files, &inputs, selection, &cache, plan.resolved_components());
-    let (project_errors, project_skips) = project_phase.take_reports();
-    project::merge_findings(&mut linted, project_phase, &ignores, &ignore_bases);
+    let inputs = project::RunInputs::new(&configs, &act_on_generated, paths, opts, (&ignores, &ignore_bases));
+    let fix_mode = project::FixMode {
+        apply: fix,
+        generated: opts.fix_generated,
+    };
+    let (project_errors, project_skips) = project::run_and_merge(
+        &mut linted,
+        &files,
+        &inputs,
+        selection,
+        &cache,
+        plan.resolved_components(),
+        fix_mode,
+    );
     linted.sort_by(|a, b| a.path.cmp(&b.path));
     // Taken before the filter below, which keeps only files with something to
     // report: a skipped file has nothing to report and would be dropped, which
@@ -345,7 +357,7 @@ pub fn format_run(
         .into_iter()
         .filter(|f| explicit.contains(f.path.as_path()) || !is_generated_lockfile(&f.path))
         .collect();
-    let plan = plan_by_config_language(&files, &configs, Kind::Format, selection, opts);
+    let plan = plan_by_config_language(&files, &configs, Kind::Format, selection, opts, &[]);
     prefetch_tier2_grammars(&plan);
     // Same key, same resolution, same phase-agnostic answer as `lint_run`.
     let act_on_generated = acts_on_generated(&configs, opts.generated);
@@ -644,28 +656,6 @@ fn digest_if_enabled<T>(cache: &ResultCache, compute: impl FnOnce() -> T) -> Opt
 
 fn should_cache_result(elapsed: std::time::Duration) -> bool {
     elapsed >= MIN_CACHE_DURATION
-}
-
-/// Report an engine call that took long. Only a call that spent its time
-/// computing is flagged as a slow backend: one that mostly waited (on a lock, a
-/// saturated core, or a child process) says nothing about the backend's own
-/// cost on this file, so it is logged at `info` with both clocks instead.
-fn note_slow_engine(path: &std::path::Path, bytes: usize, engine: &str, time: EngineTime) {
-    let bytes = bytes as u64;
-    let elapsed_ms = time.wall.as_millis() as u64;
-    let cpu_ms = time.cpu.map(|cpu| cpu.as_millis() as u64);
-    let file = path.display();
-    if time.wall >= SLOW_ENGINE_WARN {
-        if time.mostly_waiting() {
-            tracing::info!(%file, bytes, engine, elapsed_ms, ?cpu_ms, "backend run mostly waiting, not computing");
-        } else if engine == GENERIC_TIER_ENGINE {
-            tracing::warn!(%file, bytes, engine, elapsed_ms, ?cpu_ms, "slow generic formatter run");
-        } else {
-            tracing::warn!(%file, bytes, engine, elapsed_ms, ?cpu_ms, "slow backend run; consider reporting it upstream");
-        }
-    } else if time.wall >= SLOW_ENGINE_DEBUG {
-        tracing::debug!(%file, bytes, engine, elapsed_ms, ?cpu_ms, "notable backend runtime");
-    }
 }
 
 /// Append one [`EngineDebug`] record when debug collection is active. `started`

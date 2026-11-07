@@ -17,7 +17,9 @@
 //! `(path, content digest)` list of the files it saw — any change to one file, the set, the config
 //! or the interpreter re-runs the whole check, and nothing else does.
 
+mod fixes;
 mod inputs;
+mod merge;
 mod scope;
 
 use std::path::{Path, PathBuf};
@@ -39,11 +41,11 @@ use crate::engine::{
     Diagnostic, ENABLED_OPTION_KEY, Engine, ProjectEnvironment, ProjectFile, ProjectRequest, WireSelection,
 };
 use crate::engine_guard::guard_engine_panic;
-use crate::filter::{PerFileIgnores, Suppressions, is_binary, is_generated_source, relative_for_match};
+use crate::filter::{PerFileIgnores, is_binary, is_generated_source};
 use crate::language::Language;
 use crate::registry::engines_for;
 use crate::resolve::ConfigSet;
-use crate::runner::SuppressedDiagnostic;
+use merge::{fold, merge_findings};
 
 /// Engines a test registered on top of the compiled-in registry; see
 /// [`with_extra_project_engines`].
@@ -77,13 +79,32 @@ struct ProjectPlan {
     engine: Arc<dyn Engine>,
     config_id: usize,
     config: EngineConfig,
+    /// The language the config was resolved against, which resolves the same engine config for any
+    /// other config scope a whole-tree plan reports on.
+    language: Language,
+    /// Planned for a config that owns none of the run's files but sits above a path it named.
+    ancestor: bool,
 }
 
 /// A project engine's findings for one file, before suppression.
+#[derive(Clone)]
 pub(super) struct ProjectFinding {
     path: PathBuf,
     config_id: usize,
+    /// The engine that reported it.
+    engine: &'static str,
     diagnostics: Vec<Diagnostic>,
+    /// The content the engine was given for `path`, which its edits are offsets into. `None` for a file
+    /// it was not given (or was given by name only).
+    loaded: Option<Arc<str>>,
+}
+
+/// Whether `--fix` applies the edits project findings carry, and whether it may rewrite a file that
+/// announces itself as machine-generated.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct FixMode {
+    pub(super) apply: bool,
+    pub(super) generated: bool,
 }
 
 /// What the phase produced.
@@ -91,10 +112,10 @@ pub(super) struct ProjectFinding {
 pub(super) struct ProjectOutcome {
     /// Findings, one entry per file an engine reported on.
     pub(super) findings: Vec<ProjectFinding>,
-    /// Content of every file an engine was given, for resolving inline directives.
-    contents: FxHashMap<PathBuf, Arc<str>>,
     /// Engines whose check failed outright.
     pub(super) errors: Vec<LintError>,
+    /// Per engine that ran, the files it was handed.
+    pub(super) reads: Vec<(&'static str, Vec<PathBuf>)>,
     /// Selections the run asked for that left nothing to run, charged to the skip budget.
     pub(super) skips: Vec<SkippedFile>,
 }
@@ -106,17 +127,74 @@ impl ProjectOutcome {
     }
 }
 
+/// Whether `engine` is switched on in `config`: not `enabled = false`, and past its gate key.
+fn is_active(engine: &dyn Engine, config: &EngineConfig) -> bool {
+    if config.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool) == Some(false) {
+        return false;
+    }
+    !engine
+        .project_inputs()
+        .gate_key
+        .is_some_and(|key| !config.options.contains_key(&key))
+}
+
+fn is_whole_tree(engine: &dyn Engine) -> bool {
+    engine.project_inputs().dirs.is_some_and(|dirs| dirs.whole_tree)
+}
+
+/// The configs that own none of the run's files but sit at or above a path it named, nearest-config
+/// resolved so a directory that two configs claim counts once.
+///
+/// `poly lint packages/a` never discovers a file of the root config, yet the root config is what
+/// decides a whole-tree check about the workspace `packages/a` is part of.
+pub(super) fn ancestor_configs(configs: &ConfigSet, paths: &[PathBuf]) -> Vec<usize> {
+    let named: Vec<PathBuf> = paths
+        .iter()
+        .map(|path| {
+            let dir = if path.is_dir() {
+                Some(path.as_path())
+            } else {
+                path.parent()
+            };
+            let dir = dir.filter(|dir| !dir.as_os_str().is_empty()).unwrap_or(Path::new("."));
+            scope::canonical(dir)
+        })
+        .collect();
+    (0..configs.len())
+        .filter(|&id| {
+            let Some(dir) = configs.config_dir(id) else {
+                return false;
+            };
+            configs.config_id_for(&dir.join("_")) == id && {
+                let dir = scope::canonical(dir);
+                named.iter().any(|named| named.starts_with(&dir))
+            }
+        })
+        .collect()
+}
+
+/// `ids` without the configs that own a file of the run. A config that owns files is planned for its own
+/// languages, so only a config owning none counts as an ancestor; the component pre-plan and the project
+/// planner both draw that line here.
+pub(crate) fn without_owning(ids: Vec<usize>, files: &[DiscoveredFile]) -> Vec<usize> {
+    let owning: FxHashSet<usize> = files.iter().map(|file| file.config_id).collect();
+    ids.into_iter().filter(|id| !owning.contains(id)).collect()
+}
+
 /// The project engines that apply to this run: those that declare the capability, are not
 /// switched off with `enabled = false`, and survive `--only` / `--skip`. They are the compiled-in
 /// ones and the downloadable components' (`components`).
 ///
 /// One plan per `(config, engine)`. The engine's config is resolved against the first language
 /// (by id) it serves in that config scope, which is the same table the per-file planner reads.
+/// A whole-tree engine is also planned for the configs above the named `paths`, whether or not they
+/// own a file of the run.
 fn plan_project_engines(
     files: &[DiscoveredFile],
     configs: &ConfigSet,
     selection: EngineSelection<'_>,
     components: &ResolvedComponents,
+    paths: &[PathBuf],
     index: &ComponentIndex,
 ) -> (Vec<ProjectPlan>, Vec<LintError>, Vec<SkippedFile>) {
     let mut scopes: Vec<(usize, Language)> = files
@@ -125,6 +203,11 @@ fn plan_project_engines(
         .collect::<FxHashSet<_>>()
         .into_iter()
         .collect();
+    let owning: FxHashSet<usize> = scopes.iter().map(|(id, _)| *id).collect();
+    let languages: FxHashSet<Language> = scopes.iter().map(|(_, language)| language.clone()).collect();
+    for id in without_owning(ancestor_configs(configs, paths), files) {
+        scopes.extend(languages.iter().map(|language| (id, language.clone())));
+    }
     scopes.sort_by(|a, b| (a.0, a.1.id()).cmp(&(b.0, b.1.id())));
     let extras: Vec<Arc<dyn Engine>> = EXTRA_ENGINES.lock().unwrap_or_else(PoisonError::into_inner).clone();
     let mut seen: FxHashSet<(usize, &'static str)> = FxHashSet::default();
@@ -134,6 +217,7 @@ fn plan_project_engines(
     let mut errored: FxHashSet<(usize, String)> = FxHashSet::default();
     let mut checked_tables: FxHashSet<(usize, String)> = FxHashSet::default();
     for (config_id, language) in &scopes {
+        let ancestor = !owning.contains(config_id);
         let registered = engines_for(language)
             .into_iter()
             .filter(|engine| engine.capabilities().project)
@@ -155,11 +239,17 @@ fn plan_project_engines(
         for engine in candidates {
             let declared = engine.selection();
             let table = declared.as_ref().map_or_else(|| engine.name(), |s| s.table.as_str());
-            if !selection.selects_declared(engine.name(), Some(table)) || !seen.insert((*config_id, engine.name())) {
+            if !selection.selects_declared(engine.name(), Some(table))
+                || (ancestor && !is_whole_tree(&*engine))
+                || !seen.insert((*config_id, engine.name()))
+            {
                 continue;
             }
             let config = configs.config(*config_id).engine_config(language, table, Kind::Lint);
             if config.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool) == Some(false) {
+                continue;
+            }
+            if !is_active(&*engine, &config) {
                 continue;
             }
             if let Some(declared) = &declared {
@@ -179,21 +269,16 @@ fn plan_project_engines(
                     }
                 }
             }
-            let gated_off = engine
-                .project_inputs()
-                .gate_key
-                .is_some_and(|key| !config.options.contains_key(&key));
-            if gated_off {
-                continue;
-            }
             plans.push(ProjectPlan {
                 engine,
                 config_id: *config_id,
                 config,
+                language: language.clone(),
+                ancestor,
             });
         }
         for (table, key) in declared_tables(index, language) {
-            if !checked_tables.insert((*config_id, table.clone())) {
+            if ancestor || !checked_tables.insert((*config_id, table.clone())) {
                 continue;
             }
             let config = configs.config(*config_id).engine_config(language, &table, Kind::Lint);
@@ -346,6 +431,70 @@ fn unavailable_backend(
     })
 }
 
+/// The plan, rooted above plan `at`, of the same whole-tree engine whose directories contain `at`'s root,
+/// if there is one.
+///
+/// A nested `poly.toml` makes its own scope, and so its own plan; a check about the whole tree walked
+/// from the nested directory would judge a fragment of the graph the outer plan judges whole, and
+/// report the same files twice. An outer plan that does not reach the nested root (its `dir` names a
+/// sibling) leaves the nested plan to run.
+fn covering_plan(plans: &[ProjectPlan], roots: &[PathBuf], at: usize) -> Option<usize> {
+    if !is_whole_tree(&*plans[at].engine) {
+        return None;
+    }
+    (0..plans.len()).find(|&other| {
+        other != at
+            && plans[other].engine.name() == plans[at].engine.name()
+            && roots[at] != roots[other]
+            && roots[at].starts_with(&roots[other])
+            && inputs::plan_dirs(&plans[other])
+                .ok()
+                .flatten()
+                .is_some_and(|dirs| dirs.absolute(&roots[other]).any(|dir| roots[at].starts_with(dir)))
+    })
+}
+
+/// A warning on the nested `poly.toml` of plan `at` when it sets analysis options the covering plan
+/// overrides, `None` when the two agree (a nested config inherits its parent's table, so they usually do).
+fn ignored_options_note(plans: &[ProjectPlan], roots: &[PathBuf], at: usize, outer: usize) -> Option<ProjectFinding> {
+    let analysis = |plan: &ProjectPlan| {
+        let mut options = plan.config.options.clone();
+        options.remove(ENABLED_OPTION_KEY);
+        options.remove("rules");
+        options
+    };
+    if analysis(&plans[at]) == analysis(&plans[outer]) {
+        return None;
+    }
+    let engine = plans[at].engine.name();
+    let diagnostic = Diagnostic {
+        engine: engine.to_owned(),
+        code: Some(NESTED_OPTIONS_CODE.to_owned()),
+        severity: crate::engine::Severity::Warning,
+        title: format!(
+            "`{engine}` options set here are ignored: the check runs once over the tree of {}, with that config's options",
+            roots[outer].display()
+        ),
+        description: Some(
+            "Only `enabled` and the per-rule levels of a nested config apply to its own files.".to_owned(),
+        ),
+        span: None,
+        url: None,
+        fix: Vec::new(),
+        metadata: std::collections::BTreeMap::new(),
+    };
+    Some(ProjectFinding {
+        path: roots[at].join(poly_config::CONFIG_FILE_NAMES[0]),
+        config_id: plans[at].config_id,
+        engine,
+        diagnostics: vec![diagnostic],
+        loaded: None,
+    })
+}
+
+/// Rule code of the warning a nested config gets when its options are overridden by the covering plan.
+const NESTED_OPTIONS_CODE: &str = "nested-options-ignored";
+
 /// The project root for a config scope: the directory holding its `poly.toml`, else the run root,
 /// else the working directory.
 fn root_for(configs: &ConfigSet, config_id: usize) -> PathBuf {
@@ -434,6 +583,9 @@ pub(super) struct RunInputs<'a> {
     pub(super) act_on_generated: &'a [bool],
     pub(super) paths: &'a [PathBuf],
     pub(super) exclude: &'a [String],
+    /// `[per-file-ignores]` per config, and the directories their globs are relative to.
+    pub(super) ignores: &'a [PerFileIgnores],
+    pub(super) ignore_bases: &'a [Vec<PathBuf>],
     /// The component index the run resolved its engines against.
     pub(super) index: &'a ComponentIndex,
 }
@@ -444,12 +596,15 @@ impl<'a> RunInputs<'a> {
         act_on_generated: &'a [bool],
         paths: &'a [PathBuf],
         opts: &'a crate::RunOptions,
+        filters: (&'a [PerFileIgnores], &'a [Vec<PathBuf>]),
     ) -> Self {
         Self {
             configs,
             act_on_generated,
             paths,
             exclude: &opts.exclude,
+            ignores: filters.0,
+            ignore_bases: filters.1,
             index: crate::components::run_index(opts),
         }
     }
@@ -494,16 +649,74 @@ fn report_for(
     Ok(reported)
 }
 
-/// Turn an engine's `reported` findings into [`ProjectFinding`]s: severity remapped, fixes dropped, and,
-/// when `narrowed_to` is set, only those on files the run named.
+/// Which config governs each file a whole-tree plan reports on, and how that config remaps severities.
+struct Governing<'a> {
+    plan: &'a ProjectPlan,
+    configs: &'a ConfigSet,
+    /// Per config id: its severity remap, or `None` when the engine is off there.
+    remaps: FxHashMap<usize, Option<crate::filter::SeverityRemap>>,
+}
+
+impl<'a> Governing<'a> {
+    fn new(plan: &'a ProjectPlan, configs: &'a ConfigSet) -> Self {
+        Self {
+            plan,
+            configs,
+            remaps: FxHashMap::default(),
+        }
+    }
+
+    /// The config governing `path` and the remap of its engine table; `None` when that config switches
+    /// the engine off, so a nested `enabled = false` silences its own subtree.
+    fn of(&mut self, path: &Path) -> (usize, Option<&crate::filter::SeverityRemap>) {
+        let id = self.configs.config_id_containing(path).unwrap_or_else(|| {
+            // Outside every nested config: the root config governs what sits under the root, and a
+            // file elsewhere (an engine `dir` pointing out of the tree) takes the plan's own config.
+            match self.configs.config_dir(0) {
+                Some(root) if path.starts_with(root) => 0,
+                _ => self.plan.config_id,
+            }
+        });
+        let (plan, configs) = (self.plan, self.configs);
+        let remap = self.remaps.entry(id).or_insert_with(|| {
+            let config = if id == plan.config_id {
+                plan.config.clone()
+            } else {
+                configs
+                    .config(id)
+                    .engine_config(&plan.language, plan.engine.name(), Kind::Lint)
+            };
+            is_active(&*plan.engine, &config).then(|| build_severity_remap(&config))
+        });
+        (id, remap.as_ref())
+    }
+}
+
+/// Turn an engine's `reported` findings into [`ProjectFinding`]s: severity remapped and, when
+/// `narrowed_to` is set, only those on files the run named.
+///
+/// A whole-tree engine (`covered` is set) reports across config scopes; each finding then takes the
+/// config governing its own file, so a nested `[per-file-ignores]`, rule level or `enabled = false`
+/// applies to its own subtree.
 fn collect_findings(
     plan: &ProjectPlan,
+    configs: &ConfigSet,
     reported: Vec<(PathBuf, Vec<Diagnostic>)>,
     narrowed_to: Option<&scope::RunScope>,
+    covered: Option<&FxHashSet<PathBuf>>,
+    loaded: &[ProjectFile],
     findings: &mut Vec<ProjectFinding>,
 ) {
-    let remap = build_severity_remap(&plan.config);
+    let own_remap = build_severity_remap(&plan.config);
+    let mut governing = Governing::new(plan, configs);
     for (path, mut diagnostics) in reported {
+        if covered.is_some_and(|covered| !covered.contains(&scope::canonical(&path))) {
+            continue;
+        }
+        let content = inputs::content_of(loaded, &path);
+        // The engine spells a path as the config directory it walked does, which is how config
+        // lookup is keyed; the admitted spelling is the run's own and serves display only.
+        let governing_path = path.clone();
         let path = match narrowed_to {
             Some(run_scope) => match run_scope.admit(&path) {
                 Some(admitted) => admitted,
@@ -511,31 +724,43 @@ fn collect_findings(
             },
             None => path,
         };
-        if !remap.is_empty() {
-            remap.apply(&mut diagnostics);
-        }
-        // The edits were computed against the engine's own view of the project and nothing
-        // applies them, so advertising them as fixable would be a promise `--fix` cannot keep.
-        for diagnostic in &mut diagnostics {
-            diagnostic.fix.clear();
-        }
+        let config_id = if covered.is_some() {
+            match governing.of(&governing_path) {
+                (_, None) => continue,
+                (id, Some(remap)) => {
+                    if !remap.is_empty() {
+                        remap.apply(&mut diagnostics);
+                    }
+                    id
+                }
+            }
+        } else {
+            if !own_remap.is_empty() {
+                own_remap.apply(&mut diagnostics);
+            }
+            plan.config_id
+        };
         findings.push(ProjectFinding {
             path,
-            config_id: plan.config_id,
+            config_id,
+            engine: plan.engine.name(),
             diagnostics,
+            loaded: content,
         });
     }
 }
 
-/// Run every applicable project engine over `files`.
+/// Run every applicable project engine over `files`; with `only`, just the engines it names.
 pub(super) fn run_project_phase(
     files: &[DiscoveredFile],
     run: &RunInputs<'_>,
     selection: EngineSelection<'_>,
     cache: &ResultCache,
     components: &ResolvedComponents,
+    only: Option<&FxHashSet<&'static str>>,
 ) -> ProjectOutcome {
-    let (plans, unavailable, skips) = plan_project_engines(files, run.configs, selection, components, run.index);
+    let (plans, unavailable, skips) =
+        plan_project_engines(files, run.configs, selection, components, run.paths, run.index);
     let mut outcome = ProjectOutcome {
         errors: unavailable,
         skips,
@@ -546,13 +771,21 @@ pub(super) fn run_project_phase(
     }
     let run_scope = scope::RunScope::new(run.paths);
     let mut environments: FxHashMap<PathBuf, ProjectEnvironment> = FxHashMap::default();
-    for plan in &plans {
+    let roots: Vec<PathBuf> = plans.iter().map(|plan| root_for(run.configs, plan.config_id)).collect();
+    for (at, plan) in plans.iter().enumerate() {
+        if only.is_some_and(|only| !only.contains(plan.engine.name())) {
+            continue;
+        }
+        if let Some(outer) = covering_plan(&plans, &roots, at) {
+            outcome.findings.extend(ignored_options_note(&plans, &roots, at, outer));
+            continue;
+        }
         let served = plan.engine.languages();
         let scoped: Vec<&DiscoveredFile> = files
             .iter()
             .filter(|f| f.config_id == plan.config_id && (served.is_empty() || served.contains(&f.language)))
             .collect();
-        if scoped.is_empty() {
+        if scoped.is_empty() && !plan.ancestor {
             continue;
         }
         let root = root_for(run.configs, plan.config_id);
@@ -594,405 +827,117 @@ pub(super) fn run_project_phase(
                 continue;
             }
         };
+        outcome.reads.push((
+            plan.engine.name(),
+            loaded.iter().map(|file| file.path.clone()).collect(),
+        ));
         let narrowed = dirs.is_some().then_some(&run_scope);
-        collect_findings(plan, reported, narrowed, &mut outcome.findings);
-        for file in loaded {
-            outcome.contents.entry(file.path).or_insert(file.content);
-        }
+        // A whole-tree check saw files the run's excludes drop; it reports only on the ones the run covers.
+        let covered = dirs
+            .as_ref()
+            .is_some_and(|dirs| dirs.whole_tree)
+            .then(|| scope::covered(files, &reported));
+        collect_findings(
+            plan,
+            run.configs,
+            reported,
+            narrowed,
+            covered.as_ref(),
+            &loaded,
+            &mut outcome.findings,
+        );
     }
     outcome
 }
 
-/// Fold project findings into the per-file results, applying inline `poly: allow` directives and
-/// `[per-file-ignores]` exactly as the per-file tier does.
+/// Run the project phase and fold its findings into `linted`, returning the checks that failed and the
+/// selections that left nothing to run.
 ///
-/// A finding for a file the per-file tier never produced a result for (it was skipped, or lies
-/// outside the discovered set) gets a result of its own.
-pub(super) fn merge_findings(
+/// Under `--fix` the edits are committed to disk, which moves every offset a remaining finding of the
+/// same file carries and can expose findings the old content hid. So when a pass rewrote a file the
+/// engines that reported on it run once more over the rewritten tree, and only that second pass is
+/// reported for them: its findings have spans into the files as they now are, and the groups the first
+/// pass deferred (they overlapped another edit) are tried again. An engine that was handed a rewritten
+/// file runs again even with no finding in it, since a whole-tree verdict may depend on a file it never
+/// reports on. Every other engine's first-pass findings stand: its input did not change, so running it
+/// again would repeat the walk, the read and the hash for the same answer. It is the last pass, never a loop.
+pub(super) fn run_and_merge(
     linted: &mut Vec<LintResult>,
-    outcome: ProjectOutcome,
-    ignores: &[PerFileIgnores],
-    ignore_bases: &[Vec<PathBuf>],
-) {
-    let ProjectOutcome {
-        findings, mut contents, ..
-    } = outcome;
-    let mut index: FxHashMap<PathBuf, usize> = linted.iter().enumerate().map(|(i, r)| (r.path.clone(), i)).collect();
-    for finding in findings {
-        let ProjectFinding {
-            path,
-            config_id,
-            mut diagnostics,
-        } = finding;
-        let content = contents
-            .remove(&path)
-            .or_else(|| std::fs::read_to_string(&path).ok().map(Arc::from));
-        let mut suppressed: Vec<SuppressedDiagnostic> = Vec::new();
-        if let Some(content) = &content {
-            let directives = Suppressions::parse(content);
-            if !directives.is_empty() {
-                directives.apply_directives(&path, &mut diagnostics, &mut suppressed);
-            }
+    files: &[DiscoveredFile],
+    run: &RunInputs<'_>,
+    selection: EngineSelection<'_>,
+    cache: &ResultCache,
+    components: &ResolvedComponents,
+    fix: FixMode,
+) -> (Vec<LintError>, Vec<SkippedFile>) {
+    let (ignores, ignore_bases) = (run.ignores, run.ignore_bases);
+    let mut phase = run_project_phase(files, run, selection, cache, components, None);
+    let (errors, skips) = phase.take_reports();
+    if !fix.apply {
+        merge_findings(linted, phase, ignores, ignore_bases, fix);
+        return (errors, skips);
+    }
+    let first_findings = phase.findings.clone();
+    let first_reads = std::mem::take(&mut phase.reads);
+    let mut first_pass = Vec::new();
+    merge_findings(&mut first_pass, phase, ignores, ignore_bases, fix);
+    let rewritten: FxHashSet<&Path> = first_pass
+        .iter()
+        .filter(|result| result.fixed > 0)
+        .map(|result| result.path.as_path())
+        .collect();
+    if rewritten.is_empty() {
+        fold(linted, first_pass);
+        return (errors, skips);
+    }
+    let rewritten_files: FxHashSet<PathBuf> = rewritten.iter().map(|path| scope::canonical(path)).collect();
+    let mut rerun: FxHashSet<&'static str> = first_findings
+        .iter()
+        .filter(|finding| rewritten.contains(finding.path.as_path()))
+        .map(|finding| finding.engine)
+        .collect();
+    rerun.extend(
+        first_reads
+            .iter()
+            .filter(|(_, read)| scope::reads_any(read, &rewritten_files))
+            .map(|(engine, _)| *engine),
+    );
+    // What the first pass fixed stays counted; what it still found is superseded by the second pass.
+    for result in &mut first_pass {
+        result.diagnostics.clear();
+        result.suppressed.clear();
+    }
+    fold(linted, first_pass);
+    let mut again = run_project_phase(files, run, selection, cache, components, Some(&rerun));
+    let carried = first_findings
+        .into_iter()
+        .filter(|finding| !rerun.contains(finding.engine));
+    again.findings.extend(carried.map(|mut finding| {
+        // Their edits were offered to the first pass; none of them is applied by the second.
+        for diagnostic in &mut finding.diagnostics {
+            diagnostic.fix.clear();
         }
-        if let Some(this_ignores) = ignores.get(config_id).filter(|set| !set.is_empty()) {
-            let bases = ignore_bases.get(config_id).map_or(&[][..], Vec::as_slice);
-            let rel = relative_for_match(&path, bases);
-            this_ignores.apply(&rel, &path, &mut diagnostics, &mut suppressed);
-        }
-        if diagnostics.is_empty() && suppressed.is_empty() {
-            continue;
-        }
-        match index.get(&path) {
-            Some(&at) => {
-                linted[at].diagnostics.append(&mut diagnostics);
-                linted[at].suppressed.append(&mut suppressed);
-            }
-            None => {
-                index.insert(path.clone(), linted.len());
-                linted.push(LintResult {
-                    path,
-                    config: config_id,
-                    diagnostics,
-                    suppressed,
-                    fix_withheld_generated: false,
-                    fixed: 0,
-                    skipped: None,
-                    error: None,
-                    debug: None,
-                });
-            }
+        finding
+    }));
+    // The second pass plans the same selection again, so its skips repeat the first pass's; they count once.
+    let (again_errors, _) = again.take_reports();
+    let errors = merge_errors(errors, again_errors);
+    merge_findings(linted, again, ignores, ignore_bases, fix);
+    (errors, skips)
+}
+
+/// `first` followed by what `second` adds: the same failure reported by both passes counts once.
+fn merge_errors(mut first: Vec<LintError>, second: Vec<LintError>) -> Vec<LintError> {
+    for error in second {
+        if !first
+            .iter()
+            .any(|seen| seen.path == error.path && seen.message == error.message)
+        {
+            first.push(error);
         }
     }
+    first
 }
 
 #[cfg(all(test, feature = "engine-python"))]
-mod gate_tests {
-    use super::*;
-    use crate::config::Config;
-    use poly_component_host::ComponentEngine;
-    use poly_component_protocol::{WireCapabilities, WireEngineDesc};
-
-    /// The `pyrefly` engine as the component index describes it: a Python project check.
-    fn pyrefly_component() -> ComponentEngine {
-        ComponentEngine::unavailable_declining("pyrefly", &pyrefly_desc(), "0000000000000000", "test").unwrap()
-    }
-
-    fn pyrefly_desc() -> WireEngineDesc {
-        WireEngineDesc {
-            name: "pyrefly".into(),
-            languages: vec!["python".into()],
-            capabilities: WireCapabilities {
-                lint: false,
-                format: false,
-                fix: false,
-                project: true,
-            },
-            version: "pyrefly-test".into(),
-            option_keys: Vec::new(),
-            hooks: 0,
-            takes_over_tier_one: false,
-            claimed_paths: Vec::new(),
-            host_hook: "none".into(),
-            supplements_tier_one: false,
-            self_manages_enabled: false,
-            supersedes_generic_formatter: false,
-            batch_shard_floor: 2,
-            project_inputs: Default::default(),
-            selection: Some(WireSelection {
-                table: "python-types".into(),
-                key: "backend".into(),
-                value: "pyrefly".into(),
-                default: false,
-            }),
-        }
-    }
-
-    fn planned(config: Config) -> Vec<&'static str> {
-        let files = [DiscoveredFile {
-            path: PathBuf::from("app.py"),
-            language: Language::Python,
-            config_id: 0,
-        }];
-        let configs = ConfigSet::single(config);
-        let components = ResolvedComponents::serving(0, Language::Python, vec![pyrefly_component()]);
-        plan_project_engines(
-            &files,
-            &configs,
-            EngineSelection::new(&[], &[]),
-            &components,
-            poly_component_index::index(),
-        )
-        .0
-        .iter()
-        .map(|plan| plan.engine.name())
-        .collect()
-    }
-
-    fn with_backend(backend: &str) -> Config {
-        let lint: toml::Table = toml::from_str(&format!("[python.python-types]\nbackend = \"{backend}\"\n")).unwrap();
-        Config {
-            lint,
-            ..Config::default()
-        }
-    }
-
-    #[test]
-    fn python_types_is_not_planned_without_a_backend() {
-        assert!(planned(Config::default()).is_empty());
-    }
-
-    #[test]
-    fn the_ty_backend_plans_ty_and_not_pyrefly() {
-        assert_eq!(planned(with_backend("ty")), ["python-types"]);
-    }
-
-    #[test]
-    fn the_pyrefly_backend_plans_the_component_engine_and_ty_stands_down() {
-        assert_eq!(planned(with_backend("pyrefly")), ["pyrefly"]);
-    }
-
-    #[test]
-    fn an_unknown_backend_plans_the_default_so_it_can_report_the_value() {
-        assert_eq!(planned(with_backend("nonsense")), ["python-types"]);
-    }
-
-    #[test]
-    fn the_routed_engine_reads_the_shared_table() {
-        let files = [DiscoveredFile {
-            path: PathBuf::from("app.py"),
-            language: Language::Python,
-            config_id: 0,
-        }];
-        let lint: toml::Table =
-            toml::from_str("[python.python-types]\nbackend = \"pyrefly\"\npython_version = \"3.11\"\n").unwrap();
-        let configs = ConfigSet::single(Config {
-            lint,
-            ..Config::default()
-        });
-        let components = ResolvedComponents::serving(0, Language::Python, vec![pyrefly_component()]);
-        let (plans, _, _) = plan_project_engines(
-            &files,
-            &configs,
-            EngineSelection::new(&[], &[]),
-            &components,
-            poly_component_index::index(),
-        );
-        assert_eq!(plans.len(), 1);
-        assert_eq!(
-            plans[0]
-                .config
-                .options
-                .get("python_version")
-                .and_then(toml::Value::as_str),
-            Some("3.11")
-        );
-    }
-
-    #[test]
-    fn switching_the_shared_table_off_stops_both_backends() {
-        let lint: toml::Table =
-            toml::from_str("[python.python-types]\nbackend = \"pyrefly\"\nenabled = false\n").unwrap();
-        let config = Config {
-            lint,
-            ..Config::default()
-        };
-        assert!(planned(config).is_empty());
-    }
-
-    fn planned_with(config: Config, only: &[&str], skip: &[&str]) -> Vec<&'static str> {
-        let files = [DiscoveredFile {
-            path: PathBuf::from("app.py"),
-            language: Language::Python,
-            config_id: 0,
-        }];
-        let (only, skip): (Vec<String>, Vec<String>) = (
-            only.iter().map(|s| (*s).to_owned()).collect(),
-            skip.iter().map(|s| (*s).to_owned()).collect(),
-        );
-        let configs = ConfigSet::single(config);
-        let components = ResolvedComponents::serving(0, Language::Python, vec![pyrefly_component()]);
-        plan_project_engines(
-            &files,
-            &configs,
-            EngineSelection::new(&only, &skip),
-            &components,
-            poly_component_index::index(),
-        )
-        .0
-        .iter()
-        .map(|plan| plan.engine.name())
-        .collect()
-    }
-
-    #[test]
-    fn skipping_the_shared_table_stops_the_pyrefly_backend() {
-        assert!(planned_with(with_backend("pyrefly"), &[], &["python-types"]).is_empty());
-        assert_eq!(planned_with(with_backend("pyrefly"), &[], &["ruff"]), ["pyrefly"]);
-    }
-
-    #[test]
-    fn only_the_shared_table_keeps_the_pyrefly_backend() {
-        assert_eq!(
-            planned_with(with_backend("pyrefly"), &["python-types"], &[]),
-            ["pyrefly"]
-        );
-        assert_eq!(planned_with(with_backend("pyrefly"), &["pyrefly"], &[]), ["pyrefly"]);
-        assert!(planned_with(with_backend("pyrefly"), &["ruff"], &[]).is_empty());
-    }
-
-    #[test]
-    fn the_table_name_selects_the_ty_backend_too() {
-        assert_eq!(
-            planned_with(with_backend("ty"), &["python-types"], &[]),
-            ["python-types"]
-        );
-        assert!(planned_with(with_backend("ty"), &[], &["python-types"]).is_empty());
-    }
-
-    #[test]
-    fn a_non_string_backend_plans_the_default_so_it_can_report_the_value() {
-        for value in ["1", "true", "[\"pyrefly\"]"] {
-            let lint: toml::Table = toml::from_str(&format!("[python.python-types]\nbackend = {value}\n")).unwrap();
-            let config = Config {
-                lint,
-                ..Config::default()
-            };
-            assert_eq!(planned(config), ["python-types"], "backend = {value}");
-        }
-    }
-
-    #[test]
-    fn a_backend_whose_engine_this_run_lacks_is_an_error_naming_the_component() {
-        let files = [DiscoveredFile {
-            path: PathBuf::from("app.py"),
-            language: Language::Python,
-            config_id: 0,
-        }];
-        let configs = ConfigSet::single(with_backend("pyrefly"));
-        let no_components = ResolvedComponents::default();
-        let (plans, errors, _) = plan_project_engines(
-            &files,
-            &configs,
-            EngineSelection::new(&[], &[]),
-            &no_components,
-            poly_component_index::index(),
-        );
-        assert!(plans.is_empty());
-        assert_eq!(
-            errors.len(),
-            1,
-            "{:?}",
-            errors.iter().map(|e| &e.message).collect::<Vec<_>>()
-        );
-        let message = &errors[0].message;
-        assert!(
-            message.contains("`pyrefly` component") && message.contains("[components] disable"),
-            "{message}"
-        );
-
-        let skip = ["pyrefly".to_owned()];
-        let (_, errors, _) = plan_project_engines(
-            &files,
-            &configs,
-            EngineSelection::new(&[], &skip),
-            &no_components,
-            poly_component_index::index(),
-        );
-        assert!(errors.is_empty(), "a run that skipped the backend asked for that");
-    }
-
-    fn planned_all(config: Config, only: &[&str], index: &ComponentIndex) -> (usize, Vec<String>, Vec<String>) {
-        let files = [DiscoveredFile {
-            path: PathBuf::from("app.py"),
-            language: Language::Python,
-            config_id: 0,
-        }];
-        let only: Vec<String> = only.iter().map(|s| (*s).to_owned()).collect();
-        let configs = ConfigSet::single(config);
-        let components = ResolvedComponents::serving(0, Language::Python, vec![pyrefly_component()]);
-        let (plans, errors, skips) =
-            plan_project_engines(&files, &configs, EngineSelection::new(&only, &[]), &components, index);
-        (
-            plans.len(),
-            errors.into_iter().map(|e| e.message).collect(),
-            skips.into_iter().map(|s| s.reason).collect(),
-        )
-    }
-
-    #[test]
-    fn only_pyrefly_over_another_backend_is_a_counted_skip_naming_why() {
-        let (plans, errors, skips) = planned_all(with_backend("ty"), &["pyrefly"], poly_component_index::index());
-        assert_eq!((plans, errors.len()), (0, 0));
-        assert_eq!(
-            skips,
-            ["`--only pyrefly` selects nothing here: `[python-types] backend` is \"ty\""]
-        );
-        assert!(
-            !crate::is_withdrawal_reason(&skips[0]),
-            "must be charged to --deny-skips"
-        );
-        let (_, _, skips) = planned_all(Config::default(), &["python-types"], poly_component_index::index());
-        assert_eq!(
-            skips,
-            ["`--only python-types` selects nothing here: `[python-types] backend` is unset"]
-        );
-    }
-
-    #[test]
-    fn an_unrelated_only_or_a_satisfied_one_adds_no_skip() {
-        let index = poly_component_index::index();
-        assert!(planned_all(with_backend("ty"), &["ruff"], index).2.is_empty());
-        assert!(planned_all(with_backend("pyrefly"), &["pyrefly"], index).2.is_empty());
-        assert!(planned_all(with_backend("ty"), &[], index).2.is_empty());
-    }
-
-    fn fake_index() -> ComponentIndex {
-        let mut desc = pyrefly_desc();
-        desc.name = "fake".into();
-        desc.selection = Some(WireSelection {
-            table: "fake-types".into(),
-            key: "backend".into(),
-            value: "x".into(),
-            default: true,
-        });
-        ComponentIndex {
-            components: vec![poly_component_index::Component {
-                name: "fakes".into(),
-                engines: vec![desc],
-                ..Default::default()
-            }],
-            ..ComponentIndex::default()
-        }
-    }
-
-    #[test]
-    fn a_missing_default_engine_is_an_error_not_silence() {
-        let lint: toml::Table = toml::from_str("[python.fake-types]\nbackend = \"x\"\n").unwrap();
-        let config = Config {
-            lint,
-            ..Config::default()
-        };
-        let (_, errors, _) = planned_all(config, &[], &fake_index());
-        assert_eq!(errors.len(), 1, "{errors:?}");
-        assert!(errors[0].contains("`fakes` component"), "{}", errors[0]);
-    }
-
-    #[test]
-    fn the_run_index_decides_what_is_claimed() {
-        let files = [DiscoveredFile {
-            path: PathBuf::from("app.py"),
-            language: Language::Python,
-            config_id: 0,
-        }];
-        let configs = ConfigSet::single(with_backend("pyrefly"));
-        let none = ResolvedComponents::default();
-        let empty = ComponentIndex::default();
-        let (plans, errors, _) = plan_project_engines(&files, &configs, EngineSelection::new(&[], &[]), &none, &empty);
-        assert!(errors.is_empty(), "{errors:?}");
-        assert_eq!(
-            plans.len(),
-            1,
-            "no engine of this run's index claims `pyrefly`, so the default reports it"
-        );
-    }
-}
+mod tests;

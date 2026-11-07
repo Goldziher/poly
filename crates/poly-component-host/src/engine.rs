@@ -106,6 +106,9 @@ fn project_inputs(wire: &WireProjectInputs) -> ProjectInputs {
             dir_default: dirs.dir_default.clone(),
             paths_key: dirs.paths_key.clone(),
             recursive_key: dirs.recursive_key.clone(),
+            recursive_default: dirs.recursive_default,
+            whole_tree: dirs.whole_tree,
+            file_names: dirs.file_names.clone(),
             list_unserved: dirs.list_unserved,
         }),
     }
@@ -495,7 +498,10 @@ impl Engine for ComponentEngine {
         let mut files = Vec::with_capacity(req.files.len());
         let mut originals: HashMap<String, PathBuf> = HashMap::with_capacity(req.files.len());
         for file in req.files {
-            let rel = relative(&file.path).display().to_string();
+            let rel = relative(&file.path)
+                .display()
+                .to_string()
+                .replace(std::path::MAIN_SEPARATOR, "/");
             files.push(WireFileSlice {
                 path: rel.clone(),
                 language: file.language.id().to_owned(),

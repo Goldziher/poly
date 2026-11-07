@@ -3,12 +3,12 @@
 use std::sync::Arc;
 
 use super::batch::LintPrefill;
-use super::engine_clock::EngineClock;
+use super::engine_clock::{EngineClock, note_slow_engine};
 use super::fast::decode_payload;
 use super::fast::encode_payload;
 use super::plan::EnginePlan;
 use super::types::RunDebug;
-use super::{guard_engine_panic, note_slow_engine, push_engine_debug};
+use super::{guard_engine_panic, push_engine_debug};
 use crate::discover::DiscoveredFile;
 use crate::engine::{Diagnostic, SourceFile};
 

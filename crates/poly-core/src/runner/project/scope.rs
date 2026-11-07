@@ -8,7 +8,10 @@
 
 use std::path::{Path, PathBuf};
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
+
+use crate::discover::DiscoveredFile;
+use crate::engine::Diagnostic;
 
 /// The paths a run named: directories (everything beneath them is in scope) and files.
 pub(super) struct RunScope {
@@ -26,6 +29,27 @@ pub(super) fn canonical(path: &Path) -> PathBuf {
             _ => Err(error),
         })
         .unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// The canonical paths among `files` that `reported` names: what discovery kept, out of the files
+/// a whole-tree check was handed. Only files sharing a name with a finding are resolved, since
+/// canonicalizing every discovered file to answer for a handful of findings would cost a syscall each.
+pub(super) fn covered(files: &[DiscoveredFile], reported: &[(PathBuf, Vec<Diagnostic>)]) -> FxHashSet<PathBuf> {
+    let names: FxHashSet<&std::ffi::OsStr> = reported.iter().filter_map(|(path, _)| path.file_name()).collect();
+    files
+        .iter()
+        .filter(|file| file.path.file_name().is_some_and(|name| names.contains(name)))
+        .map(|file| canonical(&file.path))
+        .collect()
+}
+
+/// Whether any of `read` is one of the `rewritten` files (canonical paths). Only files sharing a name
+/// with a rewritten one are resolved, for the reason [`covered`] gives.
+pub(super) fn reads_any(read: &[PathBuf], rewritten: &FxHashSet<PathBuf>) -> bool {
+    let names: FxHashSet<&std::ffi::OsStr> = rewritten.iter().filter_map(|path| path.file_name()).collect();
+    read.iter()
+        .filter(|path| path.file_name().is_some_and(|name| names.contains(name)))
+        .any(|path| rewritten.contains(&canonical(path)))
 }
 
 impl RunScope {

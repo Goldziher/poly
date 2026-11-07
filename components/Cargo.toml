@@ -62,6 +62,7 @@ rumdl = { version = "0.3", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml = "0.9"
+skif = { version = "=0.1.1", default-features = false, features = ["manifest", "js-analysis", "fix"] }
 sort-package-json = "1.0.0"
 taplo = "0.14"
 tempfile = "3"
@@ -73,6 +74,21 @@ lto = "thin"
 codegen-units = 1
 
 [patch.crates-io]
-# oxc_formatter_yaml/toml pull `oxc_allocator` from the registry through their parsers; resolve it to
-# the same git copy as the rest of the oxc crates so the web family has a single `Allocator` type.
+# One copy of every oxc crate a registry dependency pulls in: `oxc_formatter_yaml`/`toml` reach
+# `oxc_allocator` through their parsers, and skif's `skif-js-syntax` takes the parser, semantic and AST
+# crates at `^0.157`. Each resolves to the same git copy as the rest of the oxc crates so the web family has
+# one `Allocator`, one `Span` and one AST. ADR 0044.
 oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_ast = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_ast_macros = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_ast_visit = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_data_structures = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_ecmascript = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_estree = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_parser = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_regular_expression = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_semantic = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_str = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_syntax = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }

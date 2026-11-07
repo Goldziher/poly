@@ -1664,6 +1664,24 @@
           "description": "Boolean option extending the directories to their subdirectories.",
           "type": ["string", "null"]
         },
+        "recursive_default": {
+          "description": "Whether the directories extend to their subdirectories when the option is unset. Absent in\ndescriptions written before it existed, which read as `false`.",
+          "type": "boolean",
+          "default": false
+        },
+        "whole_tree": {
+          "description": "Whether the walk honors only `.gitignore` and the always-pruned directories. Absent reads as `false`.",
+          "type": "boolean",
+          "default": false
+        },
+        "file_names": {
+          "description": "File names handed over wherever the walk finds them, whatever their language. Absent reads as empty.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
         "list_unserved": {
           "description": "Whether the host also lists the files the engine does not serve (names only).",
           "type": "boolean"
