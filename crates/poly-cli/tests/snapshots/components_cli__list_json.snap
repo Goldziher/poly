@@ -37,6 +37,16 @@ expression: json
       ]
     },
     {
+      "name": "pyrefly",
+      "kind": "engines",
+      "state": "unavailable",
+      "opt_in": true,
+      "engines": [
+        "pyrefly"
+      ],
+      "detail": "this build embeds no component lock"
+    },
+    {
       "name": "sql",
       "kind": "engines",
       "state": "bundled",

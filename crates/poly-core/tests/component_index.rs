@@ -58,14 +58,17 @@ const PLACEMENT: &[(&str, Placement)] = &[
 /// the `components/` workspace), so their index entries are carried over from the committed index.
 /// The family crates' own tests (`components/crates/poly-engines-ruby/tests/rubyfmt.rs`,
 /// `components/crates/poly-engines-biome/tests/index.rs`,
-/// `components/crates/poly-engines-web/tests/component_index.rs`) check the entries against the real
-/// engines.
-const EXTERNAL_COMPONENTS: &[&str] = &["biome", "ruby", "web"];
+/// `components/crates/poly-engines-web/tests/component_index.rs`, and
+/// `components-pyrefly/crates/poly-engines-pyrefly/tests/index.rs` for the pyrefly workspace) check the
+/// entries against the real engines.
+const EXTERNAL_COMPONENTS: &[&str] = &["biome", "pyrefly", "ruby", "web"];
 
 /// Components in index order: name, kind, opt-in, cargo features.
 const COMPONENTS: &[(&str, ComponentKind, bool, &[&str])] = &[
     ("web", ComponentKind::Engines, false, &["engine-web"]),
     ("python", ComponentKind::Engines, false, &["engine-python"]),
+    // Opt-in: ty is the default type checker, and `[engines.python-types] backend = "pyrefly"` selects this one.
+    ("pyrefly", ComponentKind::Engines, true, &["engine-pyrefly"]),
     ("sql", ComponentKind::Engines, false, &["engine-sql"]),
     ("php", ComponentKind::Engines, false, &["engine-php"]),
     ("biome", ComponentKind::Engines, false, &["engine-biome"]),
@@ -175,12 +178,14 @@ fn regenerate(committed: &ComponentIndex) -> ComponentIndex {
         .collect();
     presets.insert("all".to_owned(), all);
     for (alias, languages) in ALIASES {
+        // Opt-in components stay out of aliases as they do out of `all`: the alias names the default set.
         let serving: Vec<String> = components
             .iter()
             .filter(|c| {
-                c.engines
-                    .iter()
-                    .any(|e| e.languages.iter().any(|l| languages.contains(&l.as_str())))
+                !c.opt_in
+                    && c.engines
+                        .iter()
+                        .any(|e| e.languages.iter().any(|l| languages.contains(&l.as_str())))
             })
             .map(|c| c.name.clone())
             .collect();

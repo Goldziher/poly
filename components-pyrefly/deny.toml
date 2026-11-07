@@ -1,0 +1,43 @@
+[licenses]
+version = 2
+# Workspace crates are never published; the alef-generated component producer crate carries no
+# license field.
+private = { ignore = true }
+confidence-threshold = 0.9
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unlicense",
+  "Zlib",
+  "CC0-1.0",
+  "Unicode-DFS-2016",
+  "Unicode-3.0",
+  "BSL-1.0",
+  "0BSD",
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "allow"
+
+[advisories]
+version = 2
+ignore = [
+  # Unmaintained crates pyrefly depends on itself: `derivative` (RUSTSEC-2024-0388), `fxhash` (RUSTSEC-2025-0057)
+  # and `paste` (RUSTSEC-2024-0436). None is a vulnerability; they leave with the pinned pyrefly rev.
+  "RUSTSEC-2024-0388",
+  "RUSTSEC-2025-0057",
+  "RUSTSEC-2024-0436",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+# pyrefly is only available from git: the crates.io `pyrefly` 0.0.1 is an unrelated crate, and its
+# `pyrefly_*` workspace crates (config, build, python, util) are not published at all. They are one
+# monorepo, pinned to one rev (ADR 0041).
+allow-git = ["https://github.com/facebook/pyrefly"]
