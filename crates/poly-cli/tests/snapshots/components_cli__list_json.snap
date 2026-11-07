@@ -124,6 +124,15 @@ expression: json
       ]
     },
     {
+      "name": "sh",
+      "kind": "sidecar",
+      "state": "bundled",
+      "opt_in": false,
+      "engines": [
+        "shfmt"
+      ]
+    },
+    {
       "name": "mcp",
       "kind": "frontend",
       "state": "unavailable",

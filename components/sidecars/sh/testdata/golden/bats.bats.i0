@@ -1,0 +1,6 @@
+#!/usr/bin/env bats
+
+@test "adds" {
+	run echo 1
+	[ "$status" -eq 0 ]
+}

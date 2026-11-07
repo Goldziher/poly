@@ -1,0 +1,28 @@
+name: sidecar-vuln
+
+# New advisories land against unchanged code, so the Go sidecars' govulncheck also runs weekly, apart
+# from the per-change gate in ci.yaml (which runs the whole mise task).
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: xberg-io/actions/setup-mise@v1
+        with:
+          tools: >-
+            go
+            go:golang.org/x/vuln/cmd/govulncheck
+      - name: govulncheck
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: mise run sidecar:check vuln

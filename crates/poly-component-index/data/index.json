@@ -2370,6 +2370,79 @@
       "lock_sha": null
     },
     {
+      "name": "sh",
+      "kind": "sidecar",
+      "opt_in": false,
+      "features": ["engine-shfmt"],
+      "engines": [
+        {
+          "name": "shfmt",
+          "languages": ["shell"],
+          "capabilities": {
+            "lint": false,
+            "format": true,
+            "fix": false,
+            "project": false
+          },
+          "version": "v3.14.1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "enabled",
+                  "types": 1
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "enabled",
+                  "types": 1
+                },
+                {
+                  "name": "use_tabs",
+                  "types": 1
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 0,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "editorconfig",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
+        }
+      ],
+      "lock_sha": null
+    },
+    {
       "name": "mcp",
       "kind": "frontend",
       "opt_in": false,
@@ -2379,7 +2452,7 @@
     }
   ],
   "presets": {
-    "all": ["web", "python", "sql", "php", "biome", "ruby", "nix", "astgrep", "misc"],
+    "all": ["web", "python", "sql", "php", "biome", "ruby", "nix", "astgrep", "misc", "sh"],
     "css": ["web", "biome"],
     "dockerfile": ["misc"],
     "dotenv": ["misc"],
@@ -2393,6 +2466,7 @@
     "php": ["php"],
     "python": ["python"],
     "ruby": ["ruby"],
+    "shell": ["sh"],
     "sql": ["sql"],
     "toml": ["web"],
     "ts": ["web"],

@@ -60,7 +60,7 @@ const PLACEMENT: &[(&str, Placement)] = &[
 /// `components/crates/poly-engines-biome/tests/index.rs`,
 /// `components/crates/poly-engines-web/tests/component_index.rs`) check the entries against the real
 /// engines.
-const EXTERNAL_COMPONENTS: &[&str] = &["biome", "ruby", "web"];
+const EXTERNAL_COMPONENTS: &[&str] = &["biome", "ruby", "web", "sh"];
 
 /// Components in index order: name, kind, opt-in, cargo features.
 const COMPONENTS: &[(&str, ComponentKind, bool, &[&str])] = &[
@@ -86,6 +86,10 @@ const COMPONENTS: &[(&str, ComponentKind, bool, &[&str])] = &[
             "engine-graphql",
         ],
     ),
+    // The `sh` sidecar is a Go executable, so its entry is carried over like the git-pinned
+    // families'; `components/sidecars/sh` and `poly-component-host/tests/sidecar.rs` check it against the
+    // real executable. `engine-shfmt` is the poly-core feature that keeps the host `shfmt` instead.
+    ("sh", ComponentKind::Sidecar, false, &["engine-shfmt"]),
     ("mcp", ComponentKind::Frontend, false, &[]),
 ];
 
@@ -105,6 +109,7 @@ const ALIASES: &[(&str, &[&str])] = &[
         ],
     ),
     ("python", &["python"]),
+    ("shell", &["shell"]),
     ("php", &["php"]),
     ("sql", &["sql"]),
     ("nix", &["nix"]),
@@ -177,7 +182,7 @@ fn regenerate(committed: &ComponentIndex) -> ComponentIndex {
     let mut presets = BTreeMap::new();
     let all: Vec<String> = components
         .iter()
-        .filter(|c| c.kind == ComponentKind::Engines && !c.opt_in)
+        .filter(|c| c.kind.hosts_engines() && !c.opt_in)
         .map(|c| c.name.clone())
         .collect();
     presets.insert("all".to_owned(), all);
@@ -233,7 +238,7 @@ fn every_engine_component_hosts_engines_and_every_engine_has_one_home() {
     let index = regenerate(&committed);
     for component in &index.components {
         assert_eq!(
-            component.kind == ComponentKind::Engines,
+            component.kind.hosts_engines(),
             !component.engines.is_empty(),
             "component `{}`",
             component.name

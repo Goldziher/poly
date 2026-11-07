@@ -162,6 +162,11 @@ fn classify(error: &anyhow::Error, installed: bool) -> Unavailable {
             | ComponentError::IncompatibleAbi { .. }
             | ComponentError::UnsupportedManifest
             | ComponentError::UnsupportedLockSchema(_)
+            | ComponentError::SidecarProtocol(_)
+            | ComponentError::SidecarStopped
+            | ComponentError::SidecarTimeout
+            | ComponentError::SidecarCall { .. }
+            | ComponentError::UnsupportedTransport(_)
             | ComponentError::LibraryLoad { .. }
             | ComponentError::MissingEntrypoint(_)
             | ComponentError::InvalidDescriptor(_),
