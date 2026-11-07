@@ -244,6 +244,9 @@ fn plan_project_engines(
             if config.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool) == Some(false) {
                 continue;
             }
+            if !is_active(&*engine, &config) {
+                continue;
+            }
             if let Some(declared) = &declared {
                 match picked(declared, &config.options, &declared_here, index) {
                     Pick::Mine => {}
@@ -260,9 +263,6 @@ fn plan_project_engines(
                         continue;
                     }
                 }
-            }
-            if !is_active(&*engine, &config) {
-                continue;
             }
             plans.push(ProjectPlan {
                 engine,

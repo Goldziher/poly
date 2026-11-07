@@ -74,6 +74,11 @@ fn python_types_is_not_planned_without_a_backend() {
 }
 
 #[test]
+fn python_types_is_planned_once_a_backend_is_set() {
+    assert!(planned_with(with_backend("ty"), &[], &[]).contains(&"python-types"));
+}
+
+#[test]
 fn the_ty_backend_plans_ty_and_not_pyrefly() {
     assert_eq!(planned(with_backend("ty")), ["python-types"]);
 }
@@ -334,5 +339,76 @@ fn the_run_index_decides_what_is_claimed() {
         plans.len(),
         1,
         "no engine of this run's index claims `pyrefly`, so the default reports it"
+    );
+}
+
+/// A Python project check that shares the `python-types` selection with the real engines and sits behind its own
+/// gate option.
+struct Gated;
+
+impl Engine for Gated {
+    fn name(&self) -> &'static str {
+        "gated-check"
+    }
+    fn languages(&self) -> &'static [Language] {
+        &[Language::Python]
+    }
+    fn capabilities(&self) -> crate::engine::Capabilities {
+        crate::engine::Capabilities {
+            project: true,
+            ..Default::default()
+        }
+    }
+    fn version(&self) -> &str {
+        "1"
+    }
+    fn project_inputs(&self) -> crate::engine::ProjectInputs {
+        crate::engine::ProjectInputs {
+            gate_key: Some("armed".to_owned()),
+            ..Default::default()
+        }
+    }
+    fn selection(&self) -> Option<poly_component_protocol::WireSelection> {
+        Some(poly_component_protocol::WireSelection {
+            table: "python-types".to_owned(),
+            key: "backend".to_owned(),
+            value: "gated".to_owned(),
+            default: true,
+        })
+    }
+}
+
+#[test]
+fn an_engine_behind_a_gate_that_is_off_never_reports_an_unavailable_backend() {
+    let files = [DiscoveredFile {
+        path: PathBuf::from("app.py"),
+        language: Language::Python,
+        config_id: 0,
+    }];
+    let plan_errors = |config: Config| {
+        let configs = ConfigSet::single(config);
+        let none = ResolvedComponents::default();
+        let engines: Vec<Arc<dyn Engine>> = vec![Arc::new(Gated)];
+        with_extra_project_engines(engines, || {
+            let (_, errors, _) = plan_project_engines(
+                &files,
+                &configs,
+                EngineSelection::new(&[], &[]),
+                &none,
+                &[],
+                poly_component_index::index(),
+            );
+            errors.len()
+        })
+    };
+    let lint: toml::Table = toml::from_str("[python.python-types]\nbackend = \"pyrefly\"\n").unwrap();
+    let off = Config {
+        lint,
+        ..Config::default()
+    };
+    assert_eq!(
+        plan_errors(off),
+        1,
+        "the unavailable `pyrefly` is reported by the default engine only"
     );
 }
