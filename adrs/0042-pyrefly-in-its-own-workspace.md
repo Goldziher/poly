@@ -64,6 +64,22 @@ and a finding that depends on a not-yet-saved edit to an imported module is comp
 copy. In practice a whole-project run is exact, and a run over a path subset reports findings only in those
 files, resolved against the rest of the tree as it is on disk. ty behaves the same way.
 
+## Measurements
+
+aarch64-apple-darwin, release profile with thin LTO and stripped symbols (the release workflow's flags).
+
+| | pyrefly component | python component (ruff and ty) |
+|---|---|---|
+| cdylib | 15.4 MB (14.7 MiB) | 31.5 MB (30.0 MiB) |
+| `.tar.gz` | 7.5 MB (7.1 MiB) | 12.6 MB (12.1 MiB) |
+
+A cold `poly lint --no-cache --only <engine>` over a small project (eight modules, two type errors each, both
+backends reporting the same sixteen findings), with the core binary loading the component from a file:// lock:
+first run 1.03 s for pyrefly and 1.24 s for ty, both including installing and loading the component; later runs with
+the result cache still off 0.08 to 0.11 s for pyrefly and 0.10 to 0.17 s for ty. The first run is dominated by the
+install, not the check, so the figures say the backends cost about the same on a small project, not which one
+scales better.
+
 ## Alternatives considered
 
 - **Make rumdl's allocator optional or bump it to 0.7.** Rejected: it is upstream work outside poly's
