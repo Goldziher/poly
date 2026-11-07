@@ -25,6 +25,10 @@ pub use wire::*;
 pub const PROTOCOL_VERSION: u32 = 2;
 
 /// The JSON Schema of [`ProtocolSchema`], pretty-printed with a trailing newline.
+///
+/// Behind the `schemars` feature: the released core never publishes the schema, so it does not link
+/// schemars for it.
+#[cfg(feature = "schemars")]
 pub fn json_schema() -> String {
     let schema = schemars::schema_for!(ProtocolSchema);
     let mut out = serde_json::to_string_pretty(&schema).expect("a schema is always serializable");

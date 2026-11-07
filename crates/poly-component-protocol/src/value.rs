@@ -1,13 +1,13 @@
 //! [`WireValue`]: the wire replacement for `toml::Value`.
 
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A dynamically typed config value. Mirrors the TOML data model so a component never links `toml`.
 ///
 /// Tables are an ordered list of pairs rather than a map: the order is preserved exactly as the
 /// sender produced it, and a non-Rust implementer needs no ordered-map type.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum WireValue {
     /// A string.
     String(String),

@@ -31,6 +31,7 @@ members = [
   "crates/poly-engines-typos",
   "crates/poly-engines-typos-component",
   "crates/poly-engines-uncomment",
+  "crates/poly-engines-uncomment-component",
   "crates/poly-frontend-api",
   "crates/poly-grammar",
   "crates/poly-hooks",
@@ -212,3 +213,11 @@ zip = { version = "9.4", default-features = false, features = ["deflate-flate2-z
 lto = "thin"
 codegen-units = 1
 
+# The released core binary (ADR 0039, ADR 0043): fat LTO and one codegen unit for size, stripped.
+# panic stays unwind because engine_guard catches an engine panic.
+[profile.core]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = true
+opt-level = "s"

@@ -106,7 +106,22 @@ targets = [
   "x86_64-pc-windows-msvc",
 ]
 
-# The misc family: Dockerfile, dotenv, GraphQL and HCL.
+# The uncomment family: the opt-in comment-removal lint. Its own component, not part of misc: it is
+# cross-cutting (every language) and off by default, so only projects that enable it download it.
+[[crates.components]]
+name = "uncomment"
+provides = [{ contract = "poly", implementation = "poly_engines::UncommentComponent" }]
+features = ["uncomment"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# The misc family: Dockerfile, dotenv, GraphQL, HCL and INI.
 [[crates.components]]
 name = "misc"
 provides = [{ contract = "poly", implementation = "poly_engines::MiscComponent" }]

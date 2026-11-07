@@ -683,21 +683,36 @@ fn a_cross_cutting_engine_is_disabled_per_language() {
     );
 }
 
-/// An opt-in engine keeps its own default when the key is absent: the
-/// universal check must not promote "not configured" into "off" and drop
-/// `uncomment` from the plan before it can read its own setting.
+/// An opt-in engine (`OPT_IN_ENGINES`) is dropped from the plan while its key is absent, so a core
+/// build never fetches the `uncomment` component for a project that has not enabled it.
 #[test]
-fn an_opt_in_engine_is_still_planned_when_the_key_is_absent() {
-    let config = Config::default();
+fn an_opt_in_engine_is_not_planned_when_the_key_is_absent() {
+    let plan = |config: &Config| {
+        planned_names(&plan_engines(
+            &Language::Python,
+            config,
+            Kind::Lint,
+            unrestricted(),
+            &mut None,
+        ))
+    };
+    assert!(!plan(&Config::default()).contains(&"uncomment"));
+    assert!(plan(&lint_config("[uncomment]\nenabled = true\n")).contains(&"uncomment"));
+}
+
+/// An engine outside `OPT_IN_ENGINES` keeps its own default when the key is absent: the universal
+/// check must not promote "not configured" into "off".
+#[test]
+fn a_default_on_engine_is_still_planned_when_the_key_is_absent() {
     assert!(
         planned_names(&plan_engines(
             &Language::Python,
-            &config,
+            &Config::default(),
             Kind::Lint,
             unrestricted(),
             &mut None
         ))
-        .contains(&"uncomment")
+        .contains(&"quality")
     );
 }
 

@@ -6,15 +6,16 @@ flavor      partial
 cache       <cache>
 offline     false
 lock        none (this build embeds no component lock)
-web      unavailable  adrlint, malva, markup_fmt, oxc, rumdl, taplo, yaml  [this build embeds no component lock]
-python   bundled      python-types, ruff
-pyrefly  unavailable  pyrefly  (opt-in)  [this build embeds no component lock]
-sql      bundled      sqruff
-php      bundled      mago
-biome    unavailable  biome  [this build embeds no component lock]
-ruby     unavailable  rubyfmt  [this build embeds no component lock]
-nix      bundled      alejandra
-typos    bundled      typos  (opt-in)
-astgrep  bundled      astgrep
-misc     bundled      dockerfile, dotenv, graphql, hcl
-mcp      unavailable    [this build embeds no component lock]
+web        unavailable  adrlint, malva, markup_fmt, oxc, rumdl, taplo, yaml  [this build embeds no component lock]
+python     bundled      python-types, ruff
+pyrefly    unavailable  pyrefly  (opt-in)  [this build embeds no component lock]
+sql        bundled      sqruff
+php        bundled      mago
+biome      unavailable  biome  [this build embeds no component lock]
+ruby       unavailable  rubyfmt  [this build embeds no component lock]
+nix        bundled      alejandra
+typos      bundled      typos  (opt-in)
+astgrep    bundled      astgrep
+uncomment  bundled      uncomment  (opt-in)
+misc       bundled      dockerfile, dotenv, graphql, hcl, ini
+mcp        unavailable    [this build embeds no component lock]

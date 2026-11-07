@@ -577,6 +577,7 @@ fn coverage_table_references_real_requests_and_has_no_duplicates() {
     }
 }
 
+#[cfg(feature = "schemars")]
 #[test]
 fn committed_schema_matches_generated() {
     let generated = json_schema();

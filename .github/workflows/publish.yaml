@@ -592,6 +592,12 @@ jobs:
           git config --global core.longpaths true
           echo 'CARGO_HOME=D:\c' >> "$GITHUB_ENV"
 
+      - name: Name the directory the binary is built into
+        # The core is built with `--profile core` (target/<triple>/core); the musl bundled build
+        # keeps the release profile.
+        run: echo "PROFILE_DIR=${{ matrix.alpine && 'release' || 'core' }}" >> "$GITHUB_ENV"
+        shell: bash
+
       - name: Setup Rust
         if: ${{ !matrix.alpine }}
         uses: dtolnay/rust-toolchain@v1
@@ -623,7 +629,7 @@ jobs:
           POLY_COMPONENT_LOCK_FILE: ${{ github.workspace }}/components-lock/poly-components.lock.json
         # The core flavour (ADR 0039): every other engine family and the MCP server are components
         # this binary downloads on first use, from the lock embedded above.
-        run: cargo build --release --locked --target ${{ matrix.triple }} -p poly-cli --no-default-features --features core
+        run: cargo build --profile core --locked --target ${{ matrix.triple }} -p poly-cli --no-default-features --features core
         shell: bash
 
       - name: Build binary (musl, Alpine container)
@@ -662,7 +668,7 @@ jobs:
               # Windows binaries don't benefit from strip
               ;;
             *)
-              strip target/${{ matrix.triple }}/release/poly || true
+              strip target/${{ matrix.triple }}/$PROFILE_DIR/poly || true
               ;;
           esac
         shell: bash
@@ -675,7 +681,7 @@ jobs:
         # build made in a container and for cross-built targets.
         run: |
           set -euo pipefail
-          bin="target/${{ matrix.triple }}/release/poly"
+          bin="target/${{ matrix.triple }}/$PROFILE_DIR/poly"
           case "${{ matrix.triple }}" in *windows*) bin="$bin.exe" ;; esac
           test -s "$bin" || { echo "::error::no binary at $bin"; exit 1; }
           if grep -aq POLY_COMPONENT_DEV_LOCK "$bin"; then
@@ -685,13 +691,23 @@ jobs:
           echo "dev-lock absent from $bin"
         shell: bash
 
+      - name: Assert the core is under 14 MiB
+        # The ceiling is for the shipped binary, lock included, on the largest native triple.
+        if: ${{ matrix.triple == 'x86_64-unknown-linux-gnu' }}
+        run: |
+          set -euo pipefail
+          size="$(wc -c < "target/${{ matrix.triple }}/$PROFILE_DIR/poly" | tr -d ' ')"
+          echo "core binary: $size bytes"
+          [ "$size" -gt 1000000 ] && [ "$size" -le 14680064 ] || { echo "::error::the core binary is $size bytes, outside 1 MB..14 MiB"; exit 1; }
+        shell: bash
+
       - name: Assert the component lock is embedded (absent for musl)
         # The lock's URLs are string data in the binary only when build.rs embedded the lock, so
         # reading the artifact shows what the build actually carries. The binary path is the one
         # the build steps above produce: the musl container copies target/release/poly to it.
         run: |
           set -euo pipefail
-          bin="target/${{ matrix.triple }}/release/poly"
+          bin="target/${{ matrix.triple }}/$PROFILE_DIR/poly"
           case "${{ matrix.triple }}" in *windows*) bin="$bin.exe" ;; esac
           test -s "$bin" || { echo "::error::no binary at $bin"; exit 1; }
           lock=components-lock/poly-components.lock.json
@@ -722,7 +738,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          bin="$PWD/target/${{ matrix.triple }}/release/poly"
+          bin="$PWD/target/${{ matrix.triple }}/$PROFILE_DIR/poly"
           case "${{ matrix.triple }}" in *windows*) bin="$bin.exe" ;; esac
           lock=components-lock/poly-components.lock.json
           mirror="$RUNNER_TEMP/component-mirror"
@@ -755,6 +771,7 @@ jobs:
           printf 'FROM alpine\n' > "$fixture/Dockerfile"
           printf 'a = 1\n' > "$fixture/a.toml"
           printf '# a\n' > "$fixture/a.md"
+          printf '[a]\nk = 1\n' > "$fixture/a.ini"
           files="$(find "$fixture" -type f | wc -l | tr -d ' ')"
           for mode in lint fmt; do
             set +e
@@ -773,11 +790,26 @@ jobs:
               "$RUNNER_TEMP/$mode.json" > /dev/null || { cat "$RUNNER_TEMP/$mode.json"; echo "::error::poly $mode did not check all $files files cleanly"; exit 1; }
             echo "poly $mode: $(jq -c .summary "$RUNNER_TEMP/$mode.json")"
           done
+          # uncomment is opt-in and outside the `all` preset: install it, enable it, and require a diagnostic.
+          "$bin" components install uncomment
+          uncomment_dir="$RUNNER_TEMP/smoke-uncomment"
+          mkdir -p "$uncomment_dir"
+          # code_only = false: the default flags only commented-out code, and this also proves a bool key reaches the component.
+          printf '[lint.uncomment]\nenabled = true\ncode_only = false\n' > "$uncomment_dir/poly.toml"
+          printf 'x = 1\n# a removable comment\n' > "$uncomment_dir/a.py"
+          set +e
+          "$bin" lint --workspace never --no-cache --only uncomment --format json "$uncomment_dir" > "$RUNNER_TEMP/uncomment.json"
+          code=$?
+          set -e
+          [ "$code" -le 1 ] || { cat "$RUNNER_TEMP/uncomment.json"; echo "::error::poly lint (uncomment) exited $code"; exit 1; }
+          jq -e '.summary.errored == 0 and ([.results[].diagnostics[] | select(.engine == "uncomment")] | length) > 0' \
+            "$RUNNER_TEMP/uncomment.json" > /dev/null || { cat "$RUNNER_TEMP/uncomment.json"; echo "::error::the uncomment component reported nothing"; exit 1; }
+          echo "poly lint (uncomment): $(jq -c .summary "$RUNNER_TEMP/uncomment.json")"
         shell: bash
 
       - name: Create release artifacts
         run: |
-          cd target/${{ matrix.triple }}/release
+          cd target/${{ matrix.triple }}/$PROFILE_DIR
 
           case "${{ matrix.triple }}" in
             *windows*)

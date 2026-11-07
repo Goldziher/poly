@@ -35,6 +35,7 @@ pub mod path_ignore;
 pub mod ruff_context;
 pub mod ruff_target;
 pub mod typos_options;
+pub mod uncomment_options;
 
 /// Which host-side cache-path inputs an engine's results depend on.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]

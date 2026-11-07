@@ -2222,7 +2222,6 @@ name = "poly-component-protocol"
 version = "0.33.1"
 dependencies = [
  "rmp-serde",
- "schemars",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

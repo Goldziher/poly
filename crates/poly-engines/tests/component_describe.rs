@@ -41,6 +41,12 @@ describe_test!("php", php_matches_the_index, "php", poly_engines::PhpComponent);
 describe_test!("nix", nix_matches_the_index, "nix", poly_engines::NixComponent);
 describe_test!("typos", typos_matches_the_index, "typos", poly_engines::TyposComponent);
 describe_test!(
+    "uncomment",
+    uncomment_matches_the_index,
+    "uncomment",
+    poly_engines::UncommentComponent
+);
+describe_test!(
     "astgrep",
     astgrep_matches_the_index,
     "astgrep",

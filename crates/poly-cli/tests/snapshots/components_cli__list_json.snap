@@ -112,6 +112,15 @@ expression: json
       ]
     },
     {
+      "name": "uncomment",
+      "kind": "engines",
+      "state": "bundled",
+      "opt_in": true,
+      "engines": [
+        "uncomment"
+      ]
+    },
+    {
       "name": "misc",
       "kind": "engines",
       "state": "bundled",
@@ -120,7 +129,8 @@ expression: json
         "dockerfile",
         "dotenv",
         "graphql",
-        "hcl"
+        "hcl",
+        "ini"
       ]
     },
     {

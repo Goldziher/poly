@@ -145,6 +145,71 @@ fn an_opt_in_component_enabled_through_a_v1_lint_table_is_selected() {
     );
 }
 
+fn index_with_uncomment() -> ComponentIndex {
+    let mut index = index();
+    let mut lint_only = engine("uncomment", &[]);
+    lint_only.capabilities.format = false;
+    index
+        .components
+        .push(component("uncomment", "engine-uncomment", true, vec![lint_only]));
+    index
+}
+
+#[test]
+fn the_uncomment_component_is_selected_only_when_enabled() {
+    let index = index_with_uncomment();
+    let select = |config: &Config| names(selected_components(&index, config, &lua(), &linked, &|_| true));
+    let needed = |config: &Config| {
+        let pairs = [(0, lua())];
+        needed_components(&index, &[config], &pairs, &linked, &|_| true)
+            .into_iter()
+            .map(|c| c.name.clone())
+            .collect::<Vec<_>>()
+    };
+
+    let absent = Config::default();
+    assert!(!select(&absent).contains(&"uncomment"), "no key, no component");
+    assert!(!needed(&absent).contains(&"uncomment".to_owned()));
+
+    let global = Config {
+        lint: toml::toml! { [uncomment] enabled = true },
+        ..Config::default()
+    };
+    assert!(
+        select(&global).contains(&"uncomment"),
+        "[lint.uncomment] enabled = true"
+    );
+    assert!(needed(&global).contains(&"uncomment".to_owned()));
+
+    let per_language = Config {
+        lint: toml::toml! { [lua.uncomment] enabled = true },
+        ..Config::default()
+    };
+    assert!(select(&per_language).contains(&"uncomment"), "[lint.<lang>.uncomment]");
+    let other_language = names(selected_components(
+        &index,
+        &per_language,
+        &Language::Rust,
+        &linked,
+        &|_| true,
+    ));
+    assert!(!other_language.contains(&"uncomment"), "another language stays off");
+
+    let mut engines = Config::default();
+    engines.engines.insert(
+        "uncomment".into(),
+        EngineTable {
+            enabled: Some(true),
+            ..EngineTable::default()
+        },
+    );
+    assert!(
+        select(&engines).contains(&"uncomment"),
+        "[engines.uncomment] enabled = true"
+    );
+    assert!(needed(&engines).contains(&"uncomment".to_owned()));
+}
+
 #[test]
 fn an_opt_in_component_ignores_tables_for_a_capability_it_lacks() {
     let mut lint_only = engine("typos", &[]);
