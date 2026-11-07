@@ -66,6 +66,7 @@ pub struct ComponentEngine {
     unavailable_skips: bool,
     unavailable_noop: bool,
     max_file_bytes: Option<usize>,
+    lf_output: bool,
 }
 
 fn table_slot(table: OptionTable) -> usize {
@@ -185,6 +186,7 @@ impl ComponentEngine {
             unavailable_skips: false,
             unavailable_noop: false,
             max_file_bytes: None,
+            lf_output: false,
         })
     }
 
@@ -269,6 +271,14 @@ impl ComponentEngine {
     #[must_use]
     pub fn with_max_file_bytes(mut self, max: usize) -> Self {
         self.max_file_bytes = Some(max);
+        self
+    }
+
+    /// Collapse `\r\n` to `\n` in formatted output, as the host-tool engines do for the CLI they
+    /// wrap (which may emit CRLF on Windows), so a sidecar that replaces one formats the same bytes.
+    #[must_use]
+    pub fn with_lf_output(mut self) -> Self {
+        self.lf_output = true;
         self
     }
 
@@ -456,7 +466,12 @@ impl Engine for ComponentEngine {
             src.content.as_bytes(),
         )?;
         match payload {
-            Payload::Formatted(output) => Ok(format_output(output)),
+            Payload::Formatted(output) => Ok(match format_output(output) {
+                FormatOutput::Formatted(text) if self.lf_output && text.contains('\r') => {
+                    FormatOutput::Formatted(text.replace("\r\n", "\n"))
+                }
+                other => other,
+            }),
             _ => Err(self.unexpected("Format")),
         }
     }

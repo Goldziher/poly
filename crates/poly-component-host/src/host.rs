@@ -216,7 +216,9 @@ impl ComponentHost {
         let sha = self.lock_sha256(component_id).context("component has no lock entry")?;
         let engine = ComponentEngine::new(component_id, desc, &sha, slot)?;
         Ok(if self.sidecars.contains(component_id) {
-            engine.with_max_file_bytes(poly_component_protocol::sidecar::MAX_FILE_BYTES)
+            engine
+                .with_max_file_bytes(poly_component_protocol::sidecar::MAX_FILE_BYTES)
+                .with_lf_output()
         } else {
             engine
         })

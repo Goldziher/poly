@@ -4,3 +4,6 @@
 * text=auto eol=lf
 
 *.png binary
+
+# The CRLF fixture must stay CRLF: it is the input of the sh sidecar's line-ending test.
+components/sidecars/sh/testdata/crlf.sh -text

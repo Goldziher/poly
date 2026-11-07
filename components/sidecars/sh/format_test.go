@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -14,13 +15,16 @@ import (
 // each fixture read from stdin, so these tests pin byte parity with the tool
 // the component replaces.
 func TestFormatMatchesShfmtGoldens(t *testing.T) {
-	fixtures := []string{"basic.sh", "bash_arrays.bash", "mksh.sh", "already.sh", "bats.bats"}
+	fixtures := []string{"basic.sh", "bash_arrays.bash", "mksh.sh", "already.sh", "bats.bats", "crlf.sh"}
 	for _, fixture := range fixtures {
 		for _, indent := range []uint{2, 4, 0} {
 			t.Run(fixture+"/i"+strconv.Itoa(int(indent)), func(t *testing.T) {
 				src, err := os.ReadFile(filepath.Join("testdata", fixture)) //nolint:gosec // fixed fixture names
 				if err != nil {
 					t.Fatal(err)
+				}
+				if fixture == "crlf.sh" && !bytes.Contains(src, []byte("\r\n")) {
+					t.Fatal("testdata/crlf.sh lost its CRLF line endings")
 				}
 				want, err := os.ReadFile(filepath.Join("testdata", "golden", fixture+".i"+strconv.Itoa(int(indent)))) //nolint:gosec // fixed fixture names
 				if err != nil {

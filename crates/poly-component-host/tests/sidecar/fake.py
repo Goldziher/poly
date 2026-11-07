@@ -13,6 +13,7 @@ INIT = bytes.fromhex("__INIT__")
 OK = bytes.fromhex("__OK__")
 DESCRIBE = bytes.fromhex("__DESCRIBE__")
 FORMATTED = bytes.fromhex("__FORMATTED__")
+FORMATTED_CRLF = bytes.fromhex("__FORMATTED_CRLF__")
 
 here = os.path.dirname(os.path.realpath(sys.argv[0]))
 manifest = json.load(open(os.path.join(here, "component.json")))
@@ -65,5 +66,8 @@ while True:
         continue
     if SCENARIO == "garbage_at_3" and calls == 3:
         reply(b"\xc1not messagepack")
+        continue
+    if SCENARIO == "crlf_output" and calls == 3:
+        reply(FORMATTED_CRLF)
         continue
     reply({1: INIT, 2: OK}.get(calls, FORMATTED))

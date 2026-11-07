@@ -124,6 +124,12 @@ fn fake(scenario: &str, init_protocol: u32, describe: &Describe) -> Vec<u8> {
                 "FORMATTED".into(),
             )))),
         )
+        .replace(
+            "__FORMATTED_CRLF__",
+            &hex::encode(response(Payload::Formatted(WireFormatOutput::Formatted(
+                "a\r\nb\r\n".into(),
+            )))),
+        )
         .into_bytes()
 }
 
@@ -155,6 +161,12 @@ fn a_sidecar_serves_a_format_call_through_the_proxy() {
     let fixture = scripted("ok", PROTOCOL_VERSION, Duration::from_secs(10), None);
     assert_eq!(formatted(&fixture.engine).unwrap(), "FORMATTED");
     assert_eq!(formatted(&fixture.engine).unwrap(), "FORMATTED");
+}
+
+#[test]
+fn sidecar_output_is_normalized_to_lf_like_the_host_tool_output() {
+    let fixture = scripted("crlf_output", PROTOCOL_VERSION, Duration::from_secs(10), None);
+    assert_eq!(formatted(&fixture.engine).unwrap(), "a\nb\n");
 }
 
 #[test]
