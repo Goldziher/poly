@@ -202,6 +202,7 @@ fn sample_requests() -> Vec<Request> {
             files: vec![slice(0)],
             config: 3,
             environment: vec![("K".into(), "V".into())],
+            threads: Some(4),
         },
         Request::SkipReason {
             engine: "yaml".into(),

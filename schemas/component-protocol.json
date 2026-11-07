@@ -248,6 +248,12 @@
                     "minItems": 2,
                     "maxItems": 2
                   }
+                },
+                "threads": {
+                  "description": "The worker threads the host's run budgets for the check. Absent from an older host, which reads as\n\"the component's choice\".",
+                  "type": ["integer", "null"],
+                  "format": "uint32",
+                  "minimum": 0
                 }
               },
               "required": ["engine", "root", "files", "config", "environment"]

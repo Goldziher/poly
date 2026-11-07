@@ -436,6 +436,10 @@ pub enum Request {
         /// The host-resolved environment as flat pairs (`python.interpreter`,
         /// `python.site_packages`, `python.version`); the component never probes the system.
         environment: Vec<(String, String)>,
+        /// The worker threads the host's run budgets for the check. Absent from an older host, which reads as
+        /// "the component's choice".
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        threads: Option<u32>,
     },
     /// `Engine::skip_reason` for one file (content in `body`).
     SkipReason {

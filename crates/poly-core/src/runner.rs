@@ -29,7 +29,7 @@ mod generated;
 mod lint_pass;
 mod plan;
 mod project;
-mod selection;
+pub(crate) mod selection;
 mod skips;
 mod types;
 mod write;

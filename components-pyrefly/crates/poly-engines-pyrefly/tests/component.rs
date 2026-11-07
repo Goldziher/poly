@@ -61,6 +61,7 @@ fn the_pyrefly_component_checks_like_the_in_process_engine() {
         files: &files,
         config: &cfg,
         environment: &ProjectEnvironment::default(),
+        threads: Some(2),
     };
     let expected = PyreflyEngine.project_check(&request).expect("in-process check");
     let actual = engine.project_check(&request).expect("component check");

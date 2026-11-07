@@ -468,6 +468,7 @@ impl Engine for ComponentEngine {
             originals.insert(rel, file.path.clone());
         }
         let environment = req.environment.to_wire_pairs();
+        let threads = req.threads.map(|n| u32::try_from(n).unwrap_or(u32::MAX));
         let root = req.root.display().to_string();
         let payload = connection.call(
             self.name,
@@ -478,6 +479,7 @@ impl Engine for ComponentEngine {
                 files: files.clone(),
                 config,
                 environment: environment.clone(),
+                threads,
             },
             &body,
         )?;

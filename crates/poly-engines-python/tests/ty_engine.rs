@@ -57,6 +57,7 @@ fn run(
         files,
         config,
         environment,
+        threads: None,
     })
 }
 
@@ -181,6 +182,24 @@ fn unknown_backend_is_an_error() {
     let cfg = config(&[("backend", toml::Value::String("mypy".into()))]);
     let error = run(dir.path(), &files, &cfg, &ProjectEnvironment::default()).unwrap_err();
     assert!(error.to_string().contains("unknown `backend`"), "{error:#}");
+}
+
+#[test]
+fn a_non_string_backend_is_an_error_that_prints_the_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let files = project(dir.path(), &[("app.py", "x = 1\n")]);
+    for (value, shown) in [
+        (toml::Value::Integer(1), "unknown `backend` 1 for"),
+        (toml::Value::Boolean(true), "unknown `backend` true for"),
+        (
+            toml::Value::Array(vec![toml::Value::String("ty".into())]),
+            "unknown `backend` [\"ty\"] for",
+        ),
+    ] {
+        let cfg = config(&[("backend", value)]);
+        let error = run(dir.path(), &files, &cfg, &ProjectEnvironment::default()).unwrap_err();
+        assert!(error.to_string().contains(shown), "{error:#}");
+    }
 }
 
 #[test]

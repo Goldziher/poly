@@ -312,6 +312,84 @@ fn python_types_runs_only_with_a_backend() {
     });
 }
 
+/// The messages of a run's errors, joined.
+fn error_text(run: &LintRun) -> String {
+    run.errors
+        .iter()
+        .map(|e| e.message.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A `[python.python-types]` table with `backend = <value>` (TOML text) and the `[components]` it runs under.
+fn python_types_config(backend: &str, components: poly_config::v2::ComponentsConfig) -> Config {
+    let lint: toml::Table = toml::from_str(&format!("[python.python-types]\nbackend = {backend}\n")).unwrap();
+    Config {
+        lint,
+        components,
+        ..Config::default()
+    }
+}
+
+/// A `backend` that is not a string used to switch type checking off without a word; it now reaches the
+/// default engine, which names the value.
+#[test]
+fn a_non_string_backend_is_an_error_not_a_silent_off() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache_home = tempfile::tempdir().unwrap();
+    with_extra_project_engines(Vec::new(), || {
+        // SAFETY: `with_extra_project_engines` serialises every caller in this process.
+        unsafe {
+            std::env::set_var("POLY_CACHE_HOME", cache_home.path());
+        }
+        write(dir.path(), "app.py", "count: int = \"three\"\n");
+        for value in ["1", "true", "[\"ty\"]"] {
+            let run = lint(dir.path(), &python_types_config(value, Default::default()), true);
+            let message = error_text(&run);
+            assert!(
+                message.contains("unknown `backend`") && message.contains(value),
+                "backend = {value}: {message}"
+            );
+        }
+    });
+}
+
+/// `backend = "pyrefly"` with the pyrefly component disabled must not leave the run type-checking nothing.
+#[test]
+fn a_backend_of_a_disabled_component_is_an_error_naming_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache_home = tempfile::tempdir().unwrap();
+    with_extra_project_engines(Vec::new(), || {
+        // SAFETY: `with_extra_project_engines` serialises every caller in this process.
+        unsafe {
+            std::env::set_var("POLY_CACHE_HOME", cache_home.path());
+        }
+        write(dir.path(), "app.py", "count: int = \"three\"\n");
+        let components = poly_config::v2::ComponentsConfig {
+            disable: vec!["pyrefly".to_owned()],
+            ..Default::default()
+        };
+        let run = lint(
+            dir.path(),
+            &python_types_config("\"pyrefly\"", components.clone()),
+            true,
+        );
+        let message = error_text(&run);
+        assert!(
+            message.contains("`pyrefly` component") && message.contains("[components] disable"),
+            "{message}"
+        );
+
+        let skipped = RunOptions {
+            skip: vec!["pyrefly".to_owned()],
+            ..opts(true)
+        };
+        let config = python_types_config("\"pyrefly\"", components);
+        let run = lint_run(&[dir.path().to_path_buf()], &config, &skipped, false, false).unwrap();
+        assert!(run.errors.is_empty(), "{}", error_text(&run));
+    });
+}
+
 mod tree {
     //! An engine that declares a directory tree (`project_inputs().dirs`), as adrlint does: it judges
     //! the whole tree whatever paths the run names, and the run's paths only narrow what is reported.

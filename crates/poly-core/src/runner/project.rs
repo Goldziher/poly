@@ -107,7 +107,7 @@ fn plan_project_engines(
     configs: &ConfigSet,
     selection: EngineSelection<'_>,
     components: &ResolvedComponents,
-) -> Vec<ProjectPlan> {
+) -> (Vec<ProjectPlan>, Vec<LintError>) {
     let mut scopes: Vec<(usize, Language)> = files
         .iter()
         .map(|f| (f.config_id, f.language.clone()))
@@ -118,6 +118,7 @@ fn plan_project_engines(
     let extras: Vec<Arc<dyn Engine>> = EXTRA_ENGINES.lock().unwrap_or_else(PoisonError::into_inner).clone();
     let mut seen: FxHashSet<(usize, &'static str)> = FxHashSet::default();
     let mut plans = Vec::new();
+    let mut errors = Vec::new();
     for (config_id, language) in &scopes {
         let registered = engines_for(language)
             .into_iter()
@@ -138,17 +139,24 @@ fn plan_project_engines(
         let candidates: Vec<Arc<dyn Engine>> = registered.chain(from_components).chain(injected).collect();
         let declared_here: Vec<WireSelection> = candidates.iter().filter_map(|engine| engine.selection()).collect();
         for engine in candidates {
-            if !selection.selects(engine.name()) || !seen.insert((*config_id, engine.name())) {
-                continue;
-            }
             let declared = engine.selection();
             let table = declared.as_ref().map_or_else(|| engine.name(), |s| s.table.as_str());
+            if !selection.selects_declared(engine.name(), Some(table)) || !seen.insert((*config_id, engine.name())) {
+                continue;
+            }
             let config = configs.config(*config_id).engine_config(language, table, Kind::Lint);
             if config.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool) == Some(false) {
                 continue;
             }
-            if declared.is_some_and(|selection| !is_selected(&selection, &config.options, &declared_here)) {
-                continue;
+            if let Some(declared) = &declared {
+                match picked(declared, &config.options, &declared_here) {
+                    Pick::Mine => {}
+                    Pick::Other => continue,
+                    Pick::Unavailable(value) => {
+                        errors.extend(unavailable_backend(declared, &value, selection, *config_id, configs));
+                        continue;
+                    }
+                }
             }
             let gated_off = engine
                 .project_inputs()
@@ -165,21 +173,77 @@ fn plan_project_engines(
         }
     }
     plans.sort_by(|a, b| (a.config_id, a.engine.name()).cmp(&(b.config_id, b.engine.name())));
-    plans
+    (plans, errors)
 }
 
-/// Whether the table options pick the engine that declared `selection`: its `key` is set to the engine's
-/// `value`, or to a value no engine declares and the engine is the default (it then reports that value as
-/// unknown). An unset key picks nothing: engines that share a table are opt-in.
-fn is_selected(selection: &WireSelection, options: &toml::Table, siblings: &[WireSelection]) -> bool {
-    let Some(chosen) = options.get(&selection.key).and_then(toml::Value::as_str) else {
-        return false;
+/// What the table options say about the engine that declared a selection.
+enum Pick {
+    /// The engine's own `value`, or a value no engine declares and the engine is the default (it then reports
+    /// that value as unknown).
+    Mine,
+    /// Another candidate's value, or no value: engines that share a table are opt-in.
+    Other,
+    /// A value an engine of the component index declares, though no candidate in this run does: the engine is
+    /// not available here, and the default engine must not stand down silently.
+    Unavailable(String),
+}
+
+/// Which engine the table options pick, for the engine that declared `selection`.
+///
+/// A present value that is not a string (`backend = 1`) is a value no engine declares, so the default engine
+/// is picked and reports it.
+fn picked(selection: &WireSelection, options: &toml::Table, siblings: &[WireSelection]) -> Pick {
+    let Some(value) = options.get(&selection.key) else {
+        return Pick::Other;
+    };
+    let chosen = value.as_str();
+    if chosen == Some(selection.value.as_str()) {
+        return Pick::Mine;
+    }
+    if !selection.default {
+        return Pick::Other;
+    }
+    let Some(chosen) = chosen else {
+        return Pick::Mine;
     };
     let claimed = |other: &WireSelection| other.table == selection.table && other.key == selection.key;
-    chosen == selection.value
-        || (selection.default
-            && !siblings.iter().any(|other| claimed(other) && other.value == chosen)
-            && !poly_component_index::index().claims_selection(&selection.table, &selection.key, chosen))
+    if siblings.iter().any(|other| claimed(other) && other.value == chosen) {
+        return Pick::Other;
+    }
+    if poly_component_index::index().claims_selection(&selection.table, &selection.key, chosen) {
+        return Pick::Unavailable(chosen.to_owned());
+    }
+    Pick::Mine
+}
+
+/// The error for a backend the config names but this run has no engine for, when the run asked for it.
+///
+/// The component hosting it is disabled (`[components] disable`) or not part of this build; either way the run
+/// would otherwise type-check nothing and read as clean. A run that deselected the backend with `--skip`, or
+/// that `--only` leaves it out of, asked for that and gets no error.
+fn unavailable_backend(
+    default: &WireSelection,
+    value: &str,
+    selection: EngineSelection<'_>,
+    config_id: usize,
+    configs: &ConfigSet,
+) -> Option<LintError> {
+    let (component, engine) = poly_component_index::index().claiming_component(&default.table, &default.key, value)?;
+    if !selection.selects_declared(&engine.name, Some(&default.table)) {
+        return None;
+    }
+    Some(LintError {
+        path: root_for(configs, config_id),
+        message: format!(
+            "`{key} = \"{value}\"` in `[{table}]` needs the `{engine}` engine of the `{component}` component, which is \
+             not available in this run: it is disabled (remove `{component}` from `[components] disable`) or this \
+             build does not include it (use a build that does, or set `{key}` to another backend)",
+            key = default.key,
+            table = default.table,
+            engine = engine.name,
+            component = component.name,
+        ),
+    })
 }
 
 /// The project root for a config scope: the directory holding its `poly.toml`, else the run root,
@@ -309,6 +373,7 @@ fn report_for(
         files: loaded,
         config: &plan.config,
         environment,
+        threads: Some(rayon::current_num_threads()),
     };
     let reported =
         guard_engine_panic(plan.engine.name(), root, || plan.engine.project_check(&request)).map_err(|error| {
@@ -367,8 +432,11 @@ pub(super) fn run_project_phase(
     cache: &ResultCache,
     components: &ResolvedComponents,
 ) -> ProjectOutcome {
-    let plans = plan_project_engines(files, run.configs, selection, components);
-    let mut outcome = ProjectOutcome::default();
+    let (plans, unavailable) = plan_project_engines(files, run.configs, selection, components);
+    let mut outcome = ProjectOutcome {
+        errors: unavailable,
+        ..ProjectOutcome::default()
+    };
     if plans.is_empty() {
         return outcome;
     }
@@ -541,6 +609,7 @@ mod gate_tests {
         let configs = ConfigSet::single(config);
         let components = ResolvedComponents::serving(0, Language::Python, vec![pyrefly_component()]);
         plan_project_engines(&files, &configs, EngineSelection::new(&[], &[]), &components)
+            .0
             .iter()
             .map(|plan| plan.engine.name())
             .collect()
@@ -588,7 +657,7 @@ mod gate_tests {
             ..Config::default()
         });
         let components = ResolvedComponents::serving(0, Language::Python, vec![pyrefly_component()]);
-        let plans = plan_project_engines(&files, &configs, EngineSelection::new(&[], &[]), &components);
+        let (plans, _) = plan_project_engines(&files, &configs, EngineSelection::new(&[], &[]), &components);
         assert_eq!(plans.len(), 1);
         assert_eq!(
             plans[0]
@@ -609,5 +678,89 @@ mod gate_tests {
             ..Config::default()
         };
         assert!(planned(config).is_empty());
+    }
+
+    fn planned_with(config: Config, only: &[&str], skip: &[&str]) -> Vec<&'static str> {
+        let files = [DiscoveredFile {
+            path: PathBuf::from("app.py"),
+            language: Language::Python,
+            config_id: 0,
+        }];
+        let (only, skip): (Vec<String>, Vec<String>) = (
+            only.iter().map(|s| (*s).to_owned()).collect(),
+            skip.iter().map(|s| (*s).to_owned()).collect(),
+        );
+        let configs = ConfigSet::single(config);
+        let components = ResolvedComponents::serving(0, Language::Python, vec![pyrefly_component()]);
+        plan_project_engines(&files, &configs, EngineSelection::new(&only, &skip), &components)
+            .0
+            .iter()
+            .map(|plan| plan.engine.name())
+            .collect()
+    }
+
+    #[test]
+    fn skipping_the_shared_table_stops_the_pyrefly_backend() {
+        assert!(planned_with(with_backend("pyrefly"), &[], &["python-types"]).is_empty());
+        assert_eq!(planned_with(with_backend("pyrefly"), &[], &["ruff"]), ["pyrefly"]);
+    }
+
+    #[test]
+    fn only_the_shared_table_keeps_the_pyrefly_backend() {
+        assert_eq!(
+            planned_with(with_backend("pyrefly"), &["python-types"], &[]),
+            ["pyrefly"]
+        );
+        assert_eq!(planned_with(with_backend("pyrefly"), &["pyrefly"], &[]), ["pyrefly"]);
+        assert!(planned_with(with_backend("pyrefly"), &["ruff"], &[]).is_empty());
+    }
+
+    #[test]
+    fn the_table_name_selects_the_ty_backend_too() {
+        assert_eq!(
+            planned_with(with_backend("ty"), &["python-types"], &[]),
+            ["python-types"]
+        );
+        assert!(planned_with(with_backend("ty"), &[], &["python-types"]).is_empty());
+    }
+
+    #[test]
+    fn a_non_string_backend_plans_the_default_so_it_can_report_the_value() {
+        for value in ["1", "true", "[\"pyrefly\"]"] {
+            let lint: toml::Table = toml::from_str(&format!("[python.python-types]\nbackend = {value}\n")).unwrap();
+            let config = Config {
+                lint,
+                ..Config::default()
+            };
+            assert_eq!(planned(config), ["python-types"], "backend = {value}");
+        }
+    }
+
+    #[test]
+    fn a_backend_whose_engine_this_run_lacks_is_an_error_naming_the_component() {
+        let files = [DiscoveredFile {
+            path: PathBuf::from("app.py"),
+            language: Language::Python,
+            config_id: 0,
+        }];
+        let configs = ConfigSet::single(with_backend("pyrefly"));
+        let no_components = ResolvedComponents::default();
+        let (plans, errors) = plan_project_engines(&files, &configs, EngineSelection::new(&[], &[]), &no_components);
+        assert!(plans.is_empty());
+        assert_eq!(
+            errors.len(),
+            1,
+            "{:?}",
+            errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+        );
+        let message = &errors[0].message;
+        assert!(
+            message.contains("`pyrefly` component") && message.contains("[components] disable"),
+            "{message}"
+        );
+
+        let skip = ["pyrefly".to_owned()];
+        let (_, errors) = plan_project_engines(&files, &configs, EngineSelection::new(&[], &skip), &no_components);
+        assert!(errors.is_empty(), "a run that skipped the backend asked for that");
     }
 }

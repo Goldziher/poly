@@ -68,22 +68,21 @@ pub(super) fn is_linked(component: &Component, linked: &dyn Fn(&str) -> bool) ->
     !component.features.is_empty() && component.features.iter().all(|f| linked(f))
 }
 
-/// Whether the engine named `name` survives the run's `--only` / `--skip` selection.
-pub(crate) type Selected<'a> = &'a dyn Fn(&str) -> bool;
+/// Whether the engine named `name`, which declares `table` as the config table it shares with its alternative
+/// backends (if any), survives the run's `--only` / `--skip` selection. Either name selects it.
+pub(crate) type Selected<'a> = &'a dyn Fn(&str, Option<&str>) -> bool;
 
 /// Whether `desc` can still run under `config`: the run's selection keeps it and no
 /// `enabled = false` switches it off. With a `language`, v1 per-language tables and v2 language
 /// layers count too, for lint and format alike (an engine off for only one phase can still run).
 /// Without one, only the language-independent `[engines.<id>] enabled = false` does.
 fn engine_in_play(config: &Config, language: Option<&Language>, desc: &WireEngineDesc, selected: Selected<'_>) -> bool {
-    if !selected(&desc.name) {
+    let declared = desc.selection.as_ref().map(|selection| selection.table.as_str());
+    if !selected(&desc.name, declared) {
         return false;
     }
     // An engine a backend route names is switched off or on through the table it shares.
-    let table = desc
-        .selection
-        .as_ref()
-        .map_or(desc.name.as_str(), |selection| selection.table.as_str());
+    let table = declared.unwrap_or(desc.name.as_str());
     let off = |kind| {
         language.map_or_else(
             || config.engines.get(table).and_then(|table| table.enabled) == Some(false),

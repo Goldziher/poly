@@ -142,10 +142,8 @@ pub(crate) fn resolve(files: &[DiscoveredFile], configs: &ConfigSet, opts: &RunO
         }
     }
     let all: Vec<&Config> = configs.iter().collect();
-    let selected = |name: &str| {
-        (opts.only.is_empty() || opts.only.iter().any(|entry| entry == name))
-            && !opts.skip.iter().any(|entry| entry == name)
-    };
+    let selection = crate::runner::selection::EngineSelection::new(&opts.only, &opts.skip);
+    let selected = |name: &str, table: Option<&str>| selection.selects_declared(name, table);
     let needed = needed_components(index, &all, &pairs, &feature_is_linked, &selected);
     if needed.is_empty() {
         return ResolvedComponents::default();

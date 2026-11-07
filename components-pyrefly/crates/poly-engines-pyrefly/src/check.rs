@@ -140,6 +140,13 @@ fn severity(severity: PyreflySeverity) -> Option<Severity> {
     }
 }
 
+/// The thread budget the host handed over, else every thread.
+fn threads(req: &ProjectRequest<'_>) -> ThreadCount {
+    req.threads
+        .and_then(std::num::NonZeroUsize::new)
+        .map_or(ThreadCount::AllThreads, ThreadCount::NumThreads)
+}
+
 /// Type-check `files` with one state, reporting under each file's path as the host gave it.
 fn check(req: &ProjectRequest<'_>, files: &[&ProjectFile]) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {
     let root = settings::absolute(req.root)?;
@@ -158,7 +165,7 @@ fn check(req: &ProjectRequest<'_>, files: &[&ProjectFile]) -> anyhow::Result<Vec
         originals.insert(path, &file.path);
     }
 
-    let state = State::new(config_finder, ThreadCount::AllThreads);
+    let state = State::new(config_finder, threads(req));
     // In-memory handles: a file-system handle is read from disk, never from the overlay.
     let handles: Vec<Handle> = originals
         .keys()
@@ -200,4 +207,42 @@ fn check(req: &ProjectRequest<'_>, files: &[&ProjectFile]) -> anyhow::Result<Vec
         });
     }
     Ok(by_file.into_iter().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroUsize;
+    use std::path::Path;
+
+    use poly_engine_api::config::{EngineConfig, GlobalDefaults};
+    use poly_engine_api::engine::ProjectEnvironment;
+
+    use super::*;
+
+    fn count(threads: Option<usize>) -> ThreadCount {
+        let cfg = EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 4,
+            options: toml::Table::new(),
+        };
+        super::threads(&ProjectRequest {
+            root: Path::new("."),
+            files: &[],
+            config: &cfg,
+            environment: &ProjectEnvironment::default(),
+            threads,
+        })
+    }
+
+    #[test]
+    fn the_hosts_thread_budget_is_pyrefly_s_thread_count() {
+        assert!(matches!(count(Some(3)), ThreadCount::NumThreads(n) if n == NonZeroUsize::new(3).unwrap()));
+        assert!(matches!(count(Some(1)), ThreadCount::NumThreads(n) if n.get() == 1));
+    }
+
+    #[test]
+    fn no_budget_leaves_pyrefly_every_thread() {
+        assert!(matches!(count(None), ThreadCount::AllThreads));
+        assert!(matches!(count(Some(0)), ThreadCount::AllThreads));
+    }
 }

@@ -58,6 +58,7 @@ fn run(
         files,
         config,
         environment,
+        threads: None,
     })
 }
 
