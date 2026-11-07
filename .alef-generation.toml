@@ -11,4 +11,4 @@
 # Do not hand-edit; it is rewritten by `alef generate`/`alef all` on every successful run.
 
 [crates]
-poly-engines = "46f0193bd4d0b25730ad9ad33a7acc0fcdecf691f670741e56839706f9ea17b3"
+poly-engines = "b58071d76dcaadb43fc8c2eb66b320e8a4f02dbbfbf6ea2cc2d0129d26fb0ea6"

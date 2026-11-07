@@ -579,3 +579,19 @@ mod sidecar_payload {
         );
     }
 }
+
+#[test]
+fn the_go_sidecar_speaks_the_protocol_version_of_this_crate() {
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../components/sidecars/sh/protocol.go"),
+    )
+    .expect("the sh sidecar's protocol.go");
+    let version: u32 = source
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("const protocolVersion = "))
+        .expect("protocol.go declares `const protocolVersion = N`")
+        .trim()
+        .parse()
+        .expect("protocolVersion is an integer");
+    assert_eq!(version, PROTOCOL_VERSION);
+}

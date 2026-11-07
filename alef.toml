@@ -218,6 +218,8 @@ targets = [
 executable = { build = "../../../mise-tasks/sidecar/build.sh sh {target} {out}", toolchain_version_cmd = "go version", inputs = [
   "components/sidecars/sh",
   "mise-tasks/sidecar/build.sh",
+  "crates/poly-component-protocol",
+  "schemas/component-protocol.json",
 ] }
 
 # Release distribution: component archives are GitHub release assets of the tag they were built for
