@@ -16,21 +16,49 @@ type formatOptions struct {
 	indent uint
 }
 
-// variantFor picks the shell dialect the way shfmt does with no -ln flag: a
-// shell config file name or a file extension wins, then the shebang, and
-// bash is the fallback.
-func variantFor(path string, src []byte) syntax.LangVariant {
+// dialectFor names the shell dialect shfmt picks with no -ln flag: a shell
+// config file name or a file extension wins, then the shebang, and bash is the
+// fallback. The name is the one LangVariant.Set accepts, and it is also what
+// poly's host folds into the format cache key (Rust: host_hooks::shell_dialect),
+// which testdata/dialects.json pins on both sides.
+func dialectFor(path string, src []byte) string {
 	switch strings.TrimPrefix(filepath.Base(path), ".") {
 	case "bash_profile", "bashrc", "bash_logout":
-		return syntax.LangBash
+		return "bash"
 	case "zshenv", "zprofile", "zshrc", "zlogin", "zlogout":
-		return syntax.LangZsh
+		return "zsh"
 	}
 	var lang syntax.LangVariant
 	if ext := strings.TrimPrefix(filepath.Ext(path), "."); ext != "sh" && lang.Set(ext) == nil && lang != syntax.LangAuto {
-		return lang
+		return canonicalDialect(lang)
 	}
 	if err := lang.Set(fileutil.Shebang(src)); err != nil || lang == syntax.LangAuto {
+		return "bash"
+	}
+	return canonicalDialect(lang)
+}
+
+// canonicalDialect is the single name of a resolved variant, so the aliases
+// sh, dash and posix are one dialect.
+func canonicalDialect(lang syntax.LangVariant) string {
+	switch lang {
+	case syntax.LangPOSIX:
+		return "posix"
+	case syntax.LangMirBSDKorn:
+		return "mksh"
+	case syntax.LangBats:
+		return "bats"
+	case syntax.LangZsh:
+		return "zsh"
+	default:
+		return "bash"
+	}
+}
+
+// variantFor is the parser variant for dialectFor.
+func variantFor(path string, src []byte) syntax.LangVariant {
+	var lang syntax.LangVariant
+	if err := lang.Set(dialectFor(path, src)); err != nil {
 		return syntax.LangBash
 	}
 	return lang

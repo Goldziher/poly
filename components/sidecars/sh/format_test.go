@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -77,5 +78,44 @@ func TestVariantFor(t *testing.T) {
 				t.Errorf("variantFor(%q) = %v, want %v", tt.path, got, tt.want)
 			}
 		})
+	}
+}
+
+// dialects.json is shared with the Rust host test
+// host_hooks::shell_dialect::tests, so the two classifiers cannot drift.
+func TestDialectForMatchesTheSharedTable(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "dialects.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+		Dialect string `json:"dialect"`
+	}
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatal(err)
+	}
+	if len(cases) == 0 {
+		t.Fatal("dialects.json has no cases")
+	}
+	for _, c := range cases {
+		if got := dialectFor(c.Path, []byte(c.Content)); got != c.Dialect {
+			t.Errorf("dialectFor(%q, %q) = %q, want %q", c.Path, c.Content, got, c.Dialect)
+		}
+	}
+}
+
+func TestIdenticalBytesFormatPerDialectOfThePath(t *testing.T) {
+	src := []byte("@test \"adds\" {\nrun   echo hi\n}\n")
+	if _, changed, err := formatSource("a.sh", src, formatOptions{indent: 2}); err == nil && changed {
+		t.Error("a bats test block is not valid bash, but a.sh formatted it")
+	}
+	formatted, changed, err := formatSource("a.bats", src, formatOptions{indent: 2})
+	if err != nil || !changed {
+		t.Fatalf("a.bats: changed=%v err=%v, want it formatted", changed, err)
+	}
+	if want := "@test \"adds\" {\n  run echo hi\n}\n"; formatted != want {
+		t.Errorf("a.bats = %q, want %q", formatted, want)
 	}
 }

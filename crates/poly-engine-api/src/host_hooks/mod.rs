@@ -35,6 +35,7 @@ pub mod oxlintrc;
 pub mod path_ignore;
 pub mod ruff_context;
 pub mod ruff_target;
+pub mod shell_dialect;
 pub mod typos_options;
 pub mod uncomment_options;
 
@@ -55,7 +56,8 @@ pub enum HostHook {
     /// target Python version the project declares.
     RuffContext,
     /// Formatting indents as the file's `.editorconfig` says, unless the options set the
-    /// indentation themselves: shfmt, which reads `.editorconfig` only when it is given a filename,
+    /// indentation themselves, and parses as the dialect the file's name or extension fixes
+    /// ([`shell_dialect`]): shfmt, which reads `.editorconfig` only when it is given a filename,
     /// and poly never passes one.
     Editorconfig,
 }
@@ -113,7 +115,13 @@ pub fn lint_input_salt(hook: HostHook, path: &Path, cfg: &EngineConfig) -> Optio
 pub fn format_input_salt(hook: HostHook, path: &Path, cfg: &EngineConfig) -> Option<String> {
     match hook {
         HostHook::OxfmtScope | HostHook::Oxc => oxfmt_scope::input_salt(cfg, path),
-        HostHook::Editorconfig => editorconfig::salt(cfg, path),
+        HostHook::Editorconfig => {
+            let dialect = shell_dialect::salt(path);
+            Some(match editorconfig::salt(cfg, path) {
+                Some(indent) => format!("{indent}|{dialect}"),
+                None => dialect,
+            })
+        }
         HostHook::None | HostHook::RuffContext => None,
     }
 }
@@ -202,9 +210,20 @@ mod tests {
         let scoped = format_config(HostHook::Editorconfig, "shfmt", &source(path.clone()), &cfg);
         assert_eq!(scoped.indent_width, 3);
         let salt = format_input_salt(HostHook::Editorconfig, &path, &cfg);
-        assert_eq!(salt.as_deref(), Some("editorconfig:Spaces(3)"));
+        assert_eq!(salt.as_deref(), Some("editorconfig:Spaces(3)|dialect:shebang"));
         assert_eq!(file_context(HostHook::Editorconfig, &path, &cfg), salt);
         assert_eq!(lint_input_salt(HostHook::Editorconfig, &path, &cfg), None);
+    }
+
+    #[test]
+    fn the_editorconfig_hook_keys_the_cache_on_the_shell_dialect_of_the_path() {
+        let cfg = cfg(toml::Table::new());
+        let salt = |path: &str| file_context(HostHook::Editorconfig, Path::new(path), &cfg);
+        assert_ne!(salt("a.sh"), salt("b.bats"));
+        assert_ne!(salt("a.sh"), salt("c.zsh"));
+        assert_ne!(salt("a.sh"), salt(".zshrc"));
+        assert_eq!(salt("a.sh"), salt("dir/b.sh"));
+        assert_eq!(salt("a.sh"), salt("script"));
     }
 
     #[test]
