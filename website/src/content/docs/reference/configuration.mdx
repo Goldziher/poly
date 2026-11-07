@@ -177,6 +177,19 @@ Neither backend starts a process: poly resolves the virtualenv and its `site-pac
 `[tool.pyrefly]`, are not read. pyrefly's findings carry its own rule codes (`bad-assignment`, `missing-import`, ...); the
 component is built without pyrefly's bundled third-party stubs, so only typeshed's stdlib stubs come with it.
 
+A run never ends up checking nothing when type checking was asked for:
+
+- A `backend` that is not a string (`backend = 1`, `true`, an array) is reported as an unknown value by ty, the default
+  backend, and the run exits 2. An unset `backend` keeps type checking off.
+- `backend = "pyrefly"` while the `pyrefly` component is disabled (`[components] disable`) or missing from the build
+  (the bundled binary links no pyrefly) is an error that names the component and says how to enable it, exit 2. Under
+  `--offline`, `install = "never"` or `on_missing = "skip"` the unavailable component is instead a counted skip, as for
+  every component (ADR 0039), and `--deny-skips` applies.
+- `--only` and `--skip` take the engine name (`pyrefly`) or the shared table name (`python-types`) for either backend:
+  `--skip python-types` stops whichever is configured, and `--only python-types` keeps it. Like any selection they
+  only narrow: `--only pyrefly` with `backend = "ty"` runs neither.
+- pyrefly uses the run's thread budget (`-j/--jobs`, else every core), as passed over the component protocol.
+
 ## `[workspace]`
 
 | Key | Type | Default | Meaning |

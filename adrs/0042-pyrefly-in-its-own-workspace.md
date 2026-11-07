@@ -37,6 +37,20 @@ pyrefly lives in `components-pyrefly/`, a cargo workspace with its own `Cargo.lo
   pyrefly declares `backend = "pyrefly"`. The planner runs the engine whose value the key holds and the
   component planner fetches only that engine's component; a value nobody declares plans the default, which
   reports it as unknown. An unset key plans neither, so type checking stays opt-in.
+- Type checking that was asked for never silently does nothing:
+  - `--only` / `--skip` match an engine by its name or by the table it declares, so `--skip python-types`
+    stops pyrefly and `--only python-types` keeps it. They only narrow, so `--only pyrefly` under
+    `backend = "ty"` plans nothing. Validation accepts the table name, and the component planner applies the
+    same rule, so a deselected backend's component is not fetched.
+  - A `backend` that is present but not a string is a value nobody declares: the default (ty) is planned and
+    reports it, exit 2.
+  - A `backend` value that the component index attributes to an engine this run does not have (the component is in
+    `[components] disable`, or the build does not include it) is a run error naming the engine, its component and
+    how to enable it, not ty standing down. A component that is unavailable by policy (`--offline`,
+    `install = "never"`, `on_missing = "skip"`) still arrives as a stand-in and is the counted skip of ADR 0039.
+    A run that deselected the backend itself gets no error.
+  - The host sends its thread budget (`-j`, else the rayon pool size) with `ProjectCheck` as an optional
+    `threads` field, absent from an older host. pyrefly runs with that many threads, not every core.
 - The check forces `skip_interpreter_query` and hands pyrefly the `site-packages` paths the host
   resolved, so no process is started. It runs through `State` and `Transaction` over an in-memory overlay
   of the files the host passed.
