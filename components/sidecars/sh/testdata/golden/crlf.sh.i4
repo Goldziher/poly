@@ -1,0 +1,6 @@
+if true; then
+    echo "a  b" # note
+    cat <<EOF
+here  doc
+EOF
+fi

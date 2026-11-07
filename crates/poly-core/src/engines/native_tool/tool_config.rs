@@ -37,7 +37,7 @@
 //! - **`shfmt`** consults `.editorconfig` only when it is given a filename.
 //!   poly pipes stdin without `--filename` and always passes `-i <width>`, and
 //!   under that argv `.editorconfig` is inert to shfmt itself. poly resolves it
-//!   per file instead ([`super::editorconfig`]) and keys the cache on the
+//!   per file instead ([`poly_engine_api::host_hooks::editorconfig`]) and keys the cache on the
 //!   resolved indentation, so it is not a fingerprinted config file here.
 //!   Adding `--filename` to [`super::spec::SHFMT_SPEC`] would make
 //!   `.editorconfig` an input of shfmt and require listing it here.

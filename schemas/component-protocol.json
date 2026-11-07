@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ProtocolSchema",
-  "description": "Root type used to emit one JSON Schema covering every top-level message.",
+  "description": "Root type used to emit one JSON Schema covering every top-level message.\n\nTransport framing is not part of the messages. A dylib component receives `call(header, body)`\ndirectly. A sidecar executable (alef stdio transport) receives one `invoke_bytes(method, payload)`\nper call: method `describe` with an empty payload returns the encoded `describe` message; method\n`call` carries `u32_le(header_len) ++ header ++ body` and returns the encoded `response`.",
   "type": "object",
   "properties": {
     "request": {

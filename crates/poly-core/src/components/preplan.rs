@@ -94,7 +94,7 @@ fn incompatible(name: &str, reason: String) -> MissingComponent {
     }
 }
 
-fn open_host(injected: Option<&ComponentInjection>) -> Hosted {
+fn open_host(injected: Option<&ComponentInjection>, index: &ComponentIndex) -> Hosted {
     if let Some(injected) = injected {
         return Hosted::Host(Arc::clone(&injected.host), false);
     }
@@ -102,6 +102,7 @@ fn open_host(injected: Option<&ComponentInjection>) -> Hosted {
         let mut options = HostOptions::new(lock, super::default_cache_root());
         options.offline = network::offline();
         options.gate_loads = true;
+        options.sidecars = super::sidecar_names(index);
         ComponentHost::new(options)
     });
     match built {
@@ -152,7 +153,7 @@ pub(crate) fn resolve(files: &[DiscoveredFile], configs: &ConfigSet, opts: &RunO
     let root = &configs.config(0).components;
     let on_missing = opts.on_missing.unwrap_or(root.on_missing);
     let allow_install = opts.install.unwrap_or(root.install) == ComponentInstallPolicy::Auto;
-    let hosted = open_host(injected);
+    let hosted = open_host(injected, index);
 
     let mut report = ComponentsReport::default();
     let mut engines: BTreeMap<&str, Vec<ComponentEngine>> = BTreeMap::new();

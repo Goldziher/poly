@@ -216,6 +216,29 @@ targets = [
   "x86_64-pc-windows-msvc",
 ]
 
+# The sh sidecar: shfmt (mvdan.cc/sh) as a pure-Go executable speaking alef's framed stdio protocol
+# (ADR 0045). alef plans, builds, packages and locks it with the Rust components; the build is the
+# Go cross-compile in mise-tasks/sidecar/build.sh and writes exactly {out}.
+[[crates.components]]
+name = "sh"
+producer_language = "executable"
+producer_dir = "components/sidecars/sh"
+provides = [{ contract = "poly", implementation = "NewShComponent" }]
+features = []
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+executable = { build = "../../../mise-tasks/sidecar/build.sh sh {target} {out}", toolchain_version_cmd = "go version", inputs = [
+  "components/sidecars/sh",
+  "mise-tasks/sidecar/build.sh",
+  "crates/poly-component-protocol",
+  "schemas/component-protocol.json",
+] }
+
 # Release distribution: component archives are GitHub release assets of the tag they were built for
 # ({version} is the version the artifact was packaged at, so an asset reused from an earlier release
 # keeps pointing at that release). The signing key is the repository secret POLY_COMPONENT_SIGNING_KEY

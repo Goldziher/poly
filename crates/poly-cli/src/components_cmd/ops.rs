@@ -214,7 +214,7 @@ pub fn flavor(env: &Env<'_>) -> &'static str {
         .index
         .components
         .iter()
-        .filter(|c| c.kind == ComponentKind::Engines && !c.download_only)
+        .filter(|c| c.kind.hosts_engines() && !c.download_only)
         .collect();
     let linked = engines.iter().filter(|c| (env.linked)(c)).count();
     if linked == 0 {
@@ -261,6 +261,7 @@ fn row(env: &Env<'_>, component: &Component, cached: &[alef_component_runtime::C
         kind: match component.kind {
             ComponentKind::Engines => "engines",
             ComponentKind::Frontend => "frontend",
+            ComponentKind::Sidecar => "sidecar",
         },
         state,
         opt_in: component.opt_in,

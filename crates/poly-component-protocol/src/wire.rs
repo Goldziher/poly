@@ -723,6 +723,11 @@ pub struct Response {
 }
 
 /// Root type used to emit one JSON Schema covering every top-level message.
+///
+/// Transport framing is not part of the messages. A dylib component receives `call(header, body)`
+/// directly. A sidecar executable (alef stdio transport) receives one `invoke_bytes(method, payload)`
+/// per call: method `describe` with an empty payload returns the encoded `describe` message; method
+/// `call` carries `u32_le(header_len) ++ header ++ body` and returns the encoded `response`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ProtocolSchema {

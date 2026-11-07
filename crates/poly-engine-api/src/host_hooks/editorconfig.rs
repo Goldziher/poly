@@ -9,7 +9,9 @@
 //! nearer files win, and `root = true` ends the search. Sections are matched as editorconfig
 //! globs relative to their file; `{n..m}` ranges are not supported.
 //!
-//! It lives in its own module so the config-key audit attributes the two reads to shfmt alone.
+//! It is a host hook ([`HostHook::Editorconfig`](super::HostHook::Editorconfig)): the host-tool engine
+//! and the `sh` sidecar both get it, so the file is resolved and the cache salted the same way whichever
+//! serves shfmt, and a sidecar (which sees only the bytes) never has to read `.editorconfig` itself.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -20,9 +22,12 @@ use globset::{GlobBuilder, GlobMatcher};
 
 use crate::config::EngineConfig;
 
+/// The indentation `.editorconfig` asks shfmt for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Indent {
+pub enum Indent {
+    /// `indent_style = tab`: shfmt's `-i 0`.
     Tabs,
+    /// `indent_style = space` with this many columns per level.
     Spaces(usize),
 }
 
@@ -97,7 +102,7 @@ fn load(dir: &Path) -> Option<Arc<EditorConfig>> {
 }
 
 /// The indentation `.editorconfig` asks for `path`, when it asks for one.
-pub(super) fn indent_for(path: &Path) -> Option<Indent> {
+pub fn indent_for(path: &Path) -> Option<Indent> {
     let absolute = std::path::absolute(path).ok()?;
     let mut chain: Vec<(PathBuf, Arc<EditorConfig>)> = Vec::new();
     for dir in absolute.parent()?.ancestors() {
@@ -147,7 +152,7 @@ fn sets_indent(cfg: &EngineConfig) -> bool {
 }
 
 /// `cfg` with the indentation `.editorconfig` gives `path`.
-pub(super) fn apply<'a>(cfg: &'a EngineConfig, path: &Path) -> Cow<'a, EngineConfig> {
+pub fn apply<'a>(cfg: &'a EngineConfig, path: &Path) -> Cow<'a, EngineConfig> {
     if sets_indent(cfg) {
         return Cow::Borrowed(cfg);
     }
@@ -168,7 +173,7 @@ pub(super) fn apply<'a>(cfg: &'a EngineConfig, path: &Path) -> Cow<'a, EngineCon
 
 /// What the formatted output of `path` depends on beyond its bytes: the indentation `.editorconfig`
 /// gives it.
-pub(super) fn salt(cfg: &EngineConfig, path: &Path) -> Option<String> {
+pub fn salt(cfg: &EngineConfig, path: &Path) -> Option<String> {
     if sets_indent(cfg) {
         return None;
     }
