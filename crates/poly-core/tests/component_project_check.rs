@@ -40,6 +40,7 @@ fn desc() -> WireEngineDesc {
         supersedes_generic_formatter: false,
         batch_shard_floor: 2,
         project_inputs: Default::default(),
+        selection: None,
     }
 }
 

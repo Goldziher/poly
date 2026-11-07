@@ -253,6 +253,27 @@ pub struct WireEngineDesc {
     /// `Engine::project_inputs`. Absent in an older description, which reads as "nothing".
     #[serde(default)]
     pub project_inputs: WireProjectInputs,
+    /// `Engine::selection`: how a config table picks this engine among alternatives. Absent for an engine
+    /// no table chooses between, and in an older description.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<WireSelection>,
+}
+
+/// How one config table chooses between the engines that share it.
+///
+/// `[engines.python-types] backend = "pyrefly"` is the engine table `python-types` with its key `backend`
+/// set to `pyrefly`: the engine declaring that value is the one that runs. Engines that declare the same
+/// `table` and `key` are alternatives; none runs until the key is set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WireSelection {
+    /// The config table the alternatives share (an engine id).
+    pub table: String,
+    /// The key of that table that picks one.
+    pub key: String,
+    /// The key value that picks this engine.
+    pub value: String,
+    /// Runs when the key is set to a value no alternative declares, so it can report that value as unknown.
+    pub default: bool,
 }
 
 /// The answer to `describe()`.

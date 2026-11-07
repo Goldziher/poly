@@ -47,6 +47,17 @@ impl ResolvedComponents {
     }
 }
 
+#[cfg(test)]
+impl ResolvedComponents {
+    /// Components serving one `(config, language)` pair with `engines`, for planner tests.
+    pub(crate) fn serving(config_id: usize, language: Language, engines: Vec<ComponentEngine>) -> Self {
+        Self {
+            by_pair: FxHashMap::from_iter([((config_id, language), engines)]),
+            report: ComponentsReport::default(),
+        }
+    }
+}
+
 /// How the host was obtained.
 enum Hosted {
     Host(Arc<ComponentHost>, bool),

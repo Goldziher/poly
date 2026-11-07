@@ -105,6 +105,16 @@ impl ComponentIndex {
             .filter(move |e| e.name == engine)
     }
 
+    /// Whether some engine declares that `key` set to `value` selects it in config table `table`.
+    #[must_use]
+    pub fn claims_selection(&self, table: &str, key: &str, value: &str) -> bool {
+        self.components
+            .iter()
+            .flat_map(|c| c.engines.iter())
+            .filter_map(|e| e.selection.as_ref())
+            .any(|s| s.table == table && s.key == key && s.value == value)
+    }
+
     /// Components hosting an engine registered for the language id `language`, in index order.
     /// Cross-cutting engines (no languages) are not matched; see
     /// [`ComponentIndex::cross_cutting_components`].

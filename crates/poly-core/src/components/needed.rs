@@ -79,12 +79,17 @@ fn engine_in_play(config: &Config, language: Option<&Language>, desc: &WireEngin
     if !selected(&desc.name) {
         return false;
     }
+    // An engine a backend route names is switched off or on through the table it shares.
+    let table = desc
+        .selection
+        .as_ref()
+        .map_or(desc.name.as_str(), |selection| selection.table.as_str());
     let off = |kind| {
         language.map_or_else(
-            || config.engines.get(&desc.name).and_then(|table| table.enabled) == Some(false),
+            || config.engines.get(table).and_then(|table| table.enabled) == Some(false),
             |language| {
                 config
-                    .engine_config(language, &desc.name, kind)
+                    .engine_config(language, table, kind)
                     .options
                     .get("enabled")
                     .and_then(toml::Value::as_bool)
@@ -120,6 +125,26 @@ fn expand<'a>(index: &'a ComponentIndex, names: &[String]) -> impl Iterator<Item
     names.iter().filter_map(|name| index.expand_preset(name)).flatten()
 }
 
+/// The components hosting an engine whose declared selection (`WireSelection`) the table options `options_of`
+/// returns for its table pick: `backend = "pyrefly"` in `python-types` names the component declaring that value.
+fn selected_by_options<'a>(index: &'a ComponentIndex, options_of: &dyn Fn(&str) -> toml::Table) -> BTreeSet<&'a str> {
+    index
+        .components
+        .iter()
+        .filter(|component| {
+            component.engines.iter().any(|desc| {
+                desc.selection.as_ref().is_some_and(|selection| {
+                    options_of(&selection.table)
+                        .get(&selection.key)
+                        .and_then(toml::Value::as_str)
+                        == Some(selection.value.as_str())
+                })
+            })
+        })
+        .map(|component| component.name.as_str())
+        .collect()
+}
+
 /// Components `config` names outright, whatever the language: the `[components] enable` list
 /// and the components of engines with an explicit `[engines.<id>]` table. An opt-in component
 /// needs `enabled = true`; any other needs the table not to say `false`.
@@ -128,6 +153,13 @@ fn explicit<'a>(index: &'a ComponentIndex, config: &Config) -> BTreeSet<&'a str>
     if let Enable::List(list) = &config.components.enable {
         names.extend(expand(index, list).map(|c| c.name.as_str()));
     }
+    names.extend(selected_by_options(index, &|table| {
+        config
+            .engines
+            .get(table)
+            .map(|engine| engine.options.clone())
+            .unwrap_or_default()
+    }));
     for (engine, table) in &config.engines {
         let Some(component) = index.component_for_engine(engine) else {
             continue;
@@ -160,7 +192,12 @@ pub(crate) fn selected_components<'a>(
     linked: &dyn Fn(&str) -> bool,
     selected: Selected<'_>,
 ) -> Vec<&'a Component> {
-    let named = explicit(index, config);
+    let mut named = explicit(index, config);
+    // An engine selected for this language (`backend = "pyrefly"` in a v1 `[lint.python.python-types]` table,
+    // or a v2 language layer) names its component, like an `[engines.X]` table does.
+    named.extend(selected_by_options(index, &|table| {
+        config.engine_config(language, table, Kind::Lint).options
+    }));
     let mut names = named.clone();
     if config.components.enable == Enable::Auto {
         names.extend(

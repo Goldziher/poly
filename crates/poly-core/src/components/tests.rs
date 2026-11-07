@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use poly_component_index::{Component, ComponentIndex, ComponentKind};
-use poly_component_protocol::{WireCapabilities, WireEngineDesc};
+use poly_component_protocol::{WireCapabilities, WireEngineDesc, WireSelection};
 use poly_config::v2::{ComponentsConfig, Enable, EngineTable};
 
 use super::{ComponentsReport, MissingComponent, needed_components, selected_components};
@@ -29,6 +29,7 @@ fn engine(name: &str, languages: &[&str]) -> WireEngineDesc {
         supersedes_generic_formatter: false,
         batch_shard_floor: 2,
         project_inputs: Default::default(),
+        selection: None,
     }
 }
 
@@ -387,4 +388,96 @@ fn the_report_is_empty_until_a_component_is_needed_and_blocking_follows_its_entr
     assert!(!report.blocking());
     report.missing[0].blocking = true;
     assert!(report.blocking());
+}
+
+fn declaring(mut desc: WireEngineDesc, value: &str, default: bool) -> WireEngineDesc {
+    desc.selection = Some(WireSelection {
+        table: "python-types".into(),
+        key: "backend".into(),
+        value: value.into(),
+        default,
+    });
+    desc
+}
+
+fn python_index() -> ComponentIndex {
+    ComponentIndex {
+        schema: 1,
+        components: vec![
+            component(
+                "python",
+                "engine-python",
+                false,
+                vec![declaring(engine("python-types", &["python"]), "ty", true)],
+            ),
+            component(
+                "pyrefly",
+                "engine-pyrefly",
+                true,
+                vec![declaring(engine("pyrefly", &["python"]), "pyrefly", false)],
+            ),
+        ],
+        presets: BTreeMap::new(),
+    }
+}
+
+fn python_types(backend: &str) -> EngineTable {
+    let mut options = toml::Table::new();
+    options.insert("backend".into(), toml::Value::String(backend.to_owned()));
+    EngineTable {
+        options,
+        ..EngineTable::default()
+    }
+}
+
+fn python_names(config: &Config) -> Vec<String> {
+    let index = python_index();
+    let pairs = [(0, Language::Python)];
+    needed_components(&index, &[config], &pairs, &|_| false, &|_| true)
+        .into_iter()
+        .chain(selected_components(
+            &index,
+            config,
+            &Language::Python,
+            &|_| false,
+            &|_| true,
+        ))
+        .map(|c| c.name.clone())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+#[test]
+fn the_pyrefly_component_is_fetched_only_when_the_backend_names_it() {
+    assert_eq!(python_names(&Config::default()), ["python"], "pyrefly is opt-in");
+
+    let mut ty = Config::default();
+    ty.engines.insert("python-types".into(), python_types("ty"));
+    assert_eq!(python_names(&ty), ["python"], "the ty backend leaves pyrefly alone");
+
+    let mut pyrefly = Config::default();
+    pyrefly.engines.insert("python-types".into(), python_types("pyrefly"));
+    assert_eq!(python_names(&pyrefly), ["pyrefly", "python"]);
+}
+
+#[test]
+fn a_v1_language_table_selecting_pyrefly_fetches_its_component() {
+    let config = Config {
+        lint: toml::toml! { [python.python-types] backend = "pyrefly" },
+        ..Config::default()
+    };
+    assert_eq!(python_names(&config), ["pyrefly", "python"]);
+}
+
+#[test]
+fn switching_the_shared_table_off_does_not_fetch_pyrefly() {
+    let mut config = Config::default();
+    let mut table = python_types("pyrefly");
+    table.enabled = Some(false);
+    config.engines.insert("python-types".into(), table);
+    assert!(
+        !python_names(&config).contains(&"pyrefly".to_owned()),
+        "`enabled = false` on the shared table switches the routed engine off with it"
+    );
 }

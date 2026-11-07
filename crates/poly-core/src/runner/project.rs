@@ -34,7 +34,9 @@ use super::types::{LintError, LintResult};
 use crate::components::ResolvedComponents;
 use crate::config::{EngineConfig, Kind};
 use crate::discover::DiscoveredFile;
-use crate::engine::{Diagnostic, ENABLED_OPTION_KEY, Engine, ProjectEnvironment, ProjectFile, ProjectRequest};
+use crate::engine::{
+    Diagnostic, ENABLED_OPTION_KEY, Engine, ProjectEnvironment, ProjectFile, ProjectRequest, WireSelection,
+};
 use crate::engine_guard::guard_engine_panic;
 use crate::filter::{PerFileIgnores, Suppressions, is_binary, is_generated_source, relative_for_match};
 use crate::language::Language;
@@ -133,14 +135,19 @@ fn plan_project_engines(
                 served.is_empty() || served.contains(language)
             })
             .cloned();
-        for engine in registered.chain(from_components).chain(injected) {
+        let candidates: Vec<Arc<dyn Engine>> = registered.chain(from_components).chain(injected).collect();
+        let declared_here: Vec<WireSelection> = candidates.iter().filter_map(|engine| engine.selection()).collect();
+        for engine in candidates {
             if !selection.selects(engine.name()) || !seen.insert((*config_id, engine.name())) {
                 continue;
             }
-            let config = configs
-                .config(*config_id)
-                .engine_config(language, engine.name(), Kind::Lint);
+            let declared = engine.selection();
+            let table = declared.as_ref().map_or_else(|| engine.name(), |s| s.table.as_str());
+            let config = configs.config(*config_id).engine_config(language, table, Kind::Lint);
             if config.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool) == Some(false) {
+                continue;
+            }
+            if declared.is_some_and(|selection| !is_selected(&selection, &config.options, &declared_here)) {
                 continue;
             }
             let gated_off = engine
@@ -159,6 +166,20 @@ fn plan_project_engines(
     }
     plans.sort_by(|a, b| (a.config_id, a.engine.name()).cmp(&(b.config_id, b.engine.name())));
     plans
+}
+
+/// Whether the table options pick the engine that declared `selection`: its `key` is set to the engine's
+/// `value`, or to a value no engine declares and the engine is the default (it then reports that value as
+/// unknown). An unset key picks nothing: engines that share a table are opt-in.
+fn is_selected(selection: &WireSelection, options: &toml::Table, siblings: &[WireSelection]) -> bool {
+    let Some(chosen) = options.get(&selection.key).and_then(toml::Value::as_str) else {
+        return false;
+    };
+    let claimed = |other: &WireSelection| other.table == selection.table && other.key == selection.key;
+    chosen == selection.value
+        || (selection.default
+            && !siblings.iter().any(|other| claimed(other) && other.value == chosen)
+            && !poly_component_index::index().claims_selection(&selection.table, &selection.key, chosen))
 }
 
 /// The project root for a config scope: the directory holding its `poly.toml`, else the run root,
@@ -476,6 +497,40 @@ pub(super) fn merge_findings(
 mod gate_tests {
     use super::*;
     use crate::config::Config;
+    use poly_component_host::ComponentEngine;
+    use poly_component_protocol::{WireCapabilities, WireEngineDesc};
+
+    /// The `pyrefly` engine as the component index describes it: a Python project check.
+    fn pyrefly_component() -> ComponentEngine {
+        let desc = WireEngineDesc {
+            name: "pyrefly".into(),
+            languages: vec!["python".into()],
+            capabilities: WireCapabilities {
+                lint: false,
+                format: false,
+                fix: false,
+                project: true,
+            },
+            version: "pyrefly-test".into(),
+            option_keys: Vec::new(),
+            hooks: 0,
+            takes_over_tier_one: false,
+            claimed_paths: Vec::new(),
+            host_hook: "none".into(),
+            supplements_tier_one: false,
+            self_manages_enabled: false,
+            supersedes_generic_formatter: false,
+            batch_shard_floor: 2,
+            project_inputs: Default::default(),
+            selection: Some(WireSelection {
+                table: "python-types".into(),
+                key: "backend".into(),
+                value: "pyrefly".into(),
+                default: false,
+            }),
+        };
+        ComponentEngine::unavailable_declining("pyrefly", &desc, "0000000000000000", "test").unwrap()
+    }
 
     fn planned(config: Config) -> Vec<&'static str> {
         let files = [DiscoveredFile {
@@ -484,29 +539,75 @@ mod gate_tests {
             config_id: 0,
         }];
         let configs = ConfigSet::single(config);
-        plan_project_engines(
-            &files,
-            &configs,
-            EngineSelection::new(&[], &[]),
-            &ResolvedComponents::default(),
-        )
-        .iter()
-        .map(|plan| plan.engine.name())
-        .collect()
+        let components = ResolvedComponents::serving(0, Language::Python, vec![pyrefly_component()]);
+        plan_project_engines(&files, &configs, EngineSelection::new(&[], &[]), &components)
+            .iter()
+            .map(|plan| plan.engine.name())
+            .collect()
+    }
+
+    fn with_backend(backend: &str) -> Config {
+        let lint: toml::Table = toml::from_str(&format!("[python.python-types]\nbackend = \"{backend}\"\n")).unwrap();
+        Config {
+            lint,
+            ..Config::default()
+        }
     }
 
     #[test]
     fn python_types_is_not_planned_without_a_backend() {
-        assert!(!planned(Config::default()).contains(&"python-types"));
+        assert!(planned(Config::default()).is_empty());
     }
 
     #[test]
-    fn python_types_is_planned_once_a_backend_is_set() {
-        let lint: toml::Table = toml::from_str("[python.python-types]\nbackend = \"ty\"\n").unwrap();
+    fn the_ty_backend_plans_ty_and_not_pyrefly() {
+        assert_eq!(planned(with_backend("ty")), ["python-types"]);
+    }
+
+    #[test]
+    fn the_pyrefly_backend_plans_the_component_engine_and_ty_stands_down() {
+        assert_eq!(planned(with_backend("pyrefly")), ["pyrefly"]);
+    }
+
+    #[test]
+    fn an_unknown_backend_plans_the_default_so_it_can_report_the_value() {
+        assert_eq!(planned(with_backend("nonsense")), ["python-types"]);
+    }
+
+    #[test]
+    fn the_routed_engine_reads_the_shared_table() {
+        let files = [DiscoveredFile {
+            path: PathBuf::from("app.py"),
+            language: Language::Python,
+            config_id: 0,
+        }];
+        let lint: toml::Table =
+            toml::from_str("[python.python-types]\nbackend = \"pyrefly\"\npython_version = \"3.11\"\n").unwrap();
+        let configs = ConfigSet::single(Config {
+            lint,
+            ..Config::default()
+        });
+        let components = ResolvedComponents::serving(0, Language::Python, vec![pyrefly_component()]);
+        let plans = plan_project_engines(&files, &configs, EngineSelection::new(&[], &[]), &components);
+        assert_eq!(plans.len(), 1);
+        assert_eq!(
+            plans[0]
+                .config
+                .options
+                .get("python_version")
+                .and_then(toml::Value::as_str),
+            Some("3.11")
+        );
+    }
+
+    #[test]
+    fn switching_the_shared_table_off_stops_both_backends() {
+        let lint: toml::Table =
+            toml::from_str("[python.python-types]\nbackend = \"pyrefly\"\nenabled = false\n").unwrap();
         let config = Config {
             lint,
             ..Config::default()
         };
-        assert!(planned(config).contains(&"python-types"));
+        assert!(planned(config).is_empty());
     }
 }
