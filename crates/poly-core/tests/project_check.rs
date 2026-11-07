@@ -1673,6 +1673,19 @@ mod whole_tree {
         );
         assert_eq!(only, baseline);
 
+        let (other, _) = lint_findings_with(
+            dir.path(),
+            &["nested"],
+            graph(),
+            &[NAME],
+            selecting(&["typos"], &[]),
+            false,
+        );
+        assert!(
+            other.is_empty(),
+            "`--only typos` must drop the ancestor plan: {other:?}"
+        );
+
         let (skipped, _) = lint_findings_with(
             dir.path(),
             &["nested"],

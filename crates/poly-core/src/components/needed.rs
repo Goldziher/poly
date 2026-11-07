@@ -233,6 +233,27 @@ pub(crate) fn selected_components<'a>(
         .collect()
 }
 
+/// The subset of [`selected_components`] hosting an engine that checks the whole tree of its config. A config above
+/// a path-scoped run owns no file of it, so only such an engine runs there; its per-file components stay out.
+#[must_use]
+pub(crate) fn selected_whole_tree_components<'a>(
+    index: &'a ComponentIndex,
+    config: &Config,
+    language: &Language,
+    linked: &dyn Fn(&str) -> bool,
+    selected: Selected<'_>,
+) -> Vec<&'a Component> {
+    selected_components(index, config, language, linked, selected)
+        .into_iter()
+        .filter(|component| {
+            component.engines.iter().any(|desc| {
+                desc.project_inputs.dirs.as_ref().is_some_and(|dirs| dirs.whole_tree)
+                    && engine_in_play(config, Some(language), desc, selected)
+            })
+        })
+        .collect()
+}
+
 /// Every downloadable component a run over `pairs` needs: those that apply to some pair, plus
 /// each config's explicit selections even when no file of theirs was discovered. Sorted by
 /// index order.
@@ -244,7 +265,27 @@ pub(crate) fn needed_components<'a>(
     linked: &dyn Fn(&str) -> bool,
     selected: Selected<'_>,
 ) -> Vec<&'a Component> {
+    needed_components_with_ancestors(index, configs, pairs, &[], linked, selected)
+}
+
+/// [`needed_components`] plus the whole-tree components of the `ancestors` pairs: configs above a path-scoped run.
+#[must_use]
+pub(crate) fn needed_components_with_ancestors<'a>(
+    index: &'a ComponentIndex,
+    configs: &[&Config],
+    pairs: &[(usize, Language)],
+    ancestors: &[(usize, Language)],
+    linked: &dyn Fn(&str) -> bool,
+    selected: Selected<'_>,
+) -> Vec<&'a Component> {
     let mut names: BTreeSet<&str> = BTreeSet::new();
+    for (config_id, language) in ancestors {
+        names.extend(
+            selected_whole_tree_components(index, configs[*config_id], language, linked, selected)
+                .into_iter()
+                .map(|c| c.name.as_str()),
+        );
+    }
     for (config_id, language) in pairs {
         names.extend(
             selected_components(index, configs[*config_id], language, linked, selected)

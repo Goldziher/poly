@@ -4,7 +4,8 @@ use poly_component_index::{Component, ComponentIndex, ComponentKind};
 use poly_component_protocol::{WireCapabilities, WireEngineDesc, WireSelection};
 use poly_config::v2::{ComponentsConfig, Enable, EngineTable};
 
-use super::{ComponentsReport, MissingComponent, needed_components, selected_components};
+use super::needed::needed_components;
+use super::{ComponentsReport, MissingComponent, selected_components};
 use crate::config::Config;
 use crate::language::Language;
 

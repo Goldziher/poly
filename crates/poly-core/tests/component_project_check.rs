@@ -170,6 +170,9 @@ fn a_component_served_project_check_reports_its_findings() {
 /// The file names of every `ProjectCheck` the recording component received.
 static SEEN_CALLS: Mutex<Vec<Vec<String>>> = Mutex::new(Vec::new());
 
+/// Serializes the tests that record into [`SEEN_CALLS`].
+static RECORDING: Mutex<()> = Mutex::new(());
+
 fn whole_tree_desc() -> WireEngineDesc {
     WireEngineDesc {
         project_inputs: WireProjectInputs {
@@ -234,6 +237,7 @@ impl TransportConnector for RecorderConnector {
 
 #[test]
 fn a_run_on_a_nested_directory_gives_a_component_the_whole_tree_of_the_ancestor_config() {
+    let _recording = RECORDING.lock().unwrap_or_else(|e| e.into_inner());
     let mut component_index = index();
     component_index.components[0].engines = vec![whole_tree_desc()];
     let cache = tempfile::tempdir().unwrap();
@@ -282,4 +286,66 @@ fn a_run_on_a_nested_directory_gives_a_component_the_whole_tree_of_the_ancestor_
         ["a.py", "b.py"],
         "the root config judges the whole tree: {calls:?}"
     );
+}
+
+#[test]
+fn a_per_file_component_of_an_ancestor_config_is_neither_ensured_nor_reported() {
+    let _recording = RECORDING.lock().unwrap_or_else(|e| e.into_inner());
+    let perfile = WireEngineDesc {
+        name: "perfile".into(),
+        capabilities: WireCapabilities {
+            lint: true,
+            format: false,
+            fix: false,
+            project: false,
+        },
+        ..desc()
+    };
+    let mut component_index = index();
+    component_index.components[0].engines = vec![whole_tree_desc()];
+    component_index.components.push(Component {
+        name: "perfile".into(),
+        kind: ComponentKind::Engines,
+        opt_in: false,
+        download_only: false,
+        features: vec!["engine-perfile".into()],
+        engines: vec![perfile],
+        lock_sha: None,
+    });
+    let cache = tempfile::tempdir().unwrap();
+    let mut host_options = HostOptions::new(lock(), PathBuf::from(cache.path()));
+    host_options.target = Some(TARGET.into());
+    host_options.gate_loads = true;
+    let host = ComponentHost::new(host_options)
+        .unwrap()
+        .with_connector(Arc::new(RecorderConnector));
+    let options = RunOptions {
+        component_injection: Some(ComponentInjection::new(host, component_index)),
+        no_cache: true,
+        jobs: Some(1),
+        ..RunOptions::default()
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let write = |name: &str, contents: &str| {
+        let path = dir.path().join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
+    };
+    write("poly.toml", "[workspace]\nroot = true\n");
+    write("packages/a/poly.toml", "[format]\n[components]\nenable = []\n");
+    write("packages/a/a.py", "a = 1\n");
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+
+    let run = poly_core::lint_run(
+        &[dir.path().join("packages/a")],
+        &Config::default(),
+        &options,
+        false,
+        false,
+    )
+    .unwrap();
+    assert!(run.errors.is_empty(), "{:?}", run.errors);
+    assert_eq!(run.components.used, ["checker"], "{:?}", run.components);
+    assert!(run.components.missing.is_empty(), "{:?}", run.components);
 }
