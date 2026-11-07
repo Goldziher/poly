@@ -65,6 +65,7 @@ pub struct ComponentEngine {
     unavailable: Option<String>,
     unavailable_skips: bool,
     unavailable_noop: bool,
+    max_file_bytes: Option<usize>,
 }
 
 fn table_slot(table: OptionTable) -> usize {
@@ -183,6 +184,7 @@ impl ComponentEngine {
             unavailable: None,
             unavailable_skips: false,
             unavailable_noop: false,
+            max_file_bytes: None,
         })
     }
 
@@ -260,6 +262,14 @@ impl ComponentEngine {
     #[must_use]
     pub fn declining_reason(&self) -> Option<&str> {
         self.unavailable.as_deref().filter(|_| self.unavailable_skips)
+    }
+
+    /// Decline files larger than `max` bytes with a counted skip, for a component whose transport
+    /// cannot carry them (see [`poly_component_protocol::sidecar::MAX_FILE_BYTES`]).
+    #[must_use]
+    pub fn with_max_file_bytes(mut self, max: usize) -> Self {
+        self.max_file_bytes = Some(max);
+        self
     }
 
     /// The slot this engine loads its component through.
@@ -375,6 +385,12 @@ impl Engine for ComponentEngine {
     fn skip_reason(&self, src: &SourceFile) -> Option<Cow<'static, str>> {
         if let Some(reason) = &self.unavailable {
             return self.unavailable_skips.then(|| Cow::Owned(reason.clone()));
+        }
+        if let Some(max) = self.max_file_bytes.filter(|&max| src.content.len() > max) {
+            return Some(Cow::Owned(format!(
+                "larger than the {max}-byte limit of the {} component",
+                self.slot.component_id()
+            )));
         }
         if !self.hook(hooks::SKIP_REASON) {
             return None;

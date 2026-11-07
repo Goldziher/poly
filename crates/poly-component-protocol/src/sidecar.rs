@@ -25,6 +25,16 @@ pub const METHOD_CALL: &str = "call";
 /// The contract name a poly engine component provides, as declared in `alef.toml`.
 pub const CONTRACT: &str = "poly";
 
+/// The largest file a sidecar is asked to process, in bytes.
+///
+/// alef's stdio envelope carries a payload as a JSON array of numbers (up to four characters per
+/// byte, `255,`) and bounds a frame at 16 MiB, in both directions. A file of `n` bytes therefore
+/// costs up to `4n` bytes in the request and, when formatting grows it, in the reply: past about
+/// 4 MiB the exchange cannot fit one frame. This leaves room for the request header and for
+/// output somewhat larger than the input. The host declines larger files with a counted skip
+/// instead of sending them.
+pub const MAX_FILE_BYTES: usize = 3 * 1024 * 1024;
+
 /// A `call` payload that cannot be split into a header and a body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum PayloadError {

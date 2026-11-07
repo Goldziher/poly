@@ -1,6 +1,6 @@
 //! [`ComponentHost`]: the manager, the connector and one slot per component.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -78,6 +78,7 @@ pub struct ComponentHost {
     pub(crate) connector: Arc<dyn TransportConnector>,
     pub(crate) offline: bool,
     pub(crate) shared: Arc<Shared>,
+    sidecars: HashSet<String>,
     init: InitParams,
     slots: Mutex<HashMap<String, Arc<ComponentSlot>>>,
 }
@@ -124,7 +125,8 @@ impl ComponentHost {
         }
         Ok(Self {
             manager: Arc::new(manager),
-            connector: Arc::new(AlefConnector::with_sidecars(options.sidecars)),
+            connector: Arc::new(AlefConnector::with_sidecars(options.sidecars.iter().cloned())),
+            sidecars: options.sidecars.into_iter().collect(),
             offline: options.offline,
             shared: Arc::new(Shared::new(options.gate_loads)),
             init: options.init,
@@ -212,7 +214,12 @@ impl ComponentHost {
     ) -> anyhow::Result<ComponentEngine> {
         let slot = self.slot(component_id, expected)?;
         let sha = self.lock_sha256(component_id).context("component has no lock entry")?;
-        ComponentEngine::new(component_id, desc, &sha, slot)
+        let engine = ComponentEngine::new(component_id, desc, &sha, slot)?;
+        Ok(if self.sidecars.contains(component_id) {
+            engine.with_max_file_bytes(poly_component_protocol::sidecar::MAX_FILE_BYTES)
+        } else {
+            engine
+        })
     }
 
     /// The stand-in for an engine whose component cannot be used; see

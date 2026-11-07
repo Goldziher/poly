@@ -158,6 +158,18 @@ fn a_sidecar_serves_a_format_call_through_the_proxy() {
 }
 
 #[test]
+fn a_file_the_frame_cannot_carry_is_declined_with_a_counted_skip() {
+    let fixture = scripted("ok", PROTOCOL_VERSION, Duration::from_secs(10), None);
+    let limit = poly_component_protocol::sidecar::MAX_FILE_BYTES;
+    assert_eq!(fixture.engine.skip_reason(&shell(&"a".repeat(limit))), None);
+    let reason = fixture.engine.skip_reason(&shell(&"a".repeat(limit + 1)));
+    assert_eq!(
+        reason.as_deref(),
+        Some(format!("larger than the {limit}-byte limit of the sh component").as_str())
+    );
+}
+
+#[test]
 fn a_crash_mid_call_fails_that_call_and_every_later_one() {
     let fixture = scripted("crash_at_3", PROTOCOL_VERSION, Duration::from_secs(10), None);
     let first = format!("{:#}", formatted(&fixture.engine).unwrap_err());
