@@ -95,3 +95,48 @@ pub struct ProjectRequest<'a> {
     /// The host-resolved toolchain environment.
     pub environment: &'a ProjectEnvironment,
 }
+
+/// The language id of a listing entry: a file under a declared directory that the engine does not
+/// serve, handed over by name with empty content (see [`ProjectDirs::list_unserved`]).
+pub const LISTING_LANGUAGE: &str = "listing";
+
+/// A file a project check reads besides the files it serves, named by an engine option.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectSideFile {
+    /// The option naming the path, relative to the project root.
+    pub option_key: String,
+    /// The path used when the option is unset.
+    pub default_path: String,
+}
+
+/// The directories a project check is about, named by engine options.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectDirs {
+    /// The option naming one directory, relative to the project root.
+    pub dir_key: String,
+    /// The directory used when the option is unset.
+    pub dir_default: String,
+    /// An option holding a list of directories that replaces `dir_key`, when the engine has one.
+    pub paths_key: Option<String>,
+    /// A boolean option that extends the directories to their subdirectories, when the engine has one.
+    pub recursive_key: Option<String>,
+    /// Whether the host also lists the files in these directories that the engine does not serve
+    /// (every file type, names only, empty content, language `Other("listing")`).
+    pub list_unserved: bool,
+}
+
+/// What a project-check engine needs from the host beyond the files of the languages it serves.
+///
+/// Declared by the engine, carried in its description (and so in the component index), and read
+/// by the host: the core holds no table keyed by engine name. Everything here is resolved by the
+/// host and handed over as content, because a component reads nothing itself.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProjectInputs {
+    /// An option that must be set for the engine to be planned at all, so a project that never
+    /// configured it pays nothing for the phase.
+    pub gate_key: Option<String>,
+    /// Side files, each loaded when it exists.
+    pub files: Vec<ProjectSideFile>,
+    /// When set, only served files under these directories are handed over.
+    pub dirs: Option<ProjectDirs>,
+}

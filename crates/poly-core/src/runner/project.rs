@@ -8,10 +8,17 @@
 //! suppression and `[per-file-ignores]` filters as per-file diagnostics, so a report cannot tell
 //! the two apart.
 //!
+//! An engine that declares directories in [`Engine::project_inputs`](crate::engine::Engine::project_inputs)
+//! is not handed the run's file set but the tree under those directories, so its verdict does not
+//! depend on which paths the run named; only the findings it reports do.
+//!
 //! Results are cached under [`Namespace::Lint`] with the engine id `project:<engine>`, keyed on
 //! the engine version, a fingerprint of its resolved config, the host environment, and the sorted
 //! `(path, content digest)` list of the files it saw — any change to one file, the set, the config
 //! or the interpreter re-runs the whole check, and nothing else does.
+
+mod inputs;
+mod scope;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -31,7 +38,7 @@ use crate::engine::{Diagnostic, ENABLED_OPTION_KEY, Engine, ProjectEnvironment, 
 use crate::engine_guard::guard_engine_panic;
 use crate::filter::{PerFileIgnores, Suppressions, is_binary, is_generated_source, relative_for_match};
 use crate::language::Language;
-use crate::registry::{GATED_PROJECT_ENGINES, engines_for};
+use crate::registry::engines_for;
 use crate::resolve::ConfigSet;
 use crate::runner::SuppressedDiagnostic;
 
@@ -136,9 +143,10 @@ fn plan_project_engines(
             if config.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool) == Some(false) {
                 continue;
             }
-            let gated_off = GATED_PROJECT_ENGINES
-                .iter()
-                .any(|(name, key)| *name == engine.name() && !config.options.contains_key(*key));
+            let gated_off = engine
+                .project_inputs()
+                .gate_key
+                .is_some_and(|key| !config.options.contains_key(&key));
             if gated_off {
                 continue;
             }
@@ -233,20 +241,117 @@ fn cache_key(
     )
 }
 
+/// What the run was given, beyond the discovered files: the configs, whether each acts on generated
+/// sources, and the paths and `--exclude` globs. An engine that declares directories reads its own
+/// tree whatever the paths are (see [`inputs`]); its findings are then narrowed to what they name.
+pub(super) struct RunInputs<'a> {
+    pub(super) configs: &'a ConfigSet,
+    pub(super) act_on_generated: &'a [bool],
+    pub(super) paths: &'a [PathBuf],
+    pub(super) exclude: &'a [String],
+}
+
+impl<'a> RunInputs<'a> {
+    pub(super) fn new(
+        configs: &'a ConfigSet,
+        act_on_generated: &'a [bool],
+        paths: &'a [PathBuf],
+        exclude: &'a [String],
+    ) -> Self {
+        Self {
+            configs,
+            act_on_generated,
+            paths,
+            exclude,
+        }
+    }
+}
+
+/// An engine's findings for `loaded`, from the cache when it holds them, else by running the check.
+fn report_for(
+    plan: &ProjectPlan,
+    root: &Path,
+    loaded: &[ProjectFile],
+    environment: &ProjectEnvironment,
+    cache: &ResultCache,
+) -> Result<Vec<(PathBuf, Vec<Diagnostic>)>, LintError> {
+    let key = cache.enabled().then(|| cache_key(plan, root, loaded, environment));
+    let cached = key
+        .as_ref()
+        .and_then(|key| cache.get(Namespace::Lint, key))
+        .and_then(|bytes| serde_json::from_slice::<Vec<(PathBuf, Vec<Diagnostic>)>>(&bytes).ok());
+    if let Some(reported) = cached {
+        return Ok(reported);
+    }
+    let request = ProjectRequest {
+        root,
+        files: loaded,
+        config: &plan.config,
+        environment,
+    };
+    let reported =
+        guard_engine_panic(plan.engine.name(), root, || plan.engine.project_check(&request)).map_err(|error| {
+            LintError {
+                path: root.to_path_buf(),
+                message: format!("project check '{}' failed: {error:#}", plan.engine.name()),
+            }
+        })?;
+    if let Some(key) = &key
+        && let Ok(bytes) = serde_json::to_vec(&reported)
+        && let Err(error) = cache.put(Namespace::Lint, key, &bytes)
+    {
+        tracing::debug!(%error, "project check: result not cached");
+    }
+    Ok(reported)
+}
+
+/// Turn an engine's `reported` findings into [`ProjectFinding`]s: severity remapped, fixes dropped, and,
+/// when `narrowed_to` is set, only those on files the run named.
+fn collect_findings(
+    plan: &ProjectPlan,
+    reported: Vec<(PathBuf, Vec<Diagnostic>)>,
+    narrowed_to: Option<&scope::RunScope>,
+    findings: &mut Vec<ProjectFinding>,
+) {
+    let remap = build_severity_remap(&plan.config);
+    for (path, mut diagnostics) in reported {
+        let path = match narrowed_to {
+            Some(run_scope) => match run_scope.admit(&path) {
+                Some(admitted) => admitted,
+                None => continue,
+            },
+            None => path,
+        };
+        if !remap.is_empty() {
+            remap.apply(&mut diagnostics);
+        }
+        // The edits were computed against the engine's own view of the project and nothing
+        // applies them, so advertising them as fixable would be a promise `--fix` cannot keep.
+        for diagnostic in &mut diagnostics {
+            diagnostic.fix.clear();
+        }
+        findings.push(ProjectFinding {
+            path,
+            config_id: plan.config_id,
+            diagnostics,
+        });
+    }
+}
+
 /// Run every applicable project engine over `files`.
 pub(super) fn run_project_phase(
     files: &[DiscoveredFile],
-    configs: &ConfigSet,
+    run: &RunInputs<'_>,
     selection: EngineSelection<'_>,
     cache: &ResultCache,
-    act_on_generated: &[bool],
     components: &ResolvedComponents,
 ) -> ProjectOutcome {
-    let plans = plan_project_engines(files, configs, selection, components);
+    let plans = plan_project_engines(files, run.configs, selection, components);
     let mut outcome = ProjectOutcome::default();
     if plans.is_empty() {
         return outcome;
     }
+    let run_scope = scope::RunScope::new(run.paths);
     let mut environments: FxHashMap<PathBuf, ProjectEnvironment> = FxHashMap::default();
     for plan in &plans {
         let served = plan.engine.languages();
@@ -257,61 +362,47 @@ pub(super) fn run_project_phase(
         if scoped.is_empty() {
             continue;
         }
-        let root = root_for(configs, plan.config_id);
+        let root = root_for(run.configs, plan.config_id);
+        let dirs = match inputs::plan_dirs(plan) {
+            Ok(dirs) => dirs,
+            Err(message) => {
+                outcome.errors.push(LintError {
+                    path: root,
+                    message: format!("project check '{}': {message}", plan.engine.name()),
+                });
+                continue;
+            }
+        };
+        if let Some(dirs) = &dirs
+            && !dirs.absolute(&root).any(|dir| run_scope.reaches(&dir))
+        {
+            continue;
+        }
         let environment = environments
             .entry(root.clone())
             .or_insert_with(|| crate::project::env::resolve_environment(&root));
-        let loaded = load_files(&scoped, act_on_generated);
-        let key = cache.enabled().then(|| cache_key(plan, &root, &loaded, &*environment));
-        let cached = key
-            .as_ref()
-            .and_then(|key| cache.get(Namespace::Lint, key))
-            .and_then(|bytes| serde_json::from_slice::<Vec<(PathBuf, Vec<Diagnostic>)>>(&bytes).ok());
-        let reported = match cached {
-            Some(reported) => reported,
-            None => {
-                let request = ProjectRequest {
-                    root: &root,
-                    files: &loaded,
-                    config: &plan.config,
-                    environment: &*environment,
-                };
-                match guard_engine_panic(plan.engine.name(), &root, || plan.engine.project_check(&request)) {
-                    Ok(reported) => {
-                        if let Some(key) = &key
-                            && let Ok(bytes) = serde_json::to_vec(&reported)
-                            && let Err(error) = cache.put(Namespace::Lint, key, &bytes)
-                        {
-                            tracing::debug!(%error, "project check: result not cached");
-                        }
-                        reported
-                    }
-                    Err(error) => {
-                        outcome.errors.push(LintError {
-                            path: root.clone(),
-                            message: format!("project check '{}' failed: {error:#}", plan.engine.name()),
-                        });
-                        continue;
-                    }
-                }
+        let loaded = match inputs::load(plan, &root, dirs.as_ref(), &scoped, run) {
+            Ok(loaded) => loaded,
+            Err(message) => {
+                outcome.errors.push(LintError {
+                    path: root,
+                    message: format!("project check '{}': {message}", plan.engine.name()),
+                });
+                continue;
             }
         };
-        let remap = build_severity_remap(&plan.config);
-        for (path, mut diagnostics) in reported {
-            if !remap.is_empty() {
-                remap.apply(&mut diagnostics);
-            }
-            // The edits were computed against the engine's own view of the project and nothing
-            // applies them, so advertising them as fixable would be a promise `--fix` cannot keep.
-            for diagnostic in &mut diagnostics {
-                diagnostic.fix.clear();
-            }
-            outcome.findings.push(ProjectFinding {
-                path,
-                config_id: plan.config_id,
-                diagnostics,
-            });
+        if !inputs::has_substance(&loaded) {
+            continue;
         }
+        let reported = match report_for(plan, &root, &loaded, environment, cache) {
+            Ok(reported) => reported,
+            Err(error) => {
+                outcome.errors.push(error);
+                continue;
+            }
+        };
+        let narrowed = dirs.is_some().then_some(&run_scope);
+        collect_findings(plan, reported, narrowed, &mut outcome.findings);
         for file in loaded {
             outcome.contents.entry(file.path).or_insert(file.content);
         }

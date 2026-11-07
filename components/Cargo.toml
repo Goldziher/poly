@@ -16,7 +16,7 @@ homepage = "https://github.com/Goldziher/poly"
 documentation = "https://github.com/Goldziher/poly"
 
 [workspace.dependencies]
-adrlint = "=0.4.1"
+adrlint = { version = "=0.5.0", default-features = false }
 anyhow = "1"
 biome_analyze = { git = "https://github.com/biomejs/biome", rev = "fca5c35007fc3ff9c55edb2085fc557a7fbfd16d" }
 biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "fca5c35007fc3ff9c55edb2085fc557a7fbfd16d" }

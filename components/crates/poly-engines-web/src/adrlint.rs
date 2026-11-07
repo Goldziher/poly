@@ -6,20 +6,22 @@
 //!
 //! # What this backend runs
 //!
-//! The **document** rules — `MADR01`–`MADR08`, `MADR12b`/`MADR12d`, `MADR21` and `MADR31` —
-//! over one numbered ADR (`NNNN-*.md`). poly's per-file engine contract is a pure
-//! function of one file, so three groups of adrlint rules stay in the `adrlint` CLI:
+//! Per file, the **document** rules — `MADR01`–`MADR08`, `MADR12b`/`MADR12d`, `MADR21` and
+//! `MADR31` — over one numbered ADR (`NNNN-*.md`), a pure function of that file.
 //!
-//! - **Directory rules** (`MADR41`–`MADR44`: numbering, gaps, duplicates, file names) need the
-//!   whole log. A per-file engine would either report them once per ADR or attribute them to the
-//!   wrong file.
-//! - **The immutability lock** (`ADR50`/`ADR51`) needs `adrlint.lock` and the canonical hash of
-//!   every accepted record.
-//! - **Filesystem link checks** (`MADR12a`/`MADR12c`) and **external links** (`MADR11`) need the
-//!   rest of the tree or the network. The result cache keys on the ADR's own bytes, so a target
-//!   appearing or disappearing would not invalidate a cached "missing link" finding. The
-//!   remaining `MADR12` variants — anchor resolution and an absolute-path rejection — are pure
-//!   and do run.
+//! As a **project check** ([`project`]), the tree-wide rules over the whole ADR log: numbering,
+//! gaps, duplicates and file names (`MADR41a`, `MADR41b`, `MADR42`, `MADR43`, `MADR44`) and the
+//! immutability lock (`ADR50`/`ADR51`). The host hands over the log's Markdown files and
+//! `adrlint.lock` as content and caches the result on every one of them, so a sibling ADR or the
+//! lock changing re-runs the check and nothing else does.
+//!
+//! Two groups of adrlint rules stay in the `adrlint` CLI:
+//!
+//! - **Filesystem link checks** (`MADR12a`/`MADR12c`) read the rest of the tree, which neither
+//!   tier may do: a target appearing or disappearing would not invalidate a cached "missing link"
+//!   finding. The remaining `MADR12` variants — anchor resolution and an absolute-path rejection —
+//!   are pure and do run.
+//! - **External links** (`MADR11`) need the network.
 //!
 //! Markdown quality is not duplicated either: the `rumdl` backend already lints Markdown, so this
 //! backend does not call adrlint's embedded rumdl layer.
@@ -40,6 +42,8 @@
 //!
 //! [ADR 0016]: ../../../../adrs/0016-uniform-rule-selection.md
 
+mod project;
+
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -49,7 +53,8 @@ use ::adrlint::diagnostics::{self as adr_diagnostics, Diagnostic as AdrDiagnosti
 
 use poly_engine_api::config::EngineConfig;
 use poly_engine_api::engine::{
-    Capabilities, Diagnostic, Edit, Engine, OptionKeys, OptionTable, OptionType, Severity, SourceFile, Span,
+    Capabilities, Diagnostic, Edit, Engine, OptionKeys, OptionTable, OptionType, ProjectDirs, ProjectInputs,
+    ProjectRequest, ProjectSideFile, Severity, SourceFile, Span,
 };
 use poly_engine_api::language::Language;
 use poly_engine_api::rule_config::string_list;
@@ -58,7 +63,7 @@ use poly_engine_api::rule_config::string_list;
 ///
 /// Bump the suffix whenever the diagnostic/edit mapping below changes, and the version whenever
 /// `adrlint` is upgraded — either alters output, and a stale cache entry would survive both.
-const VERSION: &str = "adrlint-0.4.1+poly1";
+const VERSION: &str = "adrlint-0.5.0+poly2";
 
 /// Why a Markdown file is routed past this backend.
 const NOT_AN_ADR: &str = "not a numbered ADR file";
@@ -96,7 +101,7 @@ impl Engine for AdrlintEngine {
             // adrlint's formatter *is* rumdl, which poly already runs.
             format: false,
             fix: true,
-            project: false,
+            project: true,
         }
     }
 
@@ -111,6 +116,12 @@ impl Engine for AdrlintEngine {
                 ("select", OptionType::ARRAY),
                 ("extend_select", OptionType::ARRAY),
                 ("ignore", OptionType::ARRAY),
+                ("dir", OptionType::STRING),
+                ("paths", OptionType::ARRAY),
+                ("recursive", OptionType::BOOLEAN),
+                ("start", OptionType::INTEGER),
+                ("allow_gaps", OptionType::BOOLEAN),
+                ("lock", OptionType::STRING),
             ]),
             OptionTable::Format => OptionKeys::declared(&[]),
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
@@ -131,6 +142,30 @@ impl Engine for AdrlintEngine {
 
     fn skip_reason(&self, src: &SourceFile) -> Option<Cow<'static, str>> {
         (!is_adr_file(&src.path)).then_some(Cow::Borrowed(NOT_AN_ADR))
+    }
+
+    /// The tree-wide rules are switched on by `enabled`, need `adrlint.lock`, and are about one
+    /// ADR directory: the host hands over only the Markdown under it, plus a name-only listing of
+    /// the other files there, which is all `MADR42` needs.
+    fn project_inputs(&self) -> ProjectInputs {
+        ProjectInputs {
+            gate_key: Some("enabled".to_owned()),
+            files: vec![ProjectSideFile {
+                option_key: "lock".to_owned(),
+                default_path: project::DEFAULT_LOCK.to_owned(),
+            }],
+            dirs: Some(ProjectDirs {
+                dir_key: "dir".to_owned(),
+                dir_default: project::DEFAULT_DIR.to_owned(),
+                paths_key: Some("paths".to_owned()),
+                recursive_key: Some("recursive".to_owned()),
+                list_unserved: true,
+            }),
+        }
+    }
+
+    fn project_check(&self, req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {
+        project::check(req)
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

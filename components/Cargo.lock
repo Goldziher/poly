@@ -19,23 +19,18 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "adrlint"
-version = "0.4.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1edf3c36876b4ce52d8519c92d64efca886f1dbe338ac104258f84dd34435eb"
+checksum = "923af75e80532506606ef4d608a289c14ee014e34ce857ec03ff7de10ffa09c0"
 dependencies = [
  "anyhow",
  "blake3",
- "clap",
  "dirs",
  "glob",
- "ignore",
- "jiff",
- "owo-colors",
  "pulldown-cmark",
  "rumdl",
  "saphyr",
  "serde",
- "serde_json",
  "toml 1.2.0+spec-1.1.0",
  "ureq",
 ]

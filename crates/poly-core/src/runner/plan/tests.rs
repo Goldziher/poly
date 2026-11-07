@@ -752,6 +752,7 @@ fn component_engines_keep_the_built_in_order_for_toml() {
         self_manages_enabled: false,
         supersedes_generic_formatter: false,
         batch_shard_floor: 2,
+        project_inputs: Default::default(),
     };
     let component = ComponentEngine::unavailable("web", &wire, "feedfacefeedface00", "not installed").unwrap();
 

@@ -311,3 +311,305 @@ fn python_types_runs_only_with_a_backend() {
         assert_eq!(codes(&on), ["invalid-assignment"]);
     });
 }
+
+mod tree {
+    //! An engine that declares a directory tree (`project_inputs().dirs`), as adrlint does: it judges
+    //! the whole tree whatever paths the run names, and the run's paths only narrow what is reported.
+
+    use super::*;
+    use poly_core::engine::{ProjectDirs, ProjectInputs, ProjectSideFile};
+
+    const TREE: &str = "tree-check";
+    /// Reported on every served file when the engine sees fewer than three of them: the false
+    /// positive a path-scoped run would cause if the engine were handed only the named file.
+    const GAP: &str = "TREE_GAP";
+    const STRAY: &str = "TREE_STRAY";
+    const SIDE: &str = "TREE_SIDE";
+
+    struct Tree {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl Engine for Tree {
+        fn name(&self) -> &'static str {
+            TREE
+        }
+
+        fn languages(&self) -> &'static [Language] {
+            &[Language::Markdown]
+        }
+
+        fn capabilities(&self) -> Capabilities {
+            Capabilities {
+                project: true,
+                ..Capabilities::default()
+            }
+        }
+
+        fn version(&self) -> &str {
+            "1"
+        }
+
+        fn project_inputs(&self) -> ProjectInputs {
+            ProjectInputs {
+                gate_key: None,
+                files: vec![ProjectSideFile {
+                    option_key: "lock".to_owned(),
+                    default_path: "tree.lock".to_owned(),
+                }],
+                dirs: Some(ProjectDirs {
+                    dir_key: "dir".to_owned(),
+                    dir_default: "log".to_owned(),
+                    paths_key: Some("paths".to_owned()),
+                    recursive_key: Some("recursive".to_owned()),
+                    list_unserved: true,
+                }),
+            }
+        }
+
+        fn project_check(&self, req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let is_listing =
+                |file: &poly_core::engine::ProjectFile| matches!(&file.language, Language::Other(n) if n == "listing");
+            let served: Vec<_> = req.files.iter().filter(|f| f.language == Language::Markdown).collect();
+            let has_side = req
+                .files
+                .iter()
+                .any(|f| matches!(&f.language, Language::Other(n) if n != "listing"));
+            let mut reported = Vec::new();
+            for file in req.files {
+                let mut found = Vec::new();
+                if is_listing(file) {
+                    found.push(code(STRAY, 1));
+                } else if file.language == Language::Markdown {
+                    if served.len() < 3 {
+                        found.push(code(GAP, 1));
+                    }
+                    if has_side {
+                        found.push(code(SIDE, 1));
+                    }
+                    for (index, line) in file.content.lines().enumerate() {
+                        if line.contains(MARKER) {
+                            found.push(code(CODE, index as u32 + 1));
+                        }
+                    }
+                }
+                if !found.is_empty() {
+                    reported.push((file.path.clone(), found));
+                }
+            }
+            Ok(reported)
+        }
+    }
+
+    fn code(code: &str, line: u32) -> Diagnostic {
+        Diagnostic {
+            code: Some(code.to_owned()),
+            engine: TREE.to_owned(),
+            ..finding(line)
+        }
+    }
+
+    /// A project with a three-record log, a stray file in it, and Markdown outside it.
+    fn project(config: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "poly.toml",
+            &format!("[workspace]\nroot = true\n\n{config}"),
+        );
+        write(dir.path(), "log/0001.md", "# one\n");
+        write(dir.path(), "log/0002.md", "# two\nFLAG_ME\n");
+        write(dir.path(), "log/0003.md", "# three\n");
+        write(dir.path(), "log/notes.txt", "scratch\n");
+        write(dir.path(), "other/readme.md", "# readme\n");
+        dir
+    }
+
+    fn engine_run<R>(body: impl FnOnce(&Arc<AtomicUsize>) -> R) -> R {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let engine: Arc<dyn Engine> = Arc::new(Tree { calls: calls.clone() });
+        with_extra_project_engines(vec![engine], || {
+            let cache_home = tempfile::tempdir().unwrap();
+            // SAFETY: `with_extra_project_engines` serialises every caller in this process.
+            unsafe {
+                std::env::set_var("POLY_CACHE_HOME", cache_home.path());
+            }
+            body(&calls)
+        })
+    }
+
+    fn run(paths: &[PathBuf]) -> LintRun {
+        let options = RunOptions {
+            jobs: Some(1),
+            ..RunOptions::default()
+        };
+        lint_run(paths, &Config::default(), &options, false, false).unwrap()
+    }
+
+    /// `(file name, code)` of every finding of the tree engine.
+    fn found(run: &LintRun) -> Vec<(String, String)> {
+        let mut found: Vec<_> = run
+            .results
+            .iter()
+            .flat_map(|result| {
+                let name = result.path.file_name().unwrap().to_string_lossy().into_owned();
+                result
+                    .diagnostics
+                    .iter()
+                    .filter(|d| d.engine == TREE)
+                    .map(move |d| (name.clone(), d.code.clone().unwrap_or_default()))
+            })
+            .collect();
+        found.sort();
+        found
+    }
+
+    fn pair(name: &str, code: &str) -> (String, String) {
+        (name.to_owned(), code.to_owned())
+    }
+
+    #[test]
+    fn a_run_over_the_whole_project_reports_the_tree() {
+        let dir = project("");
+        engine_run(|calls| {
+            let run = run(&[dir.path().to_path_buf()]);
+            assert_eq!(found(&run), [pair("0002.md", CODE), pair("notes.txt", STRAY)]);
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+        });
+    }
+
+    #[test]
+    fn naming_one_file_reports_on_it_without_a_false_verdict_about_the_tree() {
+        let dir = project("");
+        engine_run(|calls| {
+            let run = run(&[dir.path().join("log/0002.md")]);
+            // Handed only the named file the engine would see fewer than three records and report
+            // `TREE_GAP`; handed the log it reports the real finding in the file and nothing else.
+            assert_eq!(found(&run), [pair("0002.md", CODE)]);
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+        });
+    }
+
+    #[test]
+    fn naming_a_clean_file_of_the_log_reports_nothing() {
+        let dir = project("");
+        engine_run(|_| {
+            assert_eq!(found(&run(&[dir.path().join("log/0001.md")])), []);
+        });
+    }
+
+    #[test]
+    fn naming_the_directory_reports_the_listing_too() {
+        let dir = project("");
+        engine_run(|_| {
+            let run = run(&[dir.path().join("log")]);
+            assert_eq!(found(&run), [pair("0002.md", CODE), pair("notes.txt", STRAY)]);
+        });
+    }
+
+    #[test]
+    fn a_run_elsewhere_in_the_project_does_not_read_the_tree() {
+        let dir = project("");
+        engine_run(|calls| {
+            let run = run(&[dir.path().join("other")]);
+            assert_eq!(found(&run), []);
+            assert_eq!(calls.load(Ordering::SeqCst), 0, "the engine must not run");
+        });
+    }
+
+    #[test]
+    fn a_path_scoped_run_shares_the_cache_with_a_full_run() {
+        let dir = project("");
+        engine_run(|calls| {
+            run(&[dir.path().to_path_buf()]);
+            run(&[dir.path().join("log/0002.md")]);
+            assert_eq!(calls.load(Ordering::SeqCst), 1, "same inputs, same key");
+        });
+    }
+
+    #[test]
+    fn no_served_file_in_the_directory_and_no_side_file_means_no_run() {
+        let dir = project("");
+        fs::remove_file(dir.path().join("log/0001.md")).unwrap();
+        fs::remove_file(dir.path().join("log/0002.md")).unwrap();
+        fs::remove_file(dir.path().join("log/0003.md")).unwrap();
+        engine_run(|calls| {
+            let run = run(&[dir.path().to_path_buf()]);
+            assert_eq!(found(&run), []);
+            assert_eq!(calls.load(Ordering::SeqCst), 0, "a listing alone is nothing to judge");
+        });
+    }
+
+    #[test]
+    fn a_side_file_alone_still_runs_the_engine() {
+        let dir = project("");
+        for name in ["0001.md", "0002.md", "0003.md"] {
+            fs::remove_file(dir.path().join("log").join(name)).unwrap();
+        }
+        write(dir.path(), "tree.lock", "locked\n");
+        engine_run(|calls| {
+            run(&[dir.path().to_path_buf()]);
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+        });
+    }
+
+    #[test]
+    fn a_configured_side_file_and_recursive_directories_are_honored() {
+        let dir = project("[engines.tree-check]\ndir = \"custom\"\nrecursive = true\nlock = \"./locks/mine.lock\"\n");
+        write(dir.path(), "custom/a/0001.md", "# a\n");
+        write(dir.path(), "custom/b/0002.md", "# b\n");
+        write(dir.path(), "custom/b/0003.md", "# c\n");
+        write(dir.path(), "locks/mine.lock", "locked\n");
+        engine_run(|_| {
+            let run = run(&[dir.path().to_path_buf()]);
+            let got = found(&run);
+            assert!(got.contains(&pair("0001.md", SIDE)), "{got:?}");
+            assert!(got.contains(&pair("0003.md", SIDE)), "{got:?}");
+            assert!(got.contains(&pair("0002.md", SIDE)), "{got:?}");
+            assert!(!got.contains(&pair("readme.md", SIDE)), "outside the directory");
+            assert!(!got.iter().any(|(_, code)| code == GAP), "{got:?}");
+        });
+    }
+
+    #[test]
+    fn an_option_of_the_wrong_type_is_an_error_not_a_silent_default() {
+        let dir = project("[engines.tree-check]\ndir = 3\n");
+        engine_run(|calls| {
+            let run = run(&[dir.path().to_path_buf()]);
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            let message = run
+                .errors
+                .iter()
+                .map(|e| e.message.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(message.contains("tree-check") && message.contains("`dir`"), "{message}");
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_lock_and_a_symlinked_directory_are_not_followed() {
+        let outside = tempfile::tempdir().unwrap();
+        write(outside.path(), "secret.lock", "x\n");
+        write(outside.path(), "0001.md", "# out\nFLAG_ME\n");
+        let dir = project("");
+        std::os::unix::fs::symlink(outside.path().join("secret.lock"), dir.path().join("tree.lock")).unwrap();
+        engine_run(|_| {
+            let got = found(&run(&[dir.path().to_path_buf()]));
+            assert!(!got.iter().any(|(_, code)| code == SIDE), "the lock was read: {got:?}");
+        });
+
+        let linked = project("[engines.tree-check]\ndir = \"linked\"\n");
+        std::os::unix::fs::symlink(outside.path(), linked.path().join("linked")).unwrap();
+        engine_run(|calls| {
+            run(&[linked.path().to_path_buf()]);
+            assert_eq!(
+                calls.load(Ordering::SeqCst),
+                0,
+                "nothing under a symlinked directory is read"
+            );
+        });
+    }
+}

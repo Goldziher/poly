@@ -3934,6 +3934,12 @@
     "lint_adrlint": {
       "type": "object",
       "properties": {
+        "allow_gaps": {
+          "type": "boolean"
+        },
+        "dir": {
+          "type": "string"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -3945,6 +3951,15 @@
         },
         "indent_width": {
           "type": "integer"
+        },
+        "lock": {
+          "type": "string"
+        },
+        "paths": {
+          "type": "array"
+        },
+        "recursive": {
+          "type": "boolean"
         },
         "rules": {
           "oneOf": [
@@ -3958,6 +3973,9 @@
         },
         "select": {
           "type": "array"
+        },
+        "start": {
+          "type": "integer"
         }
       },
       "additionalProperties": true

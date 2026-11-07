@@ -431,7 +431,9 @@ pub struct SourceFile {
     pub content: Arc<str>,
 }
 
-pub use crate::project::{ProjectEnvironment, ProjectFile, ProjectRequest, PythonEnvironment};
+pub use crate::project::{
+    ProjectDirs, ProjectEnvironment, ProjectFile, ProjectInputs, ProjectRequest, ProjectSideFile, PythonEnvironment,
+};
 
 /// What a backend is able to do for its language(s).
 #[derive(Debug, Clone, Copy, Default)]
@@ -759,6 +761,12 @@ pub trait Engine: Send + Sync {
     /// a process, so the result can be cached on the request's inputs.
     fn project_check(&self, _req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {
         Ok(Vec::new())
+    }
+
+    /// What [`Engine::project_check`] needs from the host besides the files it serves: a gating
+    /// option, side files and the directories it is about. Defaults to nothing.
+    fn project_inputs(&self) -> ProjectInputs {
+        ProjectInputs::default()
     }
 
     /// Format a file. Defaults to [`FormatOutput::Unchanged`].

@@ -194,6 +194,45 @@ pub mod hooks {
     pub const BATCH_SUPPORT: u32 = 1 << 7;
 }
 
+/// A side file of a project check: the option naming its path and the default path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct WireProjectSideFile {
+    /// Option naming the path, relative to the project root.
+    pub option_key: String,
+    /// Path used when the option is unset.
+    pub default_path: String,
+}
+
+/// The directories a project check is about, named by options.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct WireProjectDirs {
+    /// Option naming one directory, relative to the project root.
+    pub dir_key: String,
+    /// Directory used when the option is unset.
+    pub dir_default: String,
+    /// Option holding a list of directories that replaces `dir_key`.
+    pub paths_key: Option<String>,
+    /// Boolean option extending the directories to their subdirectories.
+    pub recursive_key: Option<String>,
+    /// Whether the host also lists the files the engine does not serve (names only).
+    pub list_unserved: bool,
+}
+
+/// `Engine::project_inputs`: what a project check needs from the host besides its own files.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct WireProjectInputs {
+    /// Option that must be set for the engine to be planned.
+    pub gate_key: Option<String>,
+    /// Side files the host loads when they exist.
+    #[serde(default)]
+    pub files: Vec<WireProjectSideFile>,
+    /// Directories that scope the served files and the listing.
+    pub dirs: Option<WireProjectDirs>,
+}
+
 /// Static description of one engine hosted by a component.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -226,6 +265,9 @@ pub struct WireEngineDesc {
     pub supersedes_generic_formatter: bool,
     /// `Engine::batch_shard_floor`.
     pub batch_shard_floor: u32,
+    /// `Engine::project_inputs`. Absent in an older description, which reads as "nothing".
+    #[serde(default)]
+    pub project_inputs: WireProjectInputs,
 }
 
 /// The answer to `describe()`.
