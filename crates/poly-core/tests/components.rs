@@ -639,3 +639,27 @@ fn a_missing_sidecar_fails_the_run_instead_of_falling_back_to_the_host_tool() {
     assert_eq!(run.skipped[0].reason, "component not installed: sh (offline)");
     assert_eq!(fake.formats.load(Ordering::SeqCst), 0);
 }
+
+/// Indented the way the tier-2 reindenter would fix and the sidecar's fake never does.
+const UNDENTED_SHELL: &str = "if true; then\necho hi\nfi\n";
+
+#[test]
+fn switching_shfmt_off_leaves_shell_alone_instead_of_reindenting_it() {
+    let (host, fake, _cache) = sidecar_fixture(false);
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("run.sh"), UNDENTED_SHELL).unwrap();
+    let mut config = default_config();
+    config.fmt = toml::from_str("[shell.shfmt]\nenabled = false\n").unwrap();
+    let run = format(dir.path(), &config, &inject(host, sidecar_index()));
+    assert_eq!(fake.formats.load(Ordering::SeqCst), 0, "the sidecar is not called");
+    assert!(run.errors.is_empty(), "{:?}", run.errors);
+    assert!(
+        run.results.iter().all(|result| !result.changed),
+        "the tree-sitter reindenter does not take shell over: {:?}",
+        run.results
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("run.sh")).unwrap(),
+        UNDENTED_SHELL
+    );
+}

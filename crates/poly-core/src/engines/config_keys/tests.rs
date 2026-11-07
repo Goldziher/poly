@@ -466,11 +466,7 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
     ("zigfmt", &["native_tool/mod.rs", "native_tool/batch.rs"]),
     (
         "shfmt",
-        &[
-            "native_tool/mod.rs",
-            "native_tool/tabs.rs",
-            "native_tool/batch.rs",
-        ],
+        &["native_tool/mod.rs", "native_tool/tabs.rs", "native_tool/batch.rs"],
     ),
     ("shellcheck", &["native_tool/mod.rs", "native_tool/batch.rs"]),
     ("google-java-format", &["native_tool/mod.rs", "native_tool/batch.rs"]),

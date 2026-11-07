@@ -448,6 +448,18 @@ mod real {
         assert_eq!(answer.result.unwrap_err().kind, WireErrorKind::UnknownEngine);
     }
 
+    /// The known-unformatted shell fixture and expectations of `poly-core/tests/native_tool.rs`
+    /// (spaces by default, tabs, a non-default width), now answered by the sidecar.
+    #[test]
+    fn formats_the_native_tool_fixture_as_the_host_tool_did() {
+        let Some(real) = start() else { return };
+        let engine = real.engine();
+        let unformatted = "greet() {\n      echo hi\n}\n";
+        assert_eq!(format(&engine, unformatted, 2, false), "greet() {\n  echo hi\n}\n");
+        assert_eq!(format(&engine, unformatted, 2, true), "greet() {\n\techo hi\n}\n");
+        assert_eq!(format(&engine, unformatted, 4, false), "greet() {\n    echo hi\n}\n");
+    }
+
     fn testdata() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../components/sidecars/sh/testdata")
     }
