@@ -378,21 +378,27 @@ jobs:
             echo "ALEF_IN_CONTAINER=/work/${alef#"$PWD"/}"
             echo "MISE_IN_CONTAINER=/work/${mise_bin#"$PWD"/}"
             echo "JQ_IN_CONTAINER=/work/${jq_bin#"$PWD"/}"
+            echo "GOROOT_ON_HOST=$(go env GOROOT)"
           } >> "$GITHUB_ENV"
+      # The sh component is a Go executable: alef fingerprints it with `go version`, so the plan
+      # needs the host's Go, mounted read-only as publish.yaml does.
       - name: Plan components in the container
         shell: bash
         run: |
           set -euo pipefail
-          docker run --rm -v "$PWD":/work -w /work \
+          docker run --rm -v "$PWD":/work -v "$GOROOT_ON_HOST":/opt/go:ro -w /work \
             -e TARGET -e RUST_TOOLCHAIN -e BUILD_IMAGE -e ALEF="$ALEF_IN_CONTAINER" \
             -e MISE_IN_CONTAINER -e JQ_IN_CONTAINER -e MISE_TASK_RUN_AUTO_INSTALL=false -e MISE_AUTO_INSTALL=false -e MISE_YES=1 \
             -e MISE_TRUSTED_CONFIG_PATHS=/work \
             -e CARGO_HOME=/work/target/components-release/toolchain/cargo \
             -e RUSTUP_HOME=/work/target/components-release/toolchain/rustup \
+            -e GOTOOLCHAIN=local -e GOFLAGS=-modcacherw \
+            -e GOPATH=/work/target/components-release/toolchain/gopath \
+            -e GOCACHE=/work/target/components-release/toolchain/gocache \
             "$BUILD_IMAGE" bash -euo pipefail -c '
               git config --global --add safe.directory /work
               curl -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --target "$TARGET"
-              export PATH="$CARGO_HOME/bin:$(dirname "$MISE_IN_CONTAINER"):$(dirname "$JQ_IN_CONTAINER"):$PATH"
+              export PATH="$CARGO_HOME/bin:/opt/go/bin:$(dirname "$MISE_IN_CONTAINER"):$(dirname "$JQ_IN_CONTAINER"):$PATH"
               mise run components:release plan "$TARGET"
             '
           rows="$(jq '[.rows[] | select(.action == "build")] | length' "target/components-release/$TARGET/plan/plan.json")"
