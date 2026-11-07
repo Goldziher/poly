@@ -189,15 +189,27 @@ ignore_packages = ["@scope/legacy-*"]
 ignore_dependencies = ["left-pad"]
 production = false              # judge production dependencies only
 js = true                       # false turns the source (import) analysis off
-threads = 1                     # skif's own pool; 1 spawns no threads
+threads = 4                     # skif's own pool; default: this machine's cores, 1 spawns none
 pnpm_lock = "pnpm-lock.yaml"    # also npm_lock, yarn_lock, bun_lock
 ```
 
-skif reads only the files poly hands it: sources, manifests, `tsconfig`, `pnpm-workspace.yaml` and `skif.toml`
-under `dir`, plus the lock files, never `node_modules`. The result is cached on all of them, so editing any member
-`package.json` re-runs the check, and it does not depend on what is installed on the machine. `poly lint --fix`
-applies skif's safe fixes to the manifest a finding is in; fixes that are unsafe, need a choice or edit another file
-stay suggestions. Set `[engines.skif.rules.<id>] level` to move a finding's severity.
+skif reads only the files poly hands it: sources (including Vue, Svelte and Astro components), manifests, `tsconfig`,
+`pnpm-workspace.yaml`, `skif.toml` and every `.gitignore` and `.ignore` under `dir`, plus the lock files, never
+`node_modules`. It always sees the whole tree: `.gitignore` and the pruned directories apply, but `[discovery]
+exclude`, `--exclude` and nested `poly.toml` scopes do not cut the import graph; they only decide which files get
+findings. The result is cached on all of them, so editing any member `package.json` re-runs the check, and it does
+not depend on what is installed on the machine. Every run reads and hashes the whole tree to compute that key, so on
+a very large monorepo the cost of a warm run is the read, not skif.
+
+Three rules judge a dependency by what an installed package provides and are **off unless you ask for them**:
+`unlisted-binaries`, `unused-dev-dependencies` and `unused-dependencies`. Without `node_modules`, a dependency used
+only through a binary named otherwise (`@acme/toolkit` running `kit`) or only as another dependency's peer is
+reported as unused (a lock file supplies peers, not pnpm binary names). Turn one on with `select`, with
+`[engines.skif.rules.<id>] level = "error"`, or in your `skif.toml` `[rules]`.
+
+`poly lint --fix` applies skif's safe fixes to the manifest a finding is in; fixes that are unsafe, need a choice or
+edit another file stay suggestions. After the fixes the check runs once more and that run is the report. Set
+`[engines.skif.rules.<id>] level` to move a finding's severity.
 
 ## `[workspace]`
 
