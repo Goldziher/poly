@@ -264,6 +264,41 @@ jobs:
           MISE_TASK_RUN_AUTO_INSTALL: "false"
         run: mise run sidecar:conformance
 
+  sidecar-smoke:
+    # The cross-compiled sh executable must start and answer a describe and a format call on the
+    # platforms the conformance job (Linux) does not cover.
+    name: sidecar smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            triple: aarch64-apple-darwin
+            exe: sh
+          - os: windows-latest
+            triple: x86_64-pc-windows-msvc
+            exe: sh.exe
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: xberg-io/actions/setup-mise@v1
+        with:
+          tools: go
+      - name: Build the executable for this platform
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+        run: |
+          out="${GITHUB_WORKSPACE//\\//}/target/sidecar-smoke/${{ matrix.exe }}"
+          mise run sidecar:build sh ${{ matrix.triple }} "$out"
+          echo "POLY_SH_BINARY=$out" >> "$GITHUB_ENV"
+      - name: Describe and format through the executable
+        working-directory: components/sidecars/sh
+        run: go test -count=1 -v -run TestBuiltExecutableDescribesAndFormats ./...
+
   alef-verify:
     # The checked-in alef outputs (producer crate, host module, versions) must match alef.toml.
     name: alef verify
