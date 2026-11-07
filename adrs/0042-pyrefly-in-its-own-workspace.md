@@ -42,6 +42,11 @@ pyrefly lives in `components-pyrefly/`, a cargo workspace with its own `Cargo.lo
     stops pyrefly and `--only python-types` keeps it. They only narrow, so `--only pyrefly` under
     `backend = "ty"` plans nothing. Validation accepts the table name, and the component planner applies the
     same rule, so a deselected backend's component is not fetched.
+  - That empty selection is a counted skip, not a clean pass: the run records
+    ``--only pyrefly` selects nothing here: `[python-types] backend` is "ty"`` (`is unset` when no backend is
+    set), and `--deny-skips` / `--max-skips` charge it. This is the one exception to the rule that an instruction
+    from the caller is never charged (`Withdrawal` in `runner/skips.rs`): the caller asked for a check and got
+    none, so the run must not read as passing.
   - A `backend` that is present but not a string is a value nobody declares: the default (ty) is planned and
     reports it, exit 2.
   - A `backend` value that the component index attributes to an engine this run does not have (the component is in

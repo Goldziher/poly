@@ -390,6 +390,42 @@ fn a_backend_of_a_disabled_component_is_an_error_naming_it() {
     });
 }
 
+/// `--only pyrefly` under `backend = "ty"` asks for a check the config leaves nothing to run: the run says so as a
+/// skip that is not a withdrawal, so `--deny-skips` / `--max-skips` count it instead of reading it as a clean pass.
+#[test]
+fn only_naming_an_unselected_type_checker_is_a_counted_skip() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache_home = tempfile::tempdir().unwrap();
+    with_extra_project_engines(Vec::new(), || {
+        // SAFETY: `with_extra_project_engines` serialises every caller in this process.
+        unsafe {
+            std::env::set_var("POLY_CACHE_HOME", cache_home.path());
+        }
+        write(dir.path(), "app.py", "count: int = \"three\"\n");
+        let only = RunOptions {
+            only: vec!["pyrefly".to_owned()],
+            ..opts(true)
+        };
+        let config = python_types_config("\"ty\"", Default::default());
+        let run = lint_run(&[dir.path().to_path_buf()], &config, &only, false, false).unwrap();
+        assert!(run.errors.is_empty(), "{}", error_text(&run));
+
+        let reason = "`--only pyrefly` selects nothing here: `[python-types] backend` is \"ty\"";
+        let found: Vec<_> = run.skipped.iter().filter(|s| s.reason == reason).collect();
+        assert_eq!(found.len(), 1, "{:?}", run.skipped);
+        // An in-memory config has no directory, so the scope is the working directory.
+        assert_eq!(found[0].path, std::env::current_dir().unwrap());
+
+        // The budget the CLI's `report_skip_budget` applies: every skip that is not a withdrawal.
+        let charged = run
+            .skipped
+            .iter()
+            .filter(|entry| !poly_core::is_withdrawal_reason(&entry.reason))
+            .count();
+        assert!(charged >= 1, "--deny-skips would pass: {:?}", run.skipped);
+    });
+}
+
 mod tree {
     //! An engine that declares a directory tree (`project_inputs().dirs`), as adrlint does: it judges
     //! the whole tree whatever paths the run names, and the run's paths only narrow what is reported.
