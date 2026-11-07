@@ -206,12 +206,11 @@ impl Config {
             Some(_) => lang_options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool),
             None => self.resolve_enabled(tables, engine_name, &lang_options),
         };
-        // typos and astgrep build host-side whether or not their families are linked, so a component
-        // serving them gets the same options. Any other engine's table passes through verbatim.
+        // typos, astgrep and uncomment build host-side whether or not their families are linked, so a
+        // component serving them gets the same options. Any other engine's table passes through verbatim.
         let mut options = match engine_name {
             "typos" => self.build_typos_options(&self.cross_cutting_layers(&v2_layers, engine_name, &lang_options)),
             "astgrep" => self.build_astgrep_options(&self.astgrep_layers(&v2_layers)),
-            #[cfg(feature = "engine-uncomment")]
             "uncomment" => {
                 self.build_uncomment_options(&self.cross_cutting_layers(&v2_layers, engine_name, &lang_options))
             }
@@ -284,7 +283,6 @@ impl Config {
         })
     }
 
-    #[cfg(feature = "engine-uncomment")]
     /// Build the merged `options` table for the uncomment engine.
     ///
     /// The uncomment backend is language-agnostic (opt-in comment removal), so its
@@ -296,13 +294,13 @@ impl Config {
     fn build_uncomment_options(&self, layers: &[&toml::Table]) -> toml::Table {
         let mut options = toml::Table::new();
 
-        for key in crate::engines::uncomment::BOOL_OPTION_KEYS {
+        for key in poly_engine_api::host_hooks::uncomment_options::BOOL_OPTION_KEYS {
             if let Some(value) = last_value(layers, key).and_then(toml::Value::as_bool) {
                 options.insert((*key).to_string(), toml::Value::Boolean(value));
             }
         }
 
-        for key in crate::engines::uncomment::ARRAY_OPTION_KEYS {
+        for key in poly_engine_api::host_hooks::uncomment_options::ARRAY_OPTION_KEYS {
             let mut merged: Vec<String> = Vec::new();
             for layer in layers {
                 extend_string_array(&mut merged, layer, key);
@@ -451,7 +449,6 @@ impl Config {
     }
 }
 
-#[cfg(any(feature = "engine-uncomment", feature = "engine-quality"))]
 /// The value `key` has in the highest-precedence layer that sets it.
 fn last_value<'a>(layers: &[&'a toml::Table], key: &str) -> Option<&'a toml::Value> {
     layers.iter().rev().find_map(|layer| layer.get(key))
