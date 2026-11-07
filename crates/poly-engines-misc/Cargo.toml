@@ -11,6 +11,9 @@ documentation.workspace = true
 publish = false
 description = "The dockerfile, dotenv, HCL, INI and GraphQL engine family for poly."
 
+[package.metadata.cargo-machete]
+ignored = ["rust-ini"]
+
 [lib]
 name = "poly_engines_misc"
 path = "src/lib.rs"
