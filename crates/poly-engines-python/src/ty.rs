@@ -1,7 +1,7 @@
 //! Python type checking with ty, as a project-check engine.
 //!
 //! ty is consumed as the published `ty_*` crates at the exact version that ships with the pinned
-//! ruff (`=0.0.20`, see the workspace `Cargo.toml`). `ty_project` is unpublished, so the minimum of
+//! ruff (`=0.0.21`, see the workspace `Cargo.toml`). `ty_project` is unpublished, so the minimum of
 //! it is ported: the salsa database (`db`), the program settings (`settings`) and the system
 //! the check reads through (`system`). The crate version is folded into `TyEngine::version`, so
 //! bumping it invalidates cached results.
@@ -31,7 +31,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, anyhow, bail};
 use poly_engine_api::engine::{
-    Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, OptionType, ProjectFile, ProjectRequest,
+    Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, OptionType, ProjectFile, ProjectInputs, ProjectRequest,
 };
 use poly_engine_api::language::Language;
 use ruff_db::Db as SourceDb;
@@ -88,7 +88,15 @@ impl Engine for TyEngine {
     }
 
     fn version(&self) -> &str {
-        "ty-0.0.20+proj1"
+        "ty-0.0.21+proj1"
+    }
+
+    /// Planned only once `backend` is set, so a Python project that never mentions it pays nothing.
+    fn project_inputs(&self) -> ProjectInputs {
+        ProjectInputs {
+            gate_key: Some("backend".to_owned()),
+            ..ProjectInputs::default()
+        }
     }
 
     fn project_check(&self, req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {

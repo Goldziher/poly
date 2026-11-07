@@ -1,9 +1,8 @@
 //! `[commit]` — configuration for `poly commit` (the gitfluff-backed
 //! Conventional-Commit linter + cleaner).
 //!
-//! The shape mirrors gitfluff's own `FileConfig` so a `[commit]` table in
-//! `poly.toml` maps one-to-one onto gitfluff's in-process linter, letting the
-//! standalone `.gitfluff.toml` and the unified `poly.toml` share one schema.
+//! The shape mirrors the upstream `gitfluff` crate's `FileConfig`, which `poly-cli` maps this
+//! table onto, so the standalone `.gitfluff.toml` and the unified `poly.toml` share one schema.
 
 use serde::Deserialize;
 
@@ -47,6 +46,9 @@ pub struct CommitRules {
     pub title_suffix: Option<String>,
     /// Separator between the subject and the title suffix.
     pub title_suffix_separator: Option<String>,
+    /// Set to `false` to disable the built-in removal of AI attribution trailers and banners.
+    /// Defaults to `true`.
+    pub ai_cleanup: Option<bool>,
 }
 
 /// A subject-pattern requirement (`[commit.rules.message]`).
@@ -56,6 +58,12 @@ pub struct MessageRule {
     pub pattern: String,
     /// Human-readable description shown when the rule fails.
     pub description: Option<String>,
+    /// Keep the Conventional Commits length limits even though `pattern` replaces the spec's
+    /// structural check.
+    pub enforce_length: Option<bool>,
+    /// Keep the Conventional Commits subject case and trailing-full-stop checks even though
+    /// `pattern` replaces the spec's structural check.
+    pub enforce_case: Option<bool>,
 }
 
 /// A subject-pattern exclusion (`[[commit.rules.excludes]]`).

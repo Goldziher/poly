@@ -38,6 +38,83 @@ Largest contributors by code size (thin LTO, O3, of 82.8 MB attributed symbols):
 
 The typos dictionary is data, not code: it adds 11.1 MB to the core on its own (below).
 
+## The released core after ADR 0043
+
+The numbers above predate the component host and the alef runtime. v0.33.1 shipped a core of
+17.3 MB (`aarch64-apple-darwin`) and 21.1 MB (`x86_64-unknown-linux-gnu`), stripped: thin LTO at
+`opt-level = 3`, nothing gating the size. ADR 0043 sets a 14 MiB (14,680,064 bytes) ceiling on
+`x86_64-unknown-linux-gnu`, gated by `mise run check:core-size` in CI and on the shipped binary.
+
+Stripped bytes, `poly-cli --no-default-features --features core`, macOS 27 / aarch64 unless noted
+(rustc 1.99.1). Each row is a separate full build:
+
+| Build | Bytes |
+| --- | ---: |
+| `release` (thin LTO, `opt-level = 3`) | 17,790,712 |
+| `core` profile, `opt-level = "s"` | 11,292,288 |
+| `core` profile, `opt-level = "z"` | 8,479,904 |
+| `core` profile, `z` with `tree-sitter`, `blake3`, `ignore`, `memchr`, `aho-corasick`, `regex-automata`, `poly-cache` at 3, plus `poly-core` at 3 | 10,441,360 |
+| `core` profile, `z` with the packages above except `poly-core` at 3, `uncomment` and `ini` moved to components, schemars off the protocol | 8,840,128 |
+| same, `aarch64-unknown-linux-gnu` (Docker `rust:latest`) | 10,171,472 |
+| **shipped**: `core` profile, `opt-level = "s"`, no per-package overrides, `uncomment` and `ini` moved to components, schemars off the protocol | **11,076,848** |
+
+The shipped profile is `s`: it fits 10 MiB only with `z`, but `z` costs cold-run CPU (below), so
+speed was chosen over the 10 MiB target and the ceiling is 14 MiB. The Linux build is about 13 MB
+(the `z` rows show the macOS to Linux ratio, about 1.15); CI is the authority on the gated
+`x86_64-unknown-linux-gnu` size.
+
+### Speed of the opt-level choice
+
+Poly's own repository, Rust files only (573 files), `hyperfine -N`, 15 runs for `--no-cache` and 20
+for warm, on a host whose load average was above 90 because other jobs ran on it, so wall times are
+noise and CPU time (the minimum over the runs) is the figure to compare. `poly lint --workspace
+never --skip astgrep .` and `poly fmt .` with `[fmt.rust.rustfmt] enabled = false` so the run
+measures poly, not a rustfmt subprocess:
+
+| Build | lint cold CPU | fmt cold CPU | lint warm CPU | fmt warm CPU |
+| --- | ---: | ---: | ---: | ---: |
+| thin LTO, `opt-level = 3` (v0.33.1 profile) | 1,131 ms | 1,166 ms | 72 ms | 168 ms |
+| fat LTO, `s` | 1,144 ms (+1%) | 1,229 ms (+5%) | 102 ms | 168 ms |
+| fat LTO, `z` | 1,822 ms (+61%) | 1,758 ms (+51%) | 100 ms | 169 ms |
+| fat LTO, `z` with the hot packages at 3 | 1,255 ms (+11%) | 1,349 ms (+16%) | 91 ms | 199 ms |
+
+`cargo bench -p poly-core --no-default-features --features core` (`generic_formatter`,
+`runner_e2e`, thin LTO, `CARGO_PROFILE_BENCH_OPT_LEVEL` set to the level; `benches/README.md`
+baselines come from other hardware and were not comparable):
+
+| Bench | 3 | `s` | `z` |
+| --- | ---: | ---: | ---: |
+| `generic_formatter/format_rust` | 2.62 ms | 2.64 ms | 3.81 ms |
+| `generic_formatter/parse_only_rust` | 1.70 ms | 1.77 ms | 2.37 ms |
+| `runner_e2e/format_64_rust_files_dry_run` | 2.90 s (loaded) | 0.74 s | 1.12 s |
+
+`s` is within the 5% budget everywhere, while `z` with the hot-path packages raised still costs a
+cold run 11-16% CPU time. The shipped profile is therefore `s`, and the ceiling moved from 10 MiB to
+14 MiB.
+
+### Where the bytes are
+
+`llvm-nm -n` address gaps by leading crate of the v0 symbol, `opt-level = "s"` build with the final
+Cargo.toml, 11.17 MB attributed: C and unattributed 2.2 MB, `core` 1.1, `poly_cli` 0.60, `toml`
+0.58, `regex_automata` 0.55, `poly_core` 0.49, `alloc` 0.45, `log` 0.32, `rustls` 0.26,
+`poly_config` 0.24, `serde_json` 0.24, `schemars` 0.23, `tracing_subscriber` 0.19,
+`serde_saphyr` + `granit_parser` 0.33, `poly_hooks` 0.17, `poly_workspace` 0.16, `rmp_serde`
+0.16, `clap_builder` 0.15, `ureq` 0.12. schemars stays linked (via `poly-config` and `poly-host-services`) because `poly config schema` and the
+`schemas.output` host service (the `mcp` component asks for it) need the report and config
+derives; only the component protocol's own derives were gated. tree-sitter-language-pack's
+`download` feature is how the core fetches grammars and shares `ureq` with the component
+host, so it is not duplicated.
+
+### The musl bundled binary
+
+The release builds `x86_64-unknown-linux-musl` from the `components/` workspace
+(`poly-bundled`) with the same thin-LTO release profile as the 108 MB baseline, so the 136 MB is not
+a profile mistake. A bundled build on macOS (stripped 115.9 MB, thin LTO) attributes
+`sqruff_lib_dialects` 14.8 MB, `ty_python_semantic` 6.2 MB, `salsa` 3.3 MB (ty's incremental
+engine), `oxc_linter` 3.3, `rumdl_lib` 3.2, `ruff_linter` 2.4, `biome_*` several: the type
+checker (`python-types`, ty) and biome's analyzers did not exist when the 108 MB baseline was
+taken, and they account for the growth.
+
 ## Core-only binary and release-profile levers
 
 `panic = "unwind"` is kept in every variant (`engine_guard` needs it).
@@ -125,12 +202,12 @@ so the verified stamp (xberg-io/alef#833, shipped) must be on in poly's host.
 
 ## Decisions
 
-- **The core fits under 10 MB** with fat LTO and `opt-level = "z"` (9.4 MB). `opt-level = "s"`
-  lands at the ceiling (10.0 MB). The core's own hot path (discovery, cache, runner) must be
-  benchmarked with `runner_e2e` before `z` is final; components keep their own profile.
-- **In the core:** quality (+0.14 MB, shares the tree-sitter runtime), uncomment (+0.18 MB, same),
-  ini (+0.04 MB), gitfluff, tslp, catalog and native-tool tiers, clap, ureq/rustls and the alef
-  runtime. Estimated total about 10.1 MB, under 10 MiB.
+- **The core ships at `opt-level = "s"` under a 14 MiB ceiling** (11.1 MB on
+  `aarch64-apple-darwin`). `z` fits 10 MB (9.4 MB core-only) but costs cold-run CPU; speed was
+  chosen over the 10 MiB target. Components keep their own profile.
+- **In the core:** quality (+0.14 MB, shares the tree-sitter runtime), gitfluff, tslp, catalog and
+  native-tool tiers, clap, ureq/rustls and the alef runtime. `uncomment` and `ini` moved to
+  components (ADR 0043); the gated size is in "The released core after ADR 0043".
 - **Components:** `web`, `python`, `sql`, `php`, `biome`, `ruby`, `nix`, `typos` (opt-in) and `mcp`
   as planned, plus two changes to the initial cut:
   - `astgrep` becomes its own component (+0.8 MB would put the core over the ceiling);

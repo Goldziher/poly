@@ -12,7 +12,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use poly_component_host::ComponentEngine;
 
-use crate::components::{ComponentsReport, resolve as resolve_components};
+use crate::components::{ComponentsReport, ResolvedComponents, resolve as resolve_components};
 use crate::config::{Config, EngineConfig, Kind};
 use crate::discover::DiscoveredFile;
 use crate::engine::{ENABLED_OPTION_KEY, Engine};
@@ -52,6 +52,8 @@ pub(super) struct RunPlan {
     plans: PlanMap,
     withdrawn: WithdrawnMap,
     components: ComponentsReport,
+    /// The components' engines, for the project-check phase, which plans separately from the per-file tier.
+    resolved: ResolvedComponents,
 }
 
 impl RunPlan {
@@ -65,6 +67,11 @@ impl RunPlan {
     /// What the run needed of downloadable components, and what was missing.
     pub(super) fn components(&self) -> &ComponentsReport {
         &self.components
+    }
+
+    /// The components' engines the project-check phase may run.
+    pub(super) fn resolved_components(&self) -> &ResolvedComponents {
+        &self.resolved
     }
 
     /// The instruction that withdrew this pair's engines, if one did.
@@ -96,6 +103,7 @@ impl RunPlan {
             plans,
             withdrawn: WithdrawnMap::default(),
             components: ComponentsReport::default(),
+            resolved: ResolvedComponents::default(),
         }
     }
 }
@@ -244,7 +252,7 @@ fn merge_catalog_engines(
 
 /// Drop every registry engine explicitly switched off with `enabled = false`.
 ///
-/// Only an explicit `false` counts, except for the `OPT_IN_ENGINES` (`typos`),
+/// Only an explicit `false` counts, except for the `OPT_IN_ENGINES` (`typos`, `uncomment`),
 /// which need an explicit `true`. An absent key means "this engine's own
 /// default", which differs per backend — `uncomment` is opt-in, `quality` is
 /// on, and each `native_tool` spec carries its own `default_on` — so reading
@@ -721,6 +729,7 @@ pub(super) fn plan_by_config_language(
         plans,
         withdrawn,
         components: resolved.report().clone(),
+        resolved,
     }
 }
 

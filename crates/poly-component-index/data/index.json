@@ -14,9 +14,9 @@
             "lint": true,
             "format": false,
             "fix": true,
-            "project": false
+            "project": true
           },
-          "version": "adrlint-0.4.1+poly1",
+          "version": "adrlint-0.5.0+poly2",
           "option_keys": [
             {
               "table": "Lint",
@@ -37,6 +37,30 @@
                 {
                   "name": "ignore",
                   "types": 16
+                },
+                {
+                  "name": "dir",
+                  "types": 8
+                },
+                {
+                  "name": "paths",
+                  "types": 16
+                },
+                {
+                  "name": "recursive",
+                  "types": 1
+                },
+                {
+                  "name": "start",
+                  "types": 2
+                },
+                {
+                  "name": "allow_gaps",
+                  "types": 1
+                },
+                {
+                  "name": "lock",
+                  "types": 8
                 }
               ],
               "rule_selection": false,
@@ -67,7 +91,23 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": "enabled",
+            "files": [
+              {
+                "option_key": "lock",
+                "default_path": "adrlint.lock"
+              }
+            ],
+            "dirs": {
+              "dir_key": "dir",
+              "dir_default": "docs/adr",
+              "paths_key": "paths",
+              "recursive_key": "recursive",
+              "list_unserved": true
+            }
+          }
         },
         {
           "name": "malva",
@@ -133,7 +173,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "markup_fmt",
@@ -247,7 +292,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "oxc",
@@ -390,7 +440,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 256
+          "batch_shard_floor": 256,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "rumdl",
@@ -401,7 +456,7 @@
             "fix": true,
             "project": false
           },
-          "version": "0.3.2+defaults5-mdx-rules-tmplskip-codeaware-md020guard-structfix+ruleparams1+extendsel2+oxc_formatter_markdown-f799f17+md-embed-1+oxfmtrc-scope-1",
+          "version": "0.3.2+defaults5-mdx-rules-tmplskip-codeaware-md020guard-md038fmt-structfix+ruleparams1+extendsel2+oxc_formatter_markdown-f799f17+md-embed-1+oxfmtrc-scope-1",
           "option_keys": [
             {
               "table": "Lint",
@@ -497,7 +552,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "taplo",
@@ -615,7 +675,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "yaml",
@@ -689,7 +754,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -709,7 +779,7 @@
             "fix": false,
             "project": true
           },
-          "version": "ty-0.0.20+proj1",
+          "version": "ty-0.0.21+proj1",
           "option_keys": [
             {
               "table": "Lint",
@@ -760,7 +830,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": "backend",
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "ruff",
@@ -771,7 +846,7 @@
             "fix": true,
             "project": false
           },
-          "version": "ruff-0.17.3+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts2+plugopts2+isort3+pylint2+impconv1+defignore2+unsafefix1+plugopts3+fmtopts3+tgtdisc1",
+          "version": "ruff-0.17.4+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts2+plugopts2+isort3+pylint2+impconv1+defignore2+unsafefix1+plugopts3+fmtopts3+tgtdisc1",
           "option_keys": [
             {
               "table": "Lint",
@@ -1347,7 +1422,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1427,7 +1507,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1495,7 +1580,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1515,7 +1605,7 @@
             "fix": false,
             "project": false
           },
-          "version": "biome_css_analyze+rev:e2e5a36+lint-v1+iehack-skip",
+          "version": "biome_css_analyze+rev:fca5c35+lint-v1+iehack-skip",
           "option_keys": [
             {
               "table": "Lint",
@@ -1549,7 +1639,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "biome",
@@ -1560,7 +1655,7 @@
             "fix": false,
             "project": false
           },
-          "version": "biome_graphql_analyze+rev:e2e5a36+lint-v1",
+          "version": "biome_graphql_analyze+rev:fca5c35+lint-v1",
           "option_keys": [
             {
               "table": "Lint",
@@ -1594,7 +1689,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1614,7 +1714,7 @@
             "fix": false,
             "project": false
           },
-          "version": "rubyfmt-git:884b9fd",
+          "version": "rubyfmt-git:7c6ddaa",
           "option_keys": [
             {
               "table": "Lint",
@@ -1648,7 +1748,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1702,7 +1807,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1814,7 +1924,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1834,7 +1949,7 @@
             "fix": true,
             "project": false
           },
-          "version": "ast-grep-core-0.51.1-engine-3+tslp1.23.1+builtin-pack-3",
+          "version": "ast-grep-core-0.51.1-engine-3+tslp1.24.0+builtin-pack-3",
           "option_keys": [
             {
               "table": "Lint",
@@ -1868,7 +1983,129 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
+        }
+      ],
+      "lock_sha": null
+    },
+    {
+      "name": "uncomment",
+      "kind": "engines",
+      "opt_in": true,
+      "features": ["engine-uncomment"],
+      "engines": [
+        {
+          "name": "uncomment",
+          "languages": [],
+          "capabilities": {
+            "lint": true,
+            "format": false,
+            "fix": true,
+            "project": false
+          },
+          "version": "uncomment-3.10.4+map2-codeonly+prose3-blocks",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "enabled",
+                  "types": 1
+                },
+                {
+                  "name": "remove_todos",
+                  "types": 1
+                },
+                {
+                  "name": "remove_fixme",
+                  "types": 1
+                },
+                {
+                  "name": "remove_docs",
+                  "types": 1
+                },
+                {
+                  "name": "use_default_ignores",
+                  "types": 1
+                },
+                {
+                  "name": "code_only",
+                  "types": 1
+                },
+                {
+                  "name": "preserve_patterns",
+                  "types": 16
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "enabled",
+                  "types": 1
+                },
+                {
+                  "name": "remove_todos",
+                  "types": 1
+                },
+                {
+                  "name": "remove_fixme",
+                  "types": 1
+                },
+                {
+                  "name": "remove_docs",
+                  "types": 1
+                },
+                {
+                  "name": "use_default_ignores",
+                  "types": 1
+                },
+                {
+                  "name": "code_only",
+                  "types": 1
+                },
+                {
+                  "name": "preserve_patterns",
+                  "types": 16
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null
@@ -1877,7 +2114,7 @@
       "name": "misc",
       "kind": "engines",
       "opt_in": false,
-      "features": ["engine-dockerfile", "engine-dotenv", "engine-hcl", "engine-graphql"],
+      "features": ["engine-dockerfile", "engine-dotenv", "engine-hcl", "engine-ini", "engine-graphql"],
       "engines": [
         {
           "name": "dockerfile",
@@ -1922,7 +2159,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "dotenv",
@@ -1967,7 +2209,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "graphql",
@@ -2012,7 +2259,12 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         },
         {
           "name": "hcl",
@@ -2057,7 +2309,62 @@
           "supplements_tier_one": false,
           "self_manages_enabled": false,
           "supersedes_generic_formatter": false,
-          "batch_shard_floor": 2
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
+        },
+        {
+          "name": "ini",
+          "languages": ["ini"],
+          "capabilities": {
+            "lint": true,
+            "format": false,
+            "fix": false,
+            "project": false
+          },
+          "version": "rust-ini-0.21.3+map1+extendsel2",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": true,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2,
+          "project_inputs": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       ],
       "lock_sha": null

@@ -1481,6 +1481,15 @@
           "type": "integer",
           "format": "uint32",
           "minimum": 0
+        },
+        "project_inputs": {
+          "description": "`Engine::project_inputs`. Absent in an older description, which reads as \"nothing\".",
+          "$ref": "#/$defs/WireProjectInputs",
+          "default": {
+            "gate_key": null,
+            "files": [],
+            "dirs": null
+          }
         }
       },
       "required": [
@@ -1573,6 +1582,77 @@
         }
       },
       "required": ["name", "types"]
+    },
+    "WireProjectInputs": {
+      "description": "`Engine::project_inputs`: what a project check needs from the host besides its own files.",
+      "type": "object",
+      "properties": {
+        "gate_key": {
+          "description": "Option that must be set for the engine to be planned.",
+          "type": ["string", "null"]
+        },
+        "files": {
+          "description": "Side files the host loads when they exist.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireProjectSideFile"
+          },
+          "default": []
+        },
+        "dirs": {
+          "description": "Directories that scope the served files and the listing.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireProjectDirs"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "WireProjectSideFile": {
+      "description": "A side file of a project check: the option naming its path and the default path.",
+      "type": "object",
+      "properties": {
+        "option_key": {
+          "description": "Option naming the path, relative to the project root.",
+          "type": "string"
+        },
+        "default_path": {
+          "description": "Path used when the option is unset.",
+          "type": "string"
+        }
+      },
+      "required": ["option_key", "default_path"]
+    },
+    "WireProjectDirs": {
+      "description": "The directories a project check is about, named by options.",
+      "type": "object",
+      "properties": {
+        "dir_key": {
+          "description": "Option naming one directory, relative to the project root.",
+          "type": "string"
+        },
+        "dir_default": {
+          "description": "Directory used when the option is unset.",
+          "type": "string"
+        },
+        "paths_key": {
+          "description": "Option holding a list of directories that replaces `dir_key`.",
+          "type": ["string", "null"]
+        },
+        "recursive_key": {
+          "description": "Boolean option extending the directories to their subdirectories.",
+          "type": ["string", "null"]
+        },
+        "list_unserved": {
+          "description": "Whether the host also lists the files the engine does not serve (names only).",
+          "type": "boolean"
+        }
+      },
+      "required": ["dir_key", "dir_default", "list_unserved"]
     }
   }
 }

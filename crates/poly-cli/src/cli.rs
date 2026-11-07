@@ -49,7 +49,7 @@ enum Command {
     /// Format files (dry-run by default; use --fix to write in place).
     Fmt(FmtArgs),
     /// Lint and optionally clean a commit message (reads `[commit]` from poly.toml).
-    Commit(Box<gitfluff::cli::LintArgs>),
+    Commit(Box<crate::CommitArgs>),
     /// Run git hooks declared in `[hooks]` of poly.toml (native runner).
     Hooks(HooksArgs),
     /// Absorb foreign tool configs into poly.toml and remove what poly can honor.
@@ -164,7 +164,7 @@ fn names_doctor(arguments: &[OsString]) -> bool {
 
 /// Run the gitfluff-backed commit-message linter and map its exit code onto an
 /// [`ExitCode`].
-fn run_commit(args: gitfluff::cli::LintArgs) -> ExitCode {
+fn run_commit(args: crate::CommitArgs) -> ExitCode {
     // Resolve `poly.toml` `extends` bases (including pinned remote git bases) so a
     // repo whose shared config lives in a remote — not a local sibling path —
     // still loads its `[commit]` rules for message linting.
@@ -176,12 +176,8 @@ fn run_commit(args: gitfluff::cli::LintArgs) -> ExitCode {
         }
     };
     let mut args = args;
-    args.color = match crate::global().color {
-        crate::global::ColorChoice::Auto => gitfluff::cli::ColorMode::Auto,
-        crate::global::ColorChoice::Always => gitfluff::cli::ColorMode::Always,
-        crate::global::ColorChoice::Never => gitfluff::cli::ColorMode::Never,
-    };
-    match gitfluff::run_lint_with_resolver(args, &resolver) {
+    args.color = crate::global().color;
+    match crate::run_commit_lint(args, &resolver) {
         Ok(0) => ExitCode::SUCCESS,
         Ok(code) => ExitCode::from(code as u8),
         Err(error) => {

@@ -1,4 +1,4 @@
-//! The misc engine family: Dockerfile, dotenv, HCL and GraphQL (pretty_graphql formatter),
+//! The misc engine family: Dockerfile, dotenv, HCL, INI and GraphQL (pretty_graphql formatter),
 //! each behind a feature of the same name.
 
 #[cfg(feature = "dockerfile")]
@@ -9,6 +9,8 @@ pub mod dotenv;
 pub mod graphql;
 #[cfg(feature = "hcl")]
 pub mod hcl;
+#[cfg(feature = "ini")]
+pub mod ini;
 
 use poly_engine_api::engine::Engine;
 use poly_engine_api::language::Language;
@@ -25,6 +27,8 @@ pub fn engines_for(language: &Language) -> Vec<Box<dyn Engine>> {
         Language::GraphQl => vec![Box::new(graphql::GraphQlEngine)],
         #[cfg(feature = "hcl")]
         Language::Hcl => vec![Box::new(hcl::HclEngine)],
+        #[cfg(feature = "ini")]
+        Language::Ini => vec![Box::new(ini::IniEngine)],
         _ => Vec::new(),
     }
 }

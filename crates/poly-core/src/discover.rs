@@ -632,7 +632,7 @@ impl PruneRecorder {
 /// tree-sitter language pack's path detection for the long tail (mapped to
 /// [`Language::Other`] so the generic tier handles it). Files neither can
 /// identify are skipped.
-fn detect(path: &std::path::Path) -> Option<Language> {
+pub(crate) fn detect(path: &std::path::Path) -> Option<Language> {
     if let Some(language) = Language::from_path(path) {
         return Some(language);
     }
@@ -766,6 +766,40 @@ pub fn discover_reporting(
     }
     report.sort_rules();
     (out, report)
+}
+
+/// Every file directly in `dir` (or beneath it when `recursive`), under the rules a discovery walk
+/// applies: `.gitignore`, the built-in pruned directories and the governing `[discovery] exclude`
+/// globs plus `extra` (the run's `--exclude`). Unlike [`discover`] it keeps files of any type,
+/// since the caller wants names, not languages. Sorted.
+pub(crate) fn list_files(dir: &Path, configs: &ConfigSet, recursive: bool, extra: &[String]) -> Vec<PathBuf> {
+    let frame = configs.match_frame(dir);
+    let exclude = configs.excludes_in_frame(&frame, extra, true);
+    let matcher = ExcludeMatcher::new(dir, &exclude);
+    let policy = PrunePolicy::new(dir, configs.no_prune());
+    let mut builder = WalkBuilder::new(dir);
+    builder
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .parents(true)
+        .max_depth(if recursive { None } else { Some(1) })
+        .filter_entry(move |entry| {
+            keep_walk_entry(entry, &policy)
+                && matcher.as_ref().is_none_or(|matcher| {
+                    let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
+                    !matcher.record_if_excluded(entry.path(), is_dir, false)
+                })
+        });
+    let mut files: Vec<PathBuf> = builder
+        .build()
+        .flatten()
+        .filter(|entry| entry.file_type().is_some_and(|t| t.is_file()))
+        .map(ignore::DirEntry::into_path)
+        .collect();
+    files.sort();
+    files
 }
 
 /// Tag a walked file with its language and governing config, or count it as

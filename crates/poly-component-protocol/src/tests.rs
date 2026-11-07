@@ -337,6 +337,57 @@ fn every_response_variant_round_trips() {
     }
 }
 
+/// A description from a component built before `project_inputs` existed has no such key, and one
+/// that declares only a gate has no `files`: both read as "nothing declared", not as a decode error.
+#[test]
+fn describe_without_project_inputs_or_files_still_decodes() {
+    let describe = Describe {
+        protocol: PROTOCOL_VERSION,
+        component_version: "1".into(),
+        engines: vec![WireEngineDesc {
+            name: "adrlint".into(),
+            languages: vec!["markdown".into()],
+            capabilities: WireCapabilities {
+                lint: true,
+                format: false,
+                fix: false,
+                project: true,
+            },
+            version: "1".into(),
+            option_keys: vec![],
+            hooks: 0,
+            takes_over_tier_one: false,
+            claimed_paths: vec![],
+            host_hook: "none".into(),
+            supplements_tier_one: false,
+            self_manages_enabled: false,
+            supersedes_generic_formatter: false,
+            batch_shard_floor: 0,
+            project_inputs: WireProjectInputs {
+                gate_key: Some("enabled".into()),
+                files: vec![],
+                dirs: None,
+            },
+        }],
+    };
+    let mut value = serde_json::to_value(&describe).unwrap();
+    let engine = &mut value["engines"][0];
+    engine["project_inputs"]
+        .as_object_mut()
+        .unwrap()
+        .remove("files")
+        .unwrap();
+    let gate_only = rmp_serde::to_vec_named(&value).unwrap();
+    assert_eq!(decode_describe(&gate_only).unwrap(), describe);
+
+    let engine = &mut value["engines"][0];
+    engine.as_object_mut().unwrap().remove("project_inputs").unwrap();
+    let mut expected = describe;
+    expected.engines[0].project_inputs = WireProjectInputs::default();
+    let older = rmp_serde::to_vec_named(&value).unwrap();
+    assert_eq!(decode_describe(&older).unwrap(), expected);
+}
+
 #[test]
 fn describe_round_trips() {
     let describe = Describe {
@@ -371,6 +422,7 @@ fn describe_round_trips() {
             self_manages_enabled: false,
             supersedes_generic_formatter: true,
             batch_shard_floor: 2,
+            project_inputs: Default::default(),
         }],
     };
     assert_eq!(decode_describe(&encode_describe(&describe).unwrap()).unwrap(), describe);
@@ -477,6 +529,7 @@ fn coverage_table_references_real_requests_and_has_no_duplicates() {
     }
 }
 
+#[cfg(feature = "schemars")]
 #[test]
 fn committed_schema_matches_generated() {
     let generated = json_schema();

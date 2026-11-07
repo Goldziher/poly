@@ -3,7 +3,10 @@
 //! Component producers answer `describe()` with it and the compiled component index generator
 //! records it, so both read the same fields the same way.
 
-use poly_component_protocol::{WireCapabilities, WireEngineDesc, WireOptionKey, WireOptionKeys, WireOptionTable};
+use poly_component_protocol::{
+    WireCapabilities, WireEngineDesc, WireOptionKey, WireOptionKeys, WireOptionTable, WireProjectDirs,
+    WireProjectInputs, WireProjectSideFile,
+};
 
 pub use poly_component_protocol::hooks;
 
@@ -42,6 +45,28 @@ fn option_keys_desc(keys: &OptionKeys, table: WireOptionTable) -> WireOptionKeys
     }
 }
 
+fn project_inputs_desc(engine: &dyn Engine) -> WireProjectInputs {
+    let inputs = engine.project_inputs();
+    WireProjectInputs {
+        gate_key: inputs.gate_key,
+        files: inputs
+            .files
+            .into_iter()
+            .map(|file| WireProjectSideFile {
+                option_key: file.option_key,
+                default_path: file.default_path,
+            })
+            .collect(),
+        dirs: inputs.dirs.map(|dirs| WireProjectDirs {
+            dir_key: dirs.dir_key,
+            dir_default: dirs.dir_default,
+            paths_key: dirs.paths_key,
+            recursive_key: dirs.recursive_key,
+            list_unserved: dirs.list_unserved,
+        }),
+    }
+}
+
 /// The wire description of `engine`, covering every [`WireEngineDesc`] field.
 #[must_use]
 pub fn engine_desc(engine: &dyn Engine) -> WireEngineDesc {
@@ -77,6 +102,7 @@ pub fn engine_desc(engine: &dyn Engine) -> WireEngineDesc {
         self_manages_enabled: engine.self_manages_enabled(),
         supersedes_generic_formatter: engine.supersedes_generic_formatter(),
         batch_shard_floor: u32::try_from(engine.batch_shard_floor()).unwrap_or(u32::MAX),
+        project_inputs: project_inputs_desc(engine),
     }
 }
 

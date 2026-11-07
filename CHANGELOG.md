@@ -5,6 +5,63 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Added
+
+- **adrlint tree-wide rules.** The `adrlint` engine now runs `MADR41a`, `MADR41b`, `MADR42`, `MADR43`,
+  `MADR44` and the immutability lock rules `ADR50`/`ADR51` as a project check over the ADR log
+  (`dir`, default `docs/adr`, or `paths`; `adrlint.lock` is read by the host). The result is cached
+  on every ADR, the lock and a listing of the other files in the log (`MADR42`). Engines declare their
+  project-check inputs (`Engine::project_inputs`) instead of the core keeping a table by engine name. Naming a single file reports on it without changing the verdict about the log. Bumps adrlint to 0.5.0; see
+  [ADR 0041](adrs/0041-adrlint-tree-wide-rules-as-project-check.md).
+- **`poly commit --no-ai-cleanup`.** Disables the built-in removal of AI attribution trailers and banners for one run.
+- **`poly.toml` `[commit]` keys.** `[commit.rules] ai_cleanup`, and `enforce_length` and `enforce_case` under
+  `[commit.rules.message]`, matching the keys `.gitfluff.toml` already had. The last two keep the Conventional
+  Commits length limits and subject case checks when a custom `message` pattern replaces the structural check.
+
+### Changed
+
+- **The released core is smaller.** It is built with a new `core` Cargo profile (fat LTO, `opt-level = "s"`,
+  stripped) instead of the thin-LTO release profile, keeping cold-run CPU within about 5% of before, and
+  `mise run check:core-size` gates it at 14 MiB in CI and in the release (11.1 MB on `aarch64-apple-darwin`).
+  `uncomment` and `ini` are no longer in the core: `ini` joins the `misc` component and `uncomment` is its own
+  opt-in component (ADR 0043). The component protocol links `schemars` only behind a feature; the core still
+  links it through `poly-config` and `poly-host-services`.
+- **Dependencies.** ruff 0.17.4 (`ruff_*` 0.0.21), ty 0.0.21, biome v2.6.5 and rubyfmt v0.14.2-38;
+  alef 0.127.2 for the component build.
+- **`python-types` (ty).** ty renamed the diagnostic `unresolved-import` to `import-not-found`;
+  update any `poly: allow[unresolved-import]` suppression or `[lint.python.python-types]` rule
+  selection that names the old code.
+- **`poly commit`.** Consumes the upstream `gitfluff` 0.11.0 library from crates.io instead of the in-tree fork
+  (`crates/gitfluff` is removed); the `[commit]` config loading and `poly.toml` `extends` resolution live in
+  `poly-cli`'s `commit/` module.
+- **`poly commit`: skipping merge and revert messages.** The merge-in-progress skip applies only when the message
+  being linted is the repository's own `COMMIT_EDITMSG`, and now also triggers on `REVERT_HEAD` and
+  `CHERRY_PICK_HEAD`, not just `MERGE_HEAD`. Previously any message linted during a merge was skipped.
+- **`poly commit`: generated subjects pass.** A subject starting with one of the prefixes `Revert "`, `fixup!`,
+  `squash!` or `amend!` is no longer linted.
+- **`poly commit`: AI-attribution cleanup is line-anchored.** The built-in cleanup removes whole attribution lines
+  (the `Generated with` banners, `Co-Authored-By` trailers naming an AI assistant with an optional bare `<email>`
+  line, and standalone Claude bullets) instead of matching across unrelated text.
+- **Breaking: `poly commit --exclude` separator.** `--exclude REGEX[->MESSAGE]` splits the custom message off with
+  `->`, not `:`. A `:` in the argument now belongs to the regex, so `--exclude 'WIP:Not allowed'` is read as one
+  regex; write `--exclude 'WIP->Not allowed'`. `--cleanup FIND->REPLACE` already used `->` and is unchanged.
+- **Breaking: `.gitfluff.toml` and `.fluff.toml` reject unknown keys.** A misspelled key such as `no_emoji` is now a
+  config error instead of being silently ignored.
+- **`poly commit`: `write = true` with `--message`.** A literal message has nowhere to persist a rewrite, so a `write`
+  that comes from the config is ignored with a warning; an explicit `--write` still prints the cleaned message.
+- **`poly commit`: AI-attribution cleanup covers more assistants.** The built-in cleanup also strips
+  `Co-Authored-By` trailers naming ChatGPT, GPT or OpenAI, not only Claude and Anthropic.
+- **`poly commit`: colour honors `NO_COLOR`.** With `--color auto`, diagnostics are plain when `NO_COLOR` is set to a
+  non-empty value.
+
+### Fixed
+
+- **Project checks served by a component.** The project phase planned only compiled-in engines, so a
+  project check hosted by a downloadable component (ty from the `python` component in a core build) never ran.
+  It now runs the components' project-check engines too.
+
 ## [0.33.1] - 2026-11-05
 
 ### Fixed

@@ -35,6 +35,7 @@ pub fn desc(hooks: u32, host_hook: &str) -> WireEngineDesc {
         self_manages_enabled: false,
         supersedes_generic_formatter: false,
         batch_shard_floor: 2,
+        project_inputs: Default::default(),
     }
 }
 

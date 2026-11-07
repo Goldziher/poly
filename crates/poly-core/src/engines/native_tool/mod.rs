@@ -51,7 +51,7 @@
 //! test would not reserve the slot for a better tool, it would leave Shell
 //! formatted by nothing but whitespace normalization.
 //!
-//! A build that downloads components formats shell with the `sh` sidecar instead (ADR 0041): its
+//! A build that downloads components formats shell with the `sh` sidecar instead (ADR 0045): its
 //! `shfmt` engine replaces this one, and `[components] disable = ["sh"]` brings this one back. The
 //! bundled build (`engine-shfmt`) keeps this one.
 //!
