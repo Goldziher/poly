@@ -59,6 +59,16 @@ impl<'a> EngineSelection<'a> {
         !self.skip.iter().any(names)
     }
 
+    /// The `--only` entries.
+    pub(super) fn only(&self) -> &'a [String] {
+        self.only
+    }
+
+    /// The `--skip` entries.
+    pub(super) fn skip(&self) -> &'a [String] {
+        self.skip
+    }
+
     /// Whether the caller restricted this run at all.
     pub(super) fn is_narrowed(&self) -> bool {
         !self.only.is_empty() || !self.skip.is_empty()
