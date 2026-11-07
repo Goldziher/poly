@@ -19,7 +19,10 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   executable that poly spawns once and talks to over alef's framed stdio, so output no longer depends on a
   `shfmt` on `PATH` (byte-identical to shfmt 3.14.1). alef builds, signs and locks it with the other components
   (`producer_language = "executable"`); `[components] disable = ["sh"]` brings the host `shfmt` back, and the
-  bundled build keeps it. See [ADR 0045](adrs/0045-sidecar-components.md).
+  bundled build keeps it. See [ADR 0045](adrs/0045-sidecar-components.md). Files over 3 MiB are skipped (alef
+  carries bytes as JSON number arrays in 16 MiB frames). A crash or timeout of the sidecar stops shell formatting
+  for the rest of the run, because alef does not restart a stdio sidecar; an oversize reply and a panic are
+  failed calls that leave it running.
 - **`poly commit --no-ai-cleanup`.** Disables the built-in removal of AI attribution trailers and banners for one run.
 - **`poly.toml` `[commit]` keys.** `[commit.rules] ai_cleanup`, and `enforce_length` and `enforce_case` under
   `[commit.rules.message]`, matching the keys `.gitfluff.toml` already had. The last two keep the Conventional

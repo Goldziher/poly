@@ -33,7 +33,8 @@ existing MessagePack protocol (ADR 0039) over alef's framed stdio.
   mid-call, a malformed frame, a protocol-version mismatch and a `describe()` that differs from the
   index entry each fail the call or the load with a component error, and the failure is remembered for
   the run. A dead sidecar is never restarted and never replaced by another engine: a missing or failed
-  component is exit 2, as for a dylib.
+  component is exit 2, as for a dylib. The `sh` sidecar itself turns an oversize reply and a panic into
+  failed calls, so neither stops it.
 - **Identity comes from the verified manifest.** alef requires the stdio handshake to repeat the
   signed manifest's component version, feature hash and contract hash. A Go executable has no way to
   embed those at build time without changing its bytes every release, so the sidecar reads
@@ -64,7 +65,9 @@ existing MessagePack protocol (ADR 0039) over alef's framed stdio.
   triples with `CGO_ENABLED=0 -trimpath -ldflags="-s -w -buildid="` and writes exactly `{out}`. alef plans,
   builds, packages, signs and locks it with the Rust components, so one lock covers both and an unchanged
   sidecar is reused across releases; the fingerprint covers `components/sidecars/sh`, the build script and
-  the output of `go version`. alef generates no producer or bridge for it.
+  the output of `go version`, and the protocol crate and schema it speaks. `-buildvcs=false` keeps the
+  commit out of the binary, so the same source builds to the same bytes. alef generates no producer or
+  bridge for it.
 
 Amendment to ADR 0002: a downloaded component may now be an executable that runs as a child process,
 not only a library loaded into poly. This is a third scoped exception beside native-toolchain
@@ -85,6 +88,9 @@ archive is verified before it is spawned, and poly never runs an executable it d
   keeps the host-tool path, with its tree-sitter fallback.
 - `batch` is no longer a `[fmt.shell.shfmt]` key: a long-lived process has no start-up cost to
   amortize.
+- alef's envelope writes a payload as a JSON array of numbers, up to four characters per byte, and bounds
+  a frame at 16 MiB, so the host declines files over 3 MiB for a sidecar engine with a counted skip
+  (`poly_component_protocol::sidecar::MAX_FILE_BYTES`).
 - The Go toolchain must be on `PATH` wherever alef builds the `sh` component, including the release
   containers, and `lock --reuse` does not re-verify the toolchain (alef ADR-0023).
 
