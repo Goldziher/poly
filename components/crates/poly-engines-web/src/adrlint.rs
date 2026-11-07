@@ -160,6 +160,8 @@ impl Engine for AdrlintEngine {
                 paths_key: Some("paths".to_owned()),
                 recursive_key: Some("recursive".to_owned()),
                 recursive_default: false,
+                whole_tree: false,
+                file_names: Vec::new(),
                 list_unserved: true,
             }),
         }

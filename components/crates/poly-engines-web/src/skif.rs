@@ -28,13 +28,14 @@
 //! A project's `skif.toml` is honored as skif reads it. `[engines.skif]` maps onto skif's config overrides:
 //! `ignore` (rule ids turned off), `select` (run only these rules), `ignore_packages`, `ignore_dependencies`,
 //! `production`, `js` (`false` turns the source analysis off). `dir` names the workspace directory when it is
-//! not the project root, `threads` the size of skif's own pool (default 1, which spawns none), and
+//! not the project root, `threads` the size of skif's own pool (default: the machine's parallelism; 1 spawns none), and
 //! `pnpm_lock`/`npm_lock`/`yarn_lock`/`bun_lock` the lock files when they are not at the project root.
 //! `[engines.skif.rules.<id>] level` moves a finding's severity through the runner's normal remap.
 
 mod fs;
 mod map;
 
+use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -56,7 +57,7 @@ pub const ENGINE_NAME: &str = "skif";
 /// Cache-key identity: the wrapped crate version plus a marker for this backend's own mapping.
 ///
 /// Bump the suffix whenever the diagnostic or fix mapping changes, and the version whenever `skif` is upgraded.
-const VERSION: &str = "skif-0.1.1+poly1";
+const VERSION: &str = "skif-0.1.1+poly2";
 
 /// The directory skif is run on, relative to the project root.
 const DEFAULT_DIR: &str = ".";
@@ -70,12 +71,30 @@ const LOCK_FILES: &[(&str, &str)] = &[
     ("bun_lock", "bun.lock"),
 ];
 
-/// The files skif reads: sources, manifests, `tsconfig`, `pnpm-workspace.yaml` and `skif.toml`.
+/// Ignore files skif reads for the workspace: a relative import of a gitignored (generated) file is ignored,
+/// not unresolved, only when skif can see the `.gitignore` that names it.
+const IGNORE_FILES: &[&str] = &[".gitignore", ".ignore"];
+
+/// Rules that judge a dependency by what an installed package provides: its binaries and the peers it hosts.
+///
+/// The run is hermetic, so `node_modules` is never there, and what skif falls back on (a lock file) records
+/// peers for pnpm, npm, bun and yarn berry but binary *names* only for npm, bun and berry; pnpm records that a
+/// package has one and skif assumes it is named like the package. A dependency used through a binary named
+/// otherwise (`@acme/toolkit` running `kit`), or only as a peer of another dependency, is then reported as
+/// unused or its binary as unlisted. They are off unless the project asks for them: in `select`, in
+/// `[engines.skif.rules.<id>]`, or in its own `skif.toml` `[rules]`.
+const NEEDS_INSTALLED_PACKAGES: &[&str] = &["unlisted-binaries", "unused-dependencies", "unused-dev-dependencies"];
+
+/// The files skif reads: sources (single-file components included, which skif counts as code), manifests,
+/// `tsconfig`, `pnpm-workspace.yaml` and `skif.toml`. `.mdx` is not among them: skif has no use for it.
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,
     Language::TypeScript,
     Language::Jsx,
     Language::Tsx,
+    Language::Vue,
+    Language::Svelte,
+    Language::Astro,
     Language::Json,
     Language::Jsonc,
     Language::Yaml,
@@ -161,6 +180,8 @@ impl Engine for SkifEngine {
                 paths_key: None,
                 recursive_key: None,
                 recursive_default: true,
+                whole_tree: true,
+                file_names: IGNORE_FILES.iter().map(|name| (*name).to_owned()).collect(),
                 list_unserved: false,
             }),
         }
@@ -200,7 +221,15 @@ pub fn analyze(req: &ProjectRequest<'_>) -> anyhow::Result<Analysis> {
         Err(skif::Error::NoWorkspace(_)) => return Ok(nothing()),
         Err(error) => return Err(error).context("locating the JavaScript workspace"),
     };
-    let config = skif::load_config(&root, &fs, &settings.overrides).context("loading the skif configuration")?;
+    let mut config = skif::load_config(&root, &fs, &settings.overrides).context("loading the skif configuration")?;
+    let off: Vec<String> = NEEDS_INSTALLED_PACKAGES
+        .iter()
+        .filter(|id| !settings.asked_for.contains(**id) && config.rule(id).is_none())
+        .map(|id| (*id).to_owned())
+        .collect();
+    config
+        .apply(&ConfigOverrides::default().with_ignore_rules(off))
+        .context("turning off the rules that need installed packages")?;
     let linter = Linter::with_fs(&config, Arc::new(fs.clone())).context("building the skif linter")?;
 
     let mut options = RunOptions::default().with_threads(settings.threads);
@@ -232,11 +261,15 @@ fn absolute(path: &Path) -> PathBuf {
     std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// The options skif reads, validated.
+/// The options skif reads, validated. `threads` defaults to the machine's parallelism: the request carries
+/// no job budget, and reading and parsing every manifest and source of a monorepo on one thread is the bulk of
+/// a cold run.
 struct Settings {
     dir: PathBuf,
     threads: NonZeroUsize,
     select: Option<Vec<String>>,
+    /// Rules the project named itself, in `select` or `[engines.skif.rules.<id>]`.
+    asked_for: BTreeSet<String>,
     overrides: ConfigOverrides,
 }
 
@@ -247,7 +280,7 @@ impl Settings {
             Some(value) => PathBuf::from(value.as_str().with_context(|| wrong("dir", "a string", value))?),
         };
         let threads = match options.get("threads") {
-            None => NonZeroUsize::MIN,
+            None => std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
             Some(value) => value
                 .as_integer()
                 .and_then(|count| usize::try_from(count).ok())
@@ -260,10 +293,19 @@ impl Settings {
         overrides.ignore_dependencies = str_list(options, "ignore_dependencies")?.unwrap_or_default();
         overrides.production = flag(options, "production")?;
         overrides.no_js = flag(options, "js")? == Some(false);
+        let select = str_list(options, "select")?;
+        let configured = options.get("rules").and_then(toml::Value::as_table);
+        let asked_for = select
+            .iter()
+            .flatten()
+            .cloned()
+            .chain(configured.into_iter().flat_map(|rules| rules.keys().cloned()))
+            .collect();
         Ok(Self {
             dir,
             threads,
-            select: str_list(options, "select")?,
+            select,
+            asked_for,
             overrides,
         })
     }
@@ -296,4 +338,17 @@ fn str_list(options: &toml::Table, key: &str) -> anyhow::Result<Option<Vec<Strin
         })
         .collect::<anyhow::Result<Vec<_>>>()
         .map(Some)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn threads_default_to_the_machines_parallelism_and_an_option_overrides_it() {
+        let default = Settings::from_options(&toml::Table::new()).expect("defaults").threads;
+        assert_eq!(default, std::thread::available_parallelism().expect("parallelism"));
+        let one = Settings::from_options(&toml::from_str("threads = 1").expect("toml")).expect("one");
+        assert_eq!(one.threads, NonZeroUsize::MIN);
+    }
 }

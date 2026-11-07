@@ -5,8 +5,9 @@
 //! the test thread and compares `/proc/self/task` against the count taken before any call, after
 //! every call.
 //!
-//! skif's project check is held to the same bar: its default `threads = 1` runs discovery and every rule on
-//! the calling thread, so the count after an analysis must not exceed the baseline either.
+//! skif's project check is held to the same bar with `threads = 1`, which runs discovery and every rule on
+//! the calling thread, so the count after an analysis must not exceed the baseline either. (Its default is the
+//! machine's parallelism, for a cold run over a monorepo.)
 //!
 //! Audit: oxc (`LintService::run_source` used a `rayon::scope`, now replaced by `src/oxc/run.rs`,
 //! which drives `Linter::run` directly with no `LintService`, so no rayon scope and no global pool:
@@ -112,7 +113,7 @@ fn oxc_lint_does_not_grow_the_thread_count() {
         ),
     ];
     let skif_cfg = EngineConfig {
-        options: toml::from_str("enabled = true").unwrap(),
+        options: toml::from_str("enabled = true\nthreads = 1").unwrap(),
         ..plain_cfg(2)
     };
     let environment = ProjectEnvironment::default();

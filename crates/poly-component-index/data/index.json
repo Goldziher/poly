@@ -106,6 +106,8 @@
               "paths_key": "paths",
               "recursive_key": "recursive",
               "recursive_default": false,
+              "whole_tree": false,
+              "file_names": [],
               "list_unserved": true
             }
           }
@@ -562,14 +564,26 @@
         },
         {
           "name": "skif",
-          "languages": ["javascript", "typescript", "jsx", "tsx", "json", "jsonc", "yaml", "toml"],
+          "languages": [
+            "javascript",
+            "typescript",
+            "jsx",
+            "tsx",
+            "vue",
+            "svelte",
+            "astro",
+            "json",
+            "jsonc",
+            "yaml",
+            "toml"
+          ],
           "capabilities": {
             "lint": false,
             "format": false,
             "fix": false,
             "project": true
           },
-          "version": "skif-0.1.1+poly1",
+          "version": "skif-0.1.1+poly2",
           "option_keys": [
             {
               "table": "Lint",
@@ -683,6 +697,8 @@
               "paths_key": null,
               "recursive_key": null,
               "recursive_default": true,
+              "whole_tree": true,
+              "file_names": [".gitignore", ".ignore"],
               "list_unserved": false
             }
           }

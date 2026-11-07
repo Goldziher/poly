@@ -32,12 +32,21 @@ fn cfg(extra: &[(&str, toml::Value)]) -> EngineConfig {
     }
 }
 
+/// The language the host gives `path`, for what the engine serves or declared by name; `None` for the rest.
 fn language_of(path: &Path) -> Option<Language> {
+    let name = path.file_name()?.to_str()?;
+    if matches!(name, ".gitignore" | ".ignore") {
+        return Some(Language::Other(name.to_owned()));
+    }
     match path.extension()?.to_str()? {
         "json" => Some(Language::Json),
         "yaml" => Some(Language::Yaml),
         "toml" => Some(Language::Toml),
         "js" => Some(Language::JavaScript),
+        "ts" => Some(Language::TypeScript),
+        "vue" => Some(Language::Vue),
+        "svelte" => Some(Language::Svelte),
+        "astro" => Some(Language::Astro),
         _ => None,
     }
 }
@@ -113,6 +122,23 @@ fn a_known_monorepo_has_exactly_these_findings() {
     assert_eq!(summary(&root, &analysis), expected());
 }
 
+/// The paths skif looked for under `root` and did not find, relative to it, and those above it.
+fn missed(root: &Path, analysis: &Analysis) -> (Vec<String>, Vec<PathBuf>) {
+    let (inside, outside): (Vec<_>, Vec<_>) = analysis.log.missed.iter().partition(|path| path.starts_with(root));
+    let inside = inside
+        .into_iter()
+        .map(|path| path.strip_prefix(root).unwrap().display().to_string())
+        .collect();
+    (inside, outside.into_iter().cloned().collect())
+}
+
+fn directories_of(files: &[ProjectFile]) -> std::collections::BTreeSet<PathBuf> {
+    files
+        .iter()
+        .flat_map(|file| file.path.ancestors().skip(1).map(Path::to_path_buf))
+        .collect()
+}
+
 #[test]
 fn every_file_skif_read_was_an_input_of_the_request() {
     let root = fixture();
@@ -123,6 +149,12 @@ fn every_file_skif_read_was_an_input_of_the_request() {
     assert!(
         stray.is_empty(),
         "skif read files the cache key does not cover: {stray:?}"
+    );
+    let implied = directories_of(&files);
+    let unknown_dirs: Vec<_> = analysis.log.listed.difference(&implied).collect();
+    assert!(
+        unknown_dirs.is_empty(),
+        "skif listed directories the request does not imply: {unknown_dirs:?}"
     );
     for member in [
         "package.json",
@@ -136,6 +168,130 @@ fn every_file_skif_read_was_an_input_of_the_request() {
             analysis.log.read
         );
     }
+}
+
+/// What skif looked for in the workspace fixture and the request does not hold: a clean list of the inputs a
+/// project could add that would change the verdict, none of them one the project already has.
+const ABSENT_BY_DESIGN: &[&str] = &[
+    "",
+    ".git",
+    ".skif.toml",
+    "MODULE.bazel",
+    "WORKSPACE",
+    "WORKSPACE.bazel",
+    "bun.lock",
+    "node_modules/vue/package.json",
+    "pnpm-workspace.yaml",
+    "rush.json",
+    "skif.toml",
+    "src/App.vue/tsconfig.json",
+    "src/generated",
+    "src/generated/api",
+    "src/generated/api.ts",
+    "src/main.ts/tsconfig.json",
+    "yarn.lock",
+];
+
+/// Names skif probes in the ancestors of the project root for a configuration to inherit. They cannot be keyed:
+/// nothing above the root is handed over, so a `skif.toml` there is not read.
+const ANCESTOR_PROBES: &[&str] = &[
+    ".git",
+    ".skif.toml",
+    "package.json",
+    "pnpm-workspace.yaml",
+    "skif.toml",
+    "tsconfig.json",
+];
+
+fn gitignore_fixture() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/skif/ws-gitignore")
+}
+
+#[test]
+fn what_skif_looks_for_and_does_not_get_is_exactly_what_is_intentionally_absent() {
+    let root = gitignore_fixture();
+    let files = load(&root);
+    let analysis = run(&root, &files, &cfg(&[]));
+    let (inside, outside) = missed(&root, &analysis);
+    assert_eq!(
+        inside, ABSENT_BY_DESIGN,
+        "a needed input was not handed over, or skif reads something new"
+    );
+    let ancestors: Vec<_> = root.ancestors().skip(1).collect();
+    for path in &outside {
+        let name = path.file_name().and_then(|name| name.to_str()).unwrap_or_default();
+        assert!(
+            ancestors.contains(&path.as_path())
+                || (path.parent().is_some_and(|dir| ancestors.contains(&dir)) && ANCESTOR_PROBES.contains(&name)),
+            "a probe outside the project that is not an ancestor lookup: {}",
+            path.display()
+        );
+    }
+    for input in [".gitignore", "tsconfig.json", "package.json"] {
+        assert!(analysis.log.read.contains(&root.join(input)), "{input} was not read");
+        assert!(
+            !inside.iter().any(|path| path == input),
+            "{input} was handed over and still reported missing"
+        );
+    }
+}
+
+#[test]
+fn an_input_that_is_not_handed_over_shows_up_as_missed_and_changes_the_result() {
+    let root = gitignore_fixture();
+    let without_gitignore: Vec<_> = load(&root)
+        .into_iter()
+        .filter(|file| file.path.file_name().is_none_or(|name| name != ".gitignore"))
+        .collect();
+    let analysis = run(&root, &without_gitignore, &cfg(&[]));
+    assert!(
+        !analysis.log.read.contains(&root.join(".gitignore")),
+        "skif cannot have read a .gitignore it was not handed: {:?}",
+        analysis.log.read
+    );
+    assert_eq!(
+        summary(&root, &analysis),
+        [(
+            "src/main.ts".to_owned(),
+            "unresolved-imports".to_owned(),
+            "Error".to_owned(),
+            Some(1)
+        )],
+        "the generated import is unresolved once skif cannot see the .gitignore that excuses it"
+    );
+}
+
+#[test]
+fn gitignored_generated_imports_and_component_imports_are_not_findings() {
+    let root = gitignore_fixture();
+    let analysis = run(&root, &load(&root), &cfg(&[]));
+    assert_eq!(summary(&root, &analysis), []);
+}
+
+#[test]
+fn component_files_are_part_of_the_graph() {
+    let root = gitignore_fixture();
+    let without_components: Vec<_> = load(&root)
+        .into_iter()
+        .filter(|file| !matches!(file.language, Language::Vue | Language::Svelte | Language::Astro))
+        .collect();
+    let found = summary(&root, &run(&root, &without_components, &cfg(&[])));
+    let row = |file: &str, rule: &str, line| (file.to_owned(), rule.to_owned(), "Error".to_owned(), line);
+    assert_eq!(
+        found,
+        [
+            row("src/main.ts", "unresolved-imports", Some(2)),
+            row("src/main.ts", "unresolved-imports", Some(3)),
+            row("src/main.ts", "unresolved-imports", Some(4)),
+            (
+                "src/util.ts".to_owned(),
+                "unused-files".to_owned(),
+                "Warning".to_owned(),
+                None
+            ),
+        ],
+        "the Vue, Svelte and Astro imports only resolve when those files are served"
+    );
 }
 
 #[test]
@@ -254,6 +410,151 @@ fn only_safe_single_file_fixes_carry_edits() {
     );
 }
 
+/// A workspace written inline, under a root that does not exist on disk: what the host would hand over.
+fn inline(files: &[(&str, &str)]) -> (PathBuf, Vec<ProjectFile>) {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("virtual-workspace");
+    let files = files
+        .iter()
+        .map(|(path, content)| ProjectFile {
+            path: root.join(path),
+            language: language_of(Path::new(path)).expect("a language skif serves"),
+            content: (*content).into(),
+        })
+        .collect();
+    (root, files)
+}
+
+const ROOT: &str = r#"{"name":"r","version":"1.0.0","private":true,"packageManager":"pnpm@9.0.0"}"#;
+const PACKAGES: &str = "packages:\n  - 'packages/*'\n";
+
+/// `@acme/toolkit` is only run as `kit`, and `@acme/peer` is only the peer `@acme/host` asks for. Neither can be
+/// known without the installed packages or a lock file that names them.
+fn unknowable_members() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("package.json", ROOT),
+        ("pnpm-workspace.yaml", PACKAGES),
+        (
+            "packages/tool/package.json",
+            r#"{"name":"tool","version":"1.0.0","devDependencies":{"@acme/toolkit":"1.0.0"},"scripts":{"build":"kit build"}}"#,
+        ),
+        (
+            "packages/host/package.json",
+            r#"{"name":"host","version":"1.0.0","main":"src/a.ts","dependencies":{"@acme/host":"1.0.0","@acme/peer":"1.0.0"}}"#,
+        ),
+        (
+            "packages/host/src/a.ts",
+            "import host from \"@acme/host\";\nconsole.log(host);\n",
+        ),
+    ]
+}
+
+fn rules_found(root: &Path, files: &[ProjectFile], config: &EngineConfig) -> Vec<(String, String)> {
+    summary(root, &run(root, files, config))
+        .into_iter()
+        .map(|(file, rule, ..)| (file, rule))
+        .collect()
+}
+
+fn pair(file: &str, rule: &str) -> (String, String) {
+    (file.to_owned(), rule.to_owned())
+}
+
+fn select(rule: &str) -> (&'static str, toml::Value) {
+    ("select", toml::Value::Array(vec![rule.into()]))
+}
+
+#[test]
+fn rules_that_need_installed_packages_are_off_unless_asked_for() {
+    let (root, files) = inline(&unknowable_members());
+    assert_eq!(
+        rules_found(&root, &files, &cfg(&[])),
+        [],
+        "without node_modules these report a dependency as unused because skif cannot see what it provides"
+    );
+    for (rule, expected) in [
+        (
+            "unlisted-binaries",
+            pair("packages/tool/package.json", "unlisted-binaries"),
+        ),
+        (
+            "unused-dev-dependencies",
+            pair("packages/tool/package.json", "unused-dev-dependencies"),
+        ),
+        (
+            "unused-dependencies",
+            pair("packages/host/package.json", "unused-dependencies"),
+        ),
+    ] {
+        assert_eq!(
+            rules_found(&root, &files, &cfg(&[select(rule)])),
+            [expected],
+            "select = [{rule}]"
+        );
+    }
+}
+
+#[test]
+fn a_rule_table_or_the_projects_skif_toml_asks_for_a_rule_too() {
+    let (root, files) = inline(&unknowable_members());
+    let rules: toml::Table = toml::from_str("[unlisted-binaries]\nlevel = \"warning\"\n").unwrap();
+    assert_eq!(
+        rules_found(&root, &files, &cfg(&[("rules", toml::Value::Table(rules))])),
+        [pair("packages/tool/package.json", "unlisted-binaries")]
+    );
+    let mut with_toml = unknowable_members();
+    with_toml.push(("skif.toml", "[rules]\nunused-dependencies = \"error\"\n"));
+    let (root, files) = inline(&with_toml);
+    assert_eq!(
+        rules_found(&root, &files, &cfg(&[])),
+        [pair("packages/host/package.json", "unused-dependencies")]
+    );
+}
+
+#[test]
+fn a_lock_file_that_names_the_peers_removes_the_false_unused_dependency() {
+    let lock = "lockfileVersion: '9.0'\n\npackages:\n\n  '@acme/host@1.0.0':\n    resolution: {integrity: sha512-x}\n    \
+                peerDependencies:\n      '@acme/peer': ^1.0.0\n";
+    let mut members = unknowable_members();
+    members.push(("pnpm-lock.yaml", lock));
+    let (root, files) = inline(&members);
+    assert_eq!(rules_found(&root, &files, &cfg(&[select("unused-dependencies")])), []);
+}
+
+#[test]
+fn a_binary_skif_knows_by_name_is_not_reported_when_the_rule_is_asked_for() {
+    let (root, files) = inline(&[
+        ("package.json", ROOT),
+        ("pnpm-workspace.yaml", PACKAGES),
+        (
+            "packages/app/package.json",
+            r#"{"name":"app","version":"1.0.0","devDependencies":{"@angular/cli":"17.0.0"},"scripts":{"start":"ng serve"}}"#,
+        ),
+    ]);
+    assert_eq!(rules_found(&root, &files, &cfg(&[select("unlisted-binaries")])), []);
+}
+
+#[test]
+fn a_tsconfig_extending_into_a_package_does_not_make_types_unused() {
+    let (root, files) = inline(&[
+        ("package.json", ROOT),
+        ("pnpm-workspace.yaml", PACKAGES),
+        (
+            "packages/app/package.json",
+            r#"{"name":"app","version":"1.0.0","main":"src/a.ts","devDependencies":{"@tsconfig/node20":"20.0.0","@types/jest":"29.0.0","@types/node":"20.0.0","typescript":"5.0.0"},"scripts":{"build":"tsc"}}"#,
+        ),
+        (
+            "packages/app/tsconfig.json",
+            r#"{"extends":"@tsconfig/node20/tsconfig.json"}"#,
+        ),
+        ("packages/app/src/a.ts", "export const a: number = 1;\n"),
+    ]);
+    assert_eq!(
+        rules_found(&root, &files, &cfg(&[select("unused-dev-dependencies")])),
+        [],
+        "the base config is not installed, so skif assumes it restricts nothing: a missed finding, never a false one"
+    );
+}
+
 /// Drives `poly_core::lint_run` over a copy of the fixture with the cache **on**.
 struct Project {
     dir: tempfile::TempDir,
@@ -274,6 +575,10 @@ fn copy_tree(from: &Path, to: &Path) {
 
 impl Project {
     fn new(config: &str) -> Self {
+        Self::from_fixture(&fixture(), config)
+    }
+
+    fn from_fixture(source: &Path, config: &str) -> Self {
         static CACHE_HOME: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
         CACHE_HOME.get_or_init(|| {
             let dir = tempfile::tempdir().expect("cache dir");
@@ -284,7 +589,7 @@ impl Project {
             dir
         });
         let dir = tempfile::tempdir().expect("project");
-        copy_tree(&fixture(), dir.path());
+        copy_tree(source, dir.path());
         fs::write(
             dir.path().join("poly.toml"),
             format!("[workspace]\nroot = true\n\n{config}"),
@@ -442,4 +747,17 @@ fn skif_toml_is_honored() {
     let found = project.skif(&project.lint(false));
     assert!(!skif_rules(&found).contains(&"empty-dependencies"), "{found:?}");
     assert!(skif_rules(&found).contains(&"catalog-mismatch"), "{found:?}");
+}
+
+#[test]
+fn the_host_walk_hands_over_components_and_ignore_files_and_ignores_discovery_excludes() {
+    let config = format!("{ENABLED}\n[discovery]\nexclude = [\"src/util.ts\"]\n");
+    let project = Project::from_fixture(&gitignore_fixture(), &config);
+    let run = project.lint(false);
+    assert_eq!(
+        project.skif(&run),
+        [],
+        "src/util.ts is excluded from linting but still a node of the import graph: App.vue imports it"
+    );
+    assert!(run.errors.is_empty());
 }
