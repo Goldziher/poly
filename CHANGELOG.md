@@ -7,6 +7,8 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-11-08
+
 ### Added
 
 - **pyrefly type checking.** `[engines.python-types] backend = "pyrefly"` selects pyrefly instead of ty, from its own
@@ -90,6 +92,10 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 - **Project checks served by a component.** The project phase planned only compiled-in engines, so a
   project check hosted by a downloadable component (ty from the `python` component in a core build) never ran.
   It now runs the components' project-check engines too.
+- **Markdown code spans.** The Markdown formatter no longer strips a space on only one side of a code span's
+  content, which changed the span's meaning (#100).
+- **Release workflow.** A draft release left with partial assets by a failed run is rebuilt, and CR is stripped from
+  `jq` output read on Windows runners.
 
 ## [0.33.1] - 2026-11-05
 

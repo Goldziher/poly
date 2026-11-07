@@ -1,6 +1,6 @@
 [plugin]
 name = "poly"
-version = "0.33.1"
+version = "0.34.0"
 opencode_dependency_enabled = false
 include = ["assets/**"]
 display_name = "poly"

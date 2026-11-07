@@ -1,6 +1,6 @@
 # AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-# Content-Hash: blake3:bee2f237e72eb4665679f505ad2bf1189cd19d6a2847c94c468620c293b6b19c
-# Source-Hash: blake3:fee6ceed63c850371a8e38596cd6db2e4d7f2748ad53ccf8eea27efa24a1fdb6
+# Content-Hash: blake3:f8de9e117c46cf4b1d7b3795ed41e29462d0acc0e6df4f8cab8ed423f157f15c
+# Source-Hash: blake3:e7ab877d931980c90f1404cb645dfa2e45d36c8e6ce966690ca12f6407d95f00
 # Schema-Version: v1
 
 """Hermes Agent plugin package."""
@@ -8,5 +8,5 @@
 from . import hermes
 from .hermes import register
 
-__version__ = "0.33.1"
+__version__ = "0.34.0"
 __all__ = ["hermes", "register"]
