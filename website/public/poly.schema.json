@@ -9,10 +9,7 @@
     },
     "exclude_mode": {
       "description": "`\"replace\"` makes `[discovery] exclude` replace inherited globs instead\nof accumulating them; any other value accumulates.",
-      "type": [
-        "string",
-        "null"
-      ]
+      "type": ["string", "null"]
     },
     "defaults": {
       "$ref": "#/$defs/RawDefaults"
@@ -1505,10 +1502,7 @@
       }
     },
     "required_version": {
-      "type": [
-        "string",
-        "null"
-      ],
+      "type": ["string", "null"],
       "default": null
     },
     "root": {
@@ -1516,9 +1510,7 @@
       "default": false
     }
   },
-  "required": [
-    "extends"
-  ],
+  "required": ["extends"],
   "$defs": {
     "Extends": {
       "description": "Base configs to inherit from (ADR 0020): a local path or a pinned remote git file, as a single entry or an array.",
@@ -1556,42 +1548,27 @@
       "properties": {
         "id": {
           "description": "Optional stable identifier used in diagnostics and the config lock file.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "path": {
           "description": "Local base path (a file, or a directory joined with `file`); XOR `git`.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "git": {
           "description": "Git repository URL; XOR `path`.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "revision": {
           "description": "Pinned git revision; required (and nonempty) for a `git` source.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "file": {
           "description": "Path to the config file within the repository/directory. Defaults to\n[`DEFAULT_BASE_FILE`] (`poly.toml`).",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         }
       },
@@ -1674,18 +1651,12 @@
       "properties": {
         "preset": {
           "description": "Named preset to seed the rules from (e.g. `\"conventional\"`).",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "write": {
           "description": "Whether the cleaner rewrites the commit message in place.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": ["boolean", "null"],
           "default": null
         },
         "rules": {
@@ -1725,82 +1696,52 @@
         },
         "single_line": {
           "description": "Reject multi-line subjects.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": ["boolean", "null"],
           "default": null
         },
         "require_body": {
           "description": "Require a non-empty body.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": ["boolean", "null"],
           "default": null
         },
         "exit_nonzero_on_rewrite": {
           "description": "Exit non-zero when the cleaner rewrote the message.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": ["boolean", "null"],
           "default": null
         },
         "no_emojis": {
           "description": "Reject emojis in the message.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": ["boolean", "null"],
           "default": null
         },
         "ascii_only": {
           "description": "Require ASCII-only content.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": ["boolean", "null"],
           "default": null
         },
         "title_prefix": {
           "description": "Required subject prefix.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "title_prefix_separator": {
           "description": "Separator between the title prefix and the subject.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "title_suffix": {
           "description": "Required subject suffix.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "title_suffix_separator": {
           "description": "Separator between the subject and the title suffix.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "ai_cleanup": {
           "description": "Set to `false` to disable the built-in removal of AI attribution trailers and banners.\nDefaults to `true`.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": ["boolean", "null"],
           "default": null
         }
       }
@@ -1815,29 +1756,18 @@
         },
         "description": {
           "description": "Human-readable description shown when the rule fails.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "enforce_length": {
           "description": "Keep the Conventional Commits length limits even though `pattern` replaces the spec's\nstructural check.",
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "type": ["boolean", "null"]
         },
         "enforce_case": {
           "description": "Keep the Conventional Commits subject case and trailing-full-stop checks even though\n`pattern` replaces the spec's structural check.",
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "type": ["boolean", "null"]
         }
       },
-      "required": [
-        "pattern"
-      ]
+      "required": ["pattern"]
     },
     "ExcludeRule": {
       "description": "A subject-pattern exclusion (`[[commit.rules.excludes]]`).",
@@ -1849,15 +1779,10 @@
         },
         "message": {
           "description": "Optional note explaining the exclusion.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         }
       },
-      "required": [
-        "pattern"
-      ]
+      "required": ["pattern"]
     },
     "CleanupRule": {
       "description": "A find/replace cleanup (`[[commit.rules.cleanup]]`).",
@@ -1873,16 +1798,10 @@
         },
         "description": {
           "description": "Human-readable description of the cleanup.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         }
       },
-      "required": [
-        "find",
-        "replace"
-      ]
+      "required": ["find", "replace"]
     },
     "HooksConfig": {
       "description": "Git-hook configuration: the reserved keys below, plus one key per git stage (`[hooks.pre-commit]`, `[hooks.commit-msg]`, …).",
@@ -2008,10 +1927,7 @@
         },
         "precondition": {
           "description": "Guard command: exit 0 runs the stage, non-zero (or missing tool) **skips\nit with a warning** rather than aborting.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "before": {
@@ -2093,18 +2009,12 @@
       "properties": {
         "ref": {
           "description": "Branch-ref glob the guard applies to (lefthook `ref`).",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "run": {
           "description": "Shell command whose exit status decides the guard (lefthook `run`).",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         }
       },
@@ -2116,34 +2026,22 @@
       "properties": {
         "name": {
           "description": "Display name; defaults to the map key when defined under\n`[hooks.<stage>.commands.<name>]` / `.scripts.<name>`.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "run": {
           "description": "Shell command to run. Mutually exclusive with `script`.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "script": {
           "description": "Script file to run. Mutually exclusive with `run`; requires `runner`.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "runner": {
           "description": "Interpreter used to execute `script` (e.g. `bash`, `python`).",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "args": {
@@ -2197,10 +2095,7 @@
         },
         "root": {
           "description": "Run the job from this subdirectory.\n\nFile arguments (and `{staged_files}` / `{all_files}`) are passed relative\nto it, as lefthook and pre-commit do, and files outside it are not passed;\na job none of whose files are under `root` is skipped.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "show_output": {
@@ -2232,10 +2127,7 @@
         },
         "precondition": {
           "description": "Applicability probe for this job alone: exit 0 runs it, non-zero reports\nit **skipped** (visible, not a failure) while its siblings run normally.\n\nPrefer this to the stage-wide `[hooks.<stage>] precondition` whenever the\nprerequisite belongs to one tool — a stage-wide guard withholds every\ncheck in the stage. It is evaluated in the tree the job itself runs in,\nwhich under staged isolation is the staged snapshot, not the worktree.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "before": {
@@ -2267,10 +2159,7 @@
         },
         "fail_text": {
           "description": "Message printed when the job fails.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "timeout": {
@@ -2488,10 +2377,7 @@
       "properties": {
         "name": {
           "description": "Hook name shown in the report; defaults to `<tool>-<n>`.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "stages": {
@@ -2526,18 +2412,12 @@
         },
         "fix": {
           "description": "Apply fixes and re-stage them; unset inherits the builtin's `fix`.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": ["boolean", "null"],
           "default": null
         },
         "priority": {
           "description": "Lower values run first; unset inherits the builtin's `priority`.",
-          "type": [
-            "integer",
-            "null"
-          ],
+          "type": ["integer", "null"],
           "format": "int64",
           "default": null
         }
@@ -2629,10 +2509,7 @@
       "properties": {
         "name": {
           "description": "Hook name shown in the report; defaults to `file-safety-<n>`.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "stages": {
@@ -2675,10 +2552,7 @@
         },
         "priority": {
           "description": "Lower values run first; unset inherits the group's `priority`.",
-          "type": [
-            "integer",
-            "null"
-          ],
+          "type": ["integer", "null"],
           "format": "int64",
           "default": null
         }
@@ -2742,24 +2616,15 @@
         },
         "path": {
           "description": "Local catalog directory, mutually exclusive with `git`.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "git": {
           "description": "Git repository URL, mutually exclusive with `path`.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "revision": {
           "description": "Git ref resolved by `poly lock`.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "hooks": {
           "description": "Explicit producer hook identifiers to enable.",
@@ -2770,10 +2635,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "id",
-        "hooks"
-      ]
+      "required": ["id", "hooks"]
     },
     "SnapshotMode": {
       "description": "`[hooks] snapshot` — how much of the staged index an isolated run writes out.",
@@ -2816,10 +2678,7 @@
         },
         "dir": {
           "description": "Override the cache root directory.\n\nWhen absent the cache lives in the per-user cache home (see\n`poly_cache::root_from`): `<platform-cache>/poly/<repo-key>`, keyed by the\nnearest `.git` / `poly.toml` ancestor.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "results": {
@@ -2853,26 +2712,17 @@
         },
         "bin": {
           "description": "Path to the `sccache` binary.  When absent, `$PATH` is searched.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "dir": {
           "description": "Override sccache storage directory.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "max_size": {
           "description": "Maximum cache size string understood by sccache (e.g. `\"10G\"`).",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         }
       }
@@ -2895,18 +2745,12 @@
         },
         "command": {
           "description": "Which catalog command to invoke (`\"\"` is the tool's default command,\n`\"format\"`, `\"check\"`, …). `None` lets poly pick by intent.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "args": {
           "description": "When present, **replaces** the catalog command's argument vector\nentirely; when `None`, the catalog command's own argv is used.",
-          "type": [
-            "array",
-            "null"
-          ],
+          "type": ["array", "null"],
           "items": {
             "type": "string"
           },
@@ -2952,10 +2796,7 @@
         },
         "root": {
           "description": "Working directory the tool runs in, relative to the config/repo root.\n`None` means the repo root. Applied on both the direct-engine path and the\nhooks-lowering path.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "extra_args": {
@@ -2984,34 +2825,22 @@
         },
         "bin": {
           "description": "Executable to run instead of the catalog's `binary` looked up on `PATH`.\nFor a JVM tool this is the `java` to launch the jar with.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "version": {
           "description": "Release of the tool to use. Looked up in the catalog's pinned releases;\na version the catalog does not know needs `url` and `sha256` too.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "url": {
           "description": "Download URL for `version` when the catalog has no such pinned release.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "sha256": {
           "description": "Lower-case hex SHA-256 the download for `version` must have.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "install": {
@@ -3047,56 +2876,38 @@
         },
         "prepare": {
           "description": "Set to `false` to skip the tool's prepare step (`helm dependency build`,\nrun once per chart before linting when `charts/` does not satisfy\n`Chart.lock`). The step is also skipped when `POLY_OFFLINE` is set.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": ["boolean", "null"],
           "default": null
         },
         "prepare_attempts": {
           "description": "How many times the prepare step is attempted before the chart is checked\nwith the dependencies on disk (default 5). `1` disables the retry.",
-          "type": [
-            "integer",
-            "null"
-          ],
+          "type": ["integer", "null"],
           "format": "uint32",
           "minimum": 0,
           "default": null
         },
         "prepare_backoff_secs": {
           "description": "Seconds to wait after the first failed prepare attempt (default 4); the\nwait doubles after each further failure (4, 8, 16, 32).",
-          "type": [
-            "integer",
-            "null"
-          ],
+          "type": ["integer", "null"],
           "format": "uint64",
           "minimum": 0,
           "default": null
         },
         "prepare_jitter_secs": {
           "description": "Up to this many extra seconds, chosen at random, added to every wait so\nconcurrent runners do not retry in lockstep (default 4).",
-          "type": [
-            "integer",
-            "null"
-          ],
+          "type": ["integer", "null"],
           "format": "uint64",
           "minimum": 0,
           "default": null
         },
         "verify_skip_charts": {
           "description": "Whether a chart in `skip_charts` is still run, and reported as a failure\nwhen the tool now succeeds on it, so the list cannot outlive its reason\n(default `true`). `false` skips such a chart without running it.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": ["boolean", "null"],
           "default": null
         },
         "new_from_rev": {
           "description": "Report only findings introduced since this git revision\n(`golangci-lint --new-from-rev=<rev>`). Only for tools whose recipe has a\nnew-from-rev flag; unset reports every finding of the package.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         },
         "goos": {
@@ -3196,9 +3007,7 @@
           "items": {
             "type": "string"
           },
-          "default": [
-            ".poly/rules"
-          ]
+          "default": [".poly/rules"]
         },
         "builtin": {
           "description": "Whether poly's built-in ast-grep rule pack (curated, per-language lint\nrules embedded in the binary — no `dirs` setup required) is loaded.\nDefaults to `true`; set to `false` to lint with only the rules under\n`dirs`. The pack is layered *beneath* `dirs`: a user rule with the same\n`id` as a pack rule replaces it.",
@@ -3213,10 +3022,7 @@
       "properties": {
         "enabled": {
           "description": "`true` / `false` to switch the engine on or off; absent keeps its default\n(`typos`, for one, is opt-in in v2).",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": ["boolean", "null"],
           "default": null
         },
         "lint": {
@@ -3264,10 +3070,7 @@
       "properties": {
         "enabled": {
           "description": "Turn the engine off for this phase only.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": ["boolean", "null"],
           "default": null
         }
       },
@@ -3279,10 +3082,7 @@
       "properties": {
         "enabled": {
           "description": "Turn the engine off for this language only.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": ["boolean", "null"],
           "default": null
         },
         "lint": {
@@ -3316,10 +3116,7 @@
       "properties": {
         "level": {
           "description": "Severity or `\"off\"` for this rule (`\"error\"`, `\"warn\"`, `\"off\"`, ...).",
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "default": null
         }
       },
