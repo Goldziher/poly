@@ -1,8 +1,9 @@
 //! [`ComponentHost`]: the manager, the connector and one slot per component.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use alef_component_abi::AlefHostApiV1;
 use alef_component_runtime::{
@@ -42,6 +43,11 @@ pub struct HostOptions {
     /// What the components this host loads may call back into (the component ABI's host service
     /// table). `None` leaves the table empty, so a component sees every service as unsupported.
     pub services: Option<Arc<dyn HostServices>>,
+    /// Components that are executables speaking alef's framed stdio protocol rather than dylibs
+    /// (the index's `kind = "sidecar"`).
+    pub sidecars: Vec<String>,
+    /// Deadline for one call to a sidecar; `None` keeps alef's default of 30 seconds.
+    pub sidecar_timeout: Option<Duration>,
 }
 
 impl HostOptions {
@@ -57,6 +63,8 @@ impl HostOptions {
             init: InitParams::default(),
             gate_loads: false,
             services: None,
+            sidecars: Vec::new(),
+            sidecar_timeout: None,
         }
     }
 }
@@ -70,6 +78,7 @@ pub struct ComponentHost {
     pub(crate) connector: Arc<dyn TransportConnector>,
     pub(crate) offline: bool,
     pub(crate) shared: Arc<Shared>,
+    sidecars: HashSet<String>,
     init: InitParams,
     slots: Mutex<HashMap<String, Arc<ComponentSlot>>>,
 }
@@ -108,9 +117,16 @@ impl ComponentHost {
         if let Some(services) = options.services {
             manager = manager.with_host_services(services);
         }
+        for id in &options.sidecars {
+            manager = manager.with_stdio_component(id.clone());
+        }
+        if let Some(timeout) = options.sidecar_timeout {
+            manager = manager.with_sidecar_timeout(timeout);
+        }
         Ok(Self {
             manager: Arc::new(manager),
-            connector: Arc::new(AlefConnector),
+            connector: Arc::new(AlefConnector::with_sidecars(options.sidecars.iter().cloned())),
+            sidecars: options.sidecars.into_iter().collect(),
             offline: options.offline,
             shared: Arc::new(Shared::new(options.gate_loads)),
             init: options.init,
@@ -198,7 +214,14 @@ impl ComponentHost {
     ) -> anyhow::Result<ComponentEngine> {
         let slot = self.slot(component_id, expected)?;
         let sha = self.lock_sha256(component_id).context("component has no lock entry")?;
-        ComponentEngine::new(component_id, desc, &sha, slot)
+        let engine = ComponentEngine::new(component_id, desc, &sha, slot)?;
+        Ok(if self.sidecars.contains(component_id) {
+            engine
+                .with_max_file_bytes(poly_component_protocol::sidecar::MAX_FILE_BYTES)
+                .with_lf_output()
+        } else {
+            engine
+        })
     }
 
     /// The stand-in for an engine whose component cannot be used; see

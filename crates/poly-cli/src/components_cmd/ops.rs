@@ -209,12 +209,7 @@ impl Actions {
 /// `bundled` when every engine component is linked, `core` when none is, else `partial`.
 #[must_use]
 pub fn flavor(env: &Env<'_>) -> &'static str {
-    let engines: Vec<&Component> = env
-        .index
-        .components
-        .iter()
-        .filter(|c| c.kind == ComponentKind::Engines)
-        .collect();
+    let engines: Vec<&Component> = env.index.components.iter().filter(|c| c.kind.hosts_engines()).collect();
     let linked = engines.iter().filter(|c| (env.linked)(c)).count();
     if linked == 0 {
         "core"
@@ -260,6 +255,7 @@ fn row(env: &Env<'_>, component: &Component, cached: &[alef_component_runtime::C
         kind: match component.kind {
             ComponentKind::Engines => "engines",
             ComponentKind::Frontend => "frontend",
+            ComponentKind::Sidecar => "sidecar",
         },
         state,
         opt_in: component.opt_in,

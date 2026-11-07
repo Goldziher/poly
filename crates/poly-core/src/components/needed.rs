@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
-use poly_component_index::{Component, ComponentIndex, ComponentKind};
+use poly_component_index::{Component, ComponentIndex};
 use poly_component_protocol::WireEngineDesc;
 use poly_config::v2::Enable;
 
@@ -38,6 +38,8 @@ const LINKED_FEATURES: &[&str] = &[
     "engine-hcl",
     #[cfg(feature = "engine-graphql")]
     "engine-graphql",
+    #[cfg(feature = "engine-shfmt")]
+    "engine-shfmt",
 ];
 
 /// Component feature names a bundled binary links through an engine provider rather than a
@@ -179,7 +181,7 @@ pub(crate) fn selected_components<'a>(
         .components
         .iter()
         .filter(|c| names.contains(c.name.as_str()) && !disabled.contains(c.name.as_str()))
-        .filter(|c| c.kind == ComponentKind::Engines && !is_linked(c, linked))
+        .filter(|c| c.kind.hosts_engines() && !is_linked(c, linked))
         .filter(|c| {
             // A component named outright serves whatever language its engines are asked for; one
             // derived from the language needs an engine for that language.
@@ -224,7 +226,7 @@ pub(crate) fn needed_components<'a>(
                 .filter(|n| !disabled.contains(n))
                 .filter(|n| {
                     index.component(n).is_some_and(|c| {
-                        c.kind == ComponentKind::Engines
+                        c.kind.hosts_engines()
                             && !is_linked(c, linked)
                             && c.engines
                                 .iter()

@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use poly_component_host::HostOptions;
-use poly_component_index::{Component, ComponentIndex};
+use poly_component_index::{Component, ComponentIndex, ComponentKind};
 use poly_config::BaseConfigResolver;
 
 use super::needed::{feature_is_linked, is_linked, needed_components};
@@ -50,6 +50,17 @@ pub fn needed_component_names(
         .collect())
 }
 
+/// The components of `index` that are sidecar executables, for [`HostOptions::sidecars`].
+#[must_use]
+pub fn sidecar_names(index: &ComponentIndex) -> Vec<String> {
+    index
+        .components
+        .iter()
+        .filter(|c| c.kind == ComponentKind::Sidecar)
+        .map(|c| c.name.clone())
+        .collect()
+}
+
 /// Host options over the lock a run uses (the one embedded at build time; a `dev-lock` build reads `POLY_COMPONENT_DEV_LOCK`)
 /// and poly's component cache directory. The caller sets `offline` and the rest.
 ///
@@ -59,7 +70,9 @@ pub fn needed_component_names(
 pub fn host_options() -> anyhow::Result<HostOptions> {
     let lock = component_lock()?;
     let cache_root = default_cache_root();
-    Ok(HostOptions::new(lock, cache_root))
+    let mut options = HostOptions::new(lock, cache_root);
+    options.sidecars = sidecar_names(poly_component_index::index());
+    Ok(options)
 }
 
 /// The directory components are cached in, before `POLY_COMPONENT_CACHE` overrides it.

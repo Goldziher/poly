@@ -1,0 +1,17 @@
+#!/bin/sh
+greet() {
+	echo hi
+	if [ -n "$1" ]; then
+		echo "$1"
+	fi
+}
+case "$1" in
+a) echo a ;;
+b | c)
+	echo bc
+	;;
+esac
+cat <<EOT
+  keep   this
+EOT
+x=$(echo a | tr a b)

@@ -54,7 +54,12 @@ all-engines = [
   "engine-ini",
   "engine-hcl",
   "engine-graphql",
+  "engine-shfmt",
 ]
+# Shell is formatted by the host `shfmt` tool (the native-toolchain engine) instead of the `sh`
+# sidecar component, which a build without it downloads. A bundled binary cannot link the Go
+# sidecar, so it keeps the host tool. ADR 0045.
+engine-shfmt = []
 engine-python = ["dep:poly-engines-python"]
 engine-php = ["dep:poly-engines-php"]
 engine-sql = ["dep:poly-engines-sql"]
