@@ -62,6 +62,9 @@ fn project_inputs_desc(engine: &dyn Engine) -> WireProjectInputs {
             dir_default: dirs.dir_default,
             paths_key: dirs.paths_key,
             recursive_key: dirs.recursive_key,
+            recursive_default: dirs.recursive_default,
+            whole_tree: dirs.whole_tree,
+            file_names: dirs.file_names,
             list_unserved: dirs.list_unserved,
         }),
     }

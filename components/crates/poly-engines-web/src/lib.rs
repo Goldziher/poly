@@ -1,6 +1,7 @@
 //! The web engine family: oxc (JavaScript, TypeScript, JSON lint and format), taplo and
 //! `oxc_formatter_toml` (TOML), `oxc_formatter_yaml` (YAML), malva (CSS, SCSS, Less), markup_fmt
-//! (HTML and template languages), and Markdown through rumdl, adrlint and `oxc_formatter_markdown`.
+//! (HTML and template languages), and Markdown through rumdl, adrlint and `oxc_formatter_markdown`. skif lints
+//! JavaScript and TypeScript workspaces as a project check.
 //!
 //! The family lives in the `components/` workspace because its oxc crates are git dependencies.
 
@@ -12,6 +13,7 @@ mod markdown_fmt;
 pub mod markup_fmt;
 pub mod oxc;
 pub mod rumdl;
+pub mod skif;
 pub mod taplo;
 pub mod yaml;
 
@@ -22,6 +24,7 @@ pub use crate::malva::MalvaEngine;
 pub use crate::markup_fmt::MarkupFmtEngine;
 pub use crate::oxc::OxcEngine;
 pub use crate::rumdl::RumdlEngine;
+pub use crate::skif::SkifEngine;
 pub use crate::taplo::TaploEngine;
 pub use crate::yaml::YamlEngine;
 
@@ -42,11 +45,11 @@ pub fn engines_for(language: &Language) -> Vec<Box<dyn Engine>> {
         | Language::Jsx
         | Language::Tsx
         | Language::Json
-        | Language::Jsonc => vec![Box::new(OxcEngine)],
-        Language::Toml => vec![Box::new(TaploEngine::new())],
+        | Language::Jsonc => vec![Box::new(OxcEngine), Box::new(SkifEngine)],
+        Language::Toml => vec![Box::new(TaploEngine::new()), Box::new(SkifEngine)],
         Language::Markdown => vec![Box::new(RumdlEngine), Box::new(AdrlintEngine)],
         Language::Mdx => vec![Box::new(RumdlEngine)],
-        Language::Yaml => vec![Box::new(YamlEngine)],
+        Language::Yaml => vec![Box::new(YamlEngine), Box::new(SkifEngine)],
         Language::Css | Language::Scss | Language::Less => vec![Box::new(MalvaEngine)],
         Language::Html
         | Language::Vue
@@ -74,6 +77,7 @@ impl Default for WebComponent {
                 Box::new(MarkupFmtEngine),
                 Box::new(OxcEngine),
                 Box::new(RumdlEngine),
+                Box::new(SkifEngine),
                 Box::new(TaploEngine::new()),
                 Box::new(YamlEngine),
             ],

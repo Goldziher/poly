@@ -18,7 +18,7 @@ use std::sync::Arc;
 use rayon::prelude::*;
 
 use super::{ProjectPlan, RunInputs, load_files};
-use crate::discover::{DiscoveredFile, detect, list_files};
+use crate::discover::{DiscoveredFile, detect, list_files, list_tree};
 use crate::engine::{ProjectDirs, ProjectFile};
 use crate::filter::is_generated_source;
 use crate::language::Language;
@@ -38,6 +38,10 @@ pub(super) struct ResolvedDirs {
     dirs: Vec<PathBuf>,
     recursive: bool,
     list_unserved: bool,
+    /// See [`ProjectDirs::whole_tree`].
+    pub(super) whole_tree: bool,
+    /// See [`ProjectDirs::file_names`].
+    file_names: Vec<String>,
 }
 
 /// Where a path stands against the project root.
@@ -116,8 +120,8 @@ pub(super) fn resolve_dirs(declared: &ProjectDirs, options: &toml::Table) -> Res
         named.push(dir);
     }
     let recursive = match declared.recursive_key.as_deref() {
-        Some(key) => typed(options, key, "a boolean", toml::Value::as_bool)?.unwrap_or(false),
-        None => false,
+        Some(key) => typed(options, key, "a boolean", toml::Value::as_bool)?.unwrap_or(declared.recursive_default),
+        None => declared.recursive_default,
     };
     let mut dirs: Vec<PathBuf> = Vec::new();
     for dir in named {
@@ -129,6 +133,8 @@ pub(super) fn resolve_dirs(declared: &ProjectDirs, options: &toml::Table) -> Res
         dirs,
         recursive,
         list_unserved: declared.list_unserved,
+        whole_tree: declared.whole_tree,
+        file_names: declared.file_names.clone(),
     })
 }
 
@@ -208,8 +214,13 @@ fn head_is_generated(path: &Path) -> bool {
 }
 
 /// The files under `dirs`, split by whether `plan`'s engine serves them: the served ones to load
-/// with content, the rest to list by name. Both honor what discovery honors (`.gitignore`, pruned
-/// directories, `[discovery] exclude` and the run's `--exclude`) and stay in `plan`'s config scope.
+/// with content, the rest to list by name.
+///
+/// By default both honor what discovery honors (`.gitignore`, pruned directories, `[discovery]
+/// exclude` and the run's `--exclude`) and stay in `plan`'s config scope. A whole-tree engine
+/// ([`ProjectDirs::whole_tree`]) gets everything `.gitignore` and the pruned directories leave, across
+/// nested configs, because its verdict is about the graph the tree forms. A file whose name the engine
+/// declared in [`ProjectDirs::file_names`] is served whatever its language.
 fn walk(
     plan: &ProjectPlan,
     root: &Path,
@@ -225,8 +236,25 @@ fn walk(
             Placement::Inside if dir.is_dir() => {}
             _ => continue,
         }
-        for path in list_files(&dir, configs, dirs.recursive, exclude) {
-            if configs.config_id_for(&path) != plan.config_id {
+        let listed = if dirs.whole_tree {
+            list_tree(&dir, configs, dirs.recursive)
+        } else {
+            list_files(&dir, configs, dirs.recursive, exclude)
+        };
+        for path in listed {
+            if !dirs.whole_tree && configs.config_id_for(&path) != plan.config_id {
+                continue;
+            }
+            let named = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .filter(|name| dirs.file_names.iter().any(|declared| declared == name));
+            if let Some(name) = named {
+                owned.push(DiscoveredFile {
+                    language: Language::Other(name.to_owned()),
+                    path,
+                    config_id: plan.config_id,
+                });
                 continue;
             }
             match detect(&path) {
@@ -277,7 +305,14 @@ pub(super) fn load(
         Some(dirs) => {
             let (owned, unserved) = walk(plan, root, dirs, run.configs, run.exclude);
             let refs: Vec<&DiscoveredFile> = owned.iter().collect();
-            (load_files(&refs, run.act_on_generated), unserved)
+            // A generated source is still a node of the graph a whole-tree check judges.
+            let everything = vec![true; run.act_on_generated.len()];
+            let act_on_generated = if dirs.whole_tree {
+                &everything
+            } else {
+                run.act_on_generated
+            };
+            (load_files(&refs, act_on_generated), unserved)
         }
         None => (load_files(scoped, run.act_on_generated), Vec::new()),
     };
@@ -293,12 +328,22 @@ pub(super) fn load(
     Ok(loaded)
 }
 
+/// The content `loaded` holds for `path`; `None` for a file it does not hold or holds by name only.
+/// `loaded` is sorted by path, as [`load`] returns it.
+pub(super) fn content_of(loaded: &[ProjectFile], path: &Path) -> Option<Arc<str>> {
+    let at = loaded.binary_search_by(|file| file.path.as_path().cmp(path)).ok()?;
+    let file = &loaded[at];
+    (!is_listing(file)).then(|| file.content.clone())
+}
+
+fn is_listing(file: &ProjectFile) -> bool {
+    matches!(&file.language, Language::Other(name) if name == LISTING_LANGUAGE)
+}
+
 /// Whether `loaded` holds anything but listing entries: a served file or a side file. A listing
 /// alone is names with nothing to judge them against.
 pub(super) fn has_substance(loaded: &[ProjectFile]) -> bool {
-    loaded
-        .iter()
-        .any(|file| !matches!(&file.language, Language::Other(name) if name == LISTING_LANGUAGE))
+    loaded.iter().any(|file| !is_listing(file))
 }
 
 #[cfg(test)]
@@ -311,6 +356,9 @@ mod tests {
             dir_default: "docs/adr".to_owned(),
             paths_key: Some("paths".to_owned()),
             recursive_key: Some("recursive".to_owned()),
+            recursive_default: false,
+            whole_tree: false,
+            file_names: Vec::new(),
             list_unserved: true,
         }
     }
@@ -345,6 +393,26 @@ mod tests {
         .expect("resolves");
         assert_eq!(resolved.dirs, [PathBuf::from("a"), PathBuf::from("b/c")]);
         assert!(resolved.recursive);
+    }
+
+    #[test]
+    fn recursion_defaults_to_what_the_engine_declared() {
+        let tree_wide = ProjectDirs {
+            recursive_key: None,
+            recursive_default: true,
+            ..declared()
+        };
+        assert!(resolve_dirs(&tree_wide, &table("")).expect("resolves").recursive);
+        let optional = ProjectDirs {
+            recursive_default: true,
+            ..declared()
+        };
+        assert!(resolve_dirs(&optional, &table("")).expect("resolves").recursive);
+        assert!(
+            !resolve_dirs(&optional, &table("recursive = false"))
+                .expect("resolves")
+                .recursive
+        );
     }
 
     #[test]

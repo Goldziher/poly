@@ -29,6 +29,7 @@ list` names the engines in each component.
 | JSON / JSONC | oxc parse diagnostics + formatter | yes | yes |
 | Python | ruff internals | yes | yes |
 | Python (type checking) | opt-in ty project check (`[engines.python-types] backend = "ty"`; imports resolve through the detected virtualenv's `site-packages`) | opt-in | no |
+| JS/TS workspaces (npm, pnpm, yarn, bun) | skif (opt-in dependency, manifest, version-policy and dead-code project check; `[engines.skif] enabled = true`) | opt-in | no |
 | TOML | taplo (lint) + `oxc_formatter_toml` (format; taplo's formatter when a taplo layout key is set) | yes | yes |
 | Markdown | rumdl (lint) + `oxc_formatter_markdown` (format; rumdl's fixer when a rumdl rule key is set) | yes | yes |
 | Markdown ADRs (`NNNN-*.md`) | adrlint (opt-in MADR structural rules) | opt-in | no |

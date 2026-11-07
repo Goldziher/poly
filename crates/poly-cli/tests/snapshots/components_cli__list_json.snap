@@ -21,6 +21,7 @@ expression: json
         "markup_fmt",
         "oxc",
         "rumdl",
+        "skif",
         "taplo",
         "yaml"
       ],

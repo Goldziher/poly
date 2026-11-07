@@ -9,6 +9,15 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **skif project check.** The `web` component's new `skif` engine lints JS/TS workspaces (npm, pnpm, yarn, bun) for
+  dependency, manifest, version-policy and dead-code findings. Opt in with `[engines.skif] enabled = true`; a project
+  `skif.toml` is honored. skif runs on the files the host hands over, so the project-check cache is invalidated by
+  any member `package.json`, source (Vue, Svelte and Astro included), `tsconfig`, `.gitignore` or lock file changing, and
+  it sees the whole tree whatever `[discovery] exclude` says. `unlisted-binaries`, `unused-dev-dependencies` and
+  `unused-dependencies` are off until asked for, since they need installed packages. `poly lint --fix` now applies the
+  edits a project check attaches to its findings (skif's safe fixes), then re-runs the check once and reports that. Presets `skif` and `js-deps` select the `web` component. oxc stays
+  one copy; the `[patch.crates-io]` table in `components/` redirects skif's oxc crates to poly's. See
+  [ADR 0044](adrs/0044-skif-project-check.md).
 - **adrlint tree-wide rules.** The `adrlint` engine now runs `MADR41a`, `MADR41b`, `MADR42`, `MADR43`,
   `MADR44` and the immutability lock rules `ADR50`/`ADR51` as a project check over the ADR log
   (`dir`, default `docs/adr`, or `paths`; `adrlint.lock` is read by the host). The result is cached

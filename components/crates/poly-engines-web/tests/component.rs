@@ -34,7 +34,16 @@ fn the_web_component_describes_every_web_engine() {
     names.sort_unstable();
     assert_eq!(
         names,
-        ["adrlint", "malva", "markup_fmt", "oxc", "rumdl", "taplo", "yaml"]
+        [
+            "adrlint",
+            "malva",
+            "markup_fmt",
+            "oxc",
+            "rumdl",
+            "skif",
+            "taplo",
+            "yaml"
+        ]
     );
 }
 
