@@ -787,7 +787,8 @@ jobs:
           "$bin" components install uncomment
           uncomment_dir="$RUNNER_TEMP/smoke-uncomment"
           mkdir -p "$uncomment_dir"
-          printf '[lint.uncomment]\nenabled = true\n' > "$uncomment_dir/poly.toml"
+          # code_only = false: the default flags only commented-out code, and this also proves a bool key reaches the component.
+          printf '[lint.uncomment]\nenabled = true\ncode_only = false\n' > "$uncomment_dir/poly.toml"
           printf 'x = 1\n# a removable comment\n' > "$uncomment_dir/a.py"
           set +e
           "$bin" lint --workspace never --no-cache --only uncomment --format json "$uncomment_dir" > "$RUNNER_TEMP/uncomment.json"
