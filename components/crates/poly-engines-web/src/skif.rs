@@ -31,7 +31,7 @@
 //! A project's `skif.toml` is honored as skif reads it. `[engines.skif]` maps onto skif's config overrides:
 //! `ignore` (rule ids turned off), `select` (run only these rules), `ignore_packages`, `ignore_dependencies`,
 //! `production`, `js` (`false` turns the source analysis off). `dir` names the workspace directory when it is
-//! not the project root, `threads` the size of skif's own pool (default: the machine's parallelism; 1 spawns none), and
+//! not the project root, `threads` the size of skif's own pool (default: the host's job budget, else the machine's parallelism; 1 spawns none), and
 //! `pnpm_lock`/`npm_lock`/`yarn_lock`/`bun_lock` the lock files when they are not at the project root.
 //! `[engines.skif.rules.<id>] level` moves a finding's severity through the runner's normal remap.
 
@@ -234,7 +234,7 @@ pub fn analyze(req: &ProjectRequest<'_>) -> anyhow::Result<Analysis> {
     if req.config.options.get("enabled").and_then(toml::Value::as_bool) != Some(true) {
         return Ok(nothing());
     }
-    let settings = Settings::from_options(&req.config.options)?;
+    let settings = Settings::from_options(&req.config.options, req.threads)?;
     let project = absolute(req.root);
     let fs = RecordingFs::new(
         req.files
@@ -358,9 +358,9 @@ fn absolute(path: &Path) -> PathBuf {
     std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// The options skif reads, validated. `threads` defaults to the machine's parallelism: the request carries
-/// no job budget, and reading and parsing every manifest and source of a monorepo on one thread is the bulk of
-/// a cold run.
+/// The options skif reads, validated. `threads` defaults to the host's job budget (`ProjectRequest::threads`), else
+/// the machine's parallelism: reading and parsing every manifest and source of a monorepo on one thread is the bulk
+/// of a cold run.
 struct Settings {
     dir: PathBuf,
     threads: NonZeroUsize,
@@ -371,13 +371,16 @@ struct Settings {
 }
 
 impl Settings {
-    fn from_options(options: &toml::Table) -> anyhow::Result<Self> {
+    fn from_options(options: &toml::Table, budget: Option<usize>) -> anyhow::Result<Self> {
         let dir = match options.get("dir") {
             None => PathBuf::from(DEFAULT_DIR),
             Some(value) => PathBuf::from(value.as_str().with_context(|| wrong("dir", "a string", value))?),
         };
         let threads = match options.get("threads") {
-            None => std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
+            None => budget
+                .and_then(NonZeroUsize::new)
+                .or_else(|| std::thread::available_parallelism().ok())
+                .unwrap_or(NonZeroUsize::MIN),
             Some(value) => value
                 .as_integer()
                 .and_then(|count| usize::try_from(count).ok())
@@ -442,10 +445,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn threads_default_to_the_machines_parallelism_and_an_option_overrides_it() {
-        let default = Settings::from_options(&toml::Table::new()).expect("defaults").threads;
-        assert_eq!(default, std::thread::available_parallelism().expect("parallelism"));
-        let one = Settings::from_options(&toml::from_str("threads = 1").expect("toml")).expect("one");
+    fn threads_default_to_the_hosts_budget_then_the_machines_parallelism_and_an_option_overrides_both() {
+        let machine = Settings::from_options(&toml::Table::new(), None)
+            .expect("defaults")
+            .threads;
+        assert_eq!(machine, std::thread::available_parallelism().expect("parallelism"));
+        let zero = Settings::from_options(&toml::Table::new(), Some(0)).expect("zero budget");
+        assert_eq!(zero.threads, machine, "a budget of zero is no budget");
+        let budget = Settings::from_options(&toml::Table::new(), Some(3)).expect("budget");
+        assert_eq!(budget.threads.get(), 3);
+        let one = Settings::from_options(&toml::from_str("threads = 1").expect("toml"), Some(3)).expect("one");
         assert_eq!(one.threads, NonZeroUsize::MIN);
     }
 }

@@ -209,7 +209,7 @@ ignore_packages = ["@scope/legacy-*"]
 ignore_dependencies = ["left-pad"]
 production = false              # judge production dependencies only
 js = true                       # false turns the source (import) analysis off
-threads = 4                     # skif's own pool; default: this machine's cores, 1 spawns none
+threads = 4                     # skif's own pool; default: poly's job count, 1 spawns none
 pnpm_lock = "pnpm-lock.yaml"    # also npm_lock, yarn_lock, bun_lock
 ```
 

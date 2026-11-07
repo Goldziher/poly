@@ -105,9 +105,9 @@ poly's.
   missed.
 - **Config.** `[engines.skif]` maps onto skif's `ConfigOverrides` (`ignore`, `ignore_packages`,
   `ignore_dependencies`, `production`, `js`) and `select` onto its rule selection; `skif.toml` is
-  found through the same file system. `threads` defaults to the machine's parallelism, because the
-  request carries no job budget and reading and parsing every manifest and source of a monorepo on one
-  thread is the bulk of a cold run; `threads = 1` spawns none. skif builds its pool for the call and
+  found through the same file system. `threads` defaults to the host's job budget (the request's
+  `threads`), else the machine's parallelism, because reading and parsing every manifest and source of a
+  monorepo on one thread is the bulk of a cold run; `threads = 1` spawns none. skif builds its pool for the call and
   drops it when the call returns.
 - **One oxc.** skif's `skif-js-syntax` takes oxc `^0.157`, the version poly's git pin is at.
   `[patch.crates-io]` in `components/` redirects every oxc monorepo crate skif pulls to that git
