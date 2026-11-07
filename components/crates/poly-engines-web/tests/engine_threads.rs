@@ -123,6 +123,7 @@ fn oxc_lint_does_not_grow_the_thread_count() {
             files: &workspace,
             config: &skif_cfg,
             environment: &environment,
+            threads: None,
         };
         let analysis = analyze(&request).unwrap();
         assert!(
