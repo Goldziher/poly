@@ -125,10 +125,10 @@ opt-in `adrlint` backend. It is separate from rumdl on purpose: rumdl judges the
 judges the decision record's section structure, front-matter metadata, list style and document-local
 link anchors. Enable it with `[engines.adrlint] enabled = true`.
 
-It runs the **document** rules only. Directory numbering and file names (`MADR41`–`MADR44`), the
-immutability lock (`ADR50`/`ADR51`), link-target existence (`MADR12a`/`MADR12c`) and external links
-(`MADR11`) depend on the rest of the tree or the network, which a per-file, content-hash-cached
-engine cannot model honestly; the `adrlint` CLI remains the tool for those. See
+It runs the **document** rules per file, and the tree-wide rules — numbering, gaps, duplicates and file
+names (`MADR41`–`MADR44`) and the immutability lock (`ADR50`/`ADR51`) — as a project check over the ADR log.
+Link-target existence (`MADR12a`/`MADR12c`) and external links (`MADR11`) depend on the tree or the network,
+which a content-hash-cached engine cannot model honestly; the `adrlint` CLI remains the tool for those. See
 [architecture decision records](/poly/guides/configuration/#architecture-decision-records-opt-in).
 
 ### Reaching an oxlint plugin
