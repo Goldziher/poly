@@ -116,8 +116,8 @@ pub(super) fn resolve_dirs(declared: &ProjectDirs, options: &toml::Table) -> Res
         named.push(dir);
     }
     let recursive = match declared.recursive_key.as_deref() {
-        Some(key) => typed(options, key, "a boolean", toml::Value::as_bool)?.unwrap_or(false),
-        None => false,
+        Some(key) => typed(options, key, "a boolean", toml::Value::as_bool)?.unwrap_or(declared.recursive_default),
+        None => declared.recursive_default,
     };
     let mut dirs: Vec<PathBuf> = Vec::new();
     for dir in named {
@@ -311,6 +311,7 @@ mod tests {
             dir_default: "docs/adr".to_owned(),
             paths_key: Some("paths".to_owned()),
             recursive_key: Some("recursive".to_owned()),
+            recursive_default: false,
             list_unserved: true,
         }
     }
@@ -345,6 +346,26 @@ mod tests {
         .expect("resolves");
         assert_eq!(resolved.dirs, [PathBuf::from("a"), PathBuf::from("b/c")]);
         assert!(resolved.recursive);
+    }
+
+    #[test]
+    fn recursion_defaults_to_what_the_engine_declared() {
+        let tree_wide = ProjectDirs {
+            recursive_key: None,
+            recursive_default: true,
+            ..declared()
+        };
+        assert!(resolve_dirs(&tree_wide, &table("")).expect("resolves").recursive);
+        let optional = ProjectDirs {
+            recursive_default: true,
+            ..declared()
+        };
+        assert!(resolve_dirs(&optional, &table("")).expect("resolves").recursive);
+        assert!(
+            !resolve_dirs(&optional, &table("recursive = false"))
+                .expect("resolves")
+                .recursive
+        );
     }
 
     #[test]

@@ -1647,6 +1647,11 @@
           "description": "Boolean option extending the directories to their subdirectories.",
           "type": ["string", "null"]
         },
+        "recursive_default": {
+          "description": "Whether the directories extend to their subdirectories when the option is unset. Absent in\ndescriptions written before it existed, which read as `false`.",
+          "type": "boolean",
+          "default": false
+        },
         "list_unserved": {
           "description": "Whether the host also lists the files the engine does not serve (names only).",
           "type": "boolean"

@@ -233,7 +233,11 @@ pub fn lint_run(
     let inputs = project::RunInputs::new(&configs, &act_on_generated, paths, &opts.exclude);
     let mut project_phase = project::run_project_phase(&files, &inputs, selection, &cache, plan.resolved_components());
     let project_errors = std::mem::take(&mut project_phase.errors);
-    project::merge_findings(&mut linted, project_phase, &ignores, &ignore_bases);
+    let fix_mode = project::FixMode {
+        apply: fix,
+        generated: opts.fix_generated,
+    };
+    project::merge_findings(&mut linted, project_phase, &ignores, &ignore_bases, fix_mode);
     linted.sort_by(|a, b| a.path.cmp(&b.path));
     // Taken before the filter below, which keeps only files with something to
     // report: a skipped file has nothing to report and would be dropped, which

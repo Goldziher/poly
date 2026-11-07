@@ -120,6 +120,9 @@ pub struct ProjectDirs {
     pub paths_key: Option<String>,
     /// A boolean option that extends the directories to their subdirectories, when the engine has one.
     pub recursive_key: Option<String>,
+    /// Whether the directories extend to their subdirectories when `recursive_key` is unset or the
+    /// engine has none: a tree-wide check such as a JavaScript workspace is about the whole tree.
+    pub recursive_default: bool,
     /// Whether the host also lists the files in these directories that the engine does not serve
     /// (every file type, names only, empty content, language `Other("listing")`).
     pub list_unserved: bool,

@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use poly_core::engine::{ProjectRequest, Severity, Span};
 use poly_core::runner::{SuppressionReason, with_extra_project_engines};
-use poly_core::{Capabilities, Config, Diagnostic, Engine, Language, LintRun, RunOptions, lint_run};
+use poly_core::{Capabilities, Config, Diagnostic, Edit, Engine, Language, LintRun, RunOptions, lint_run};
 
 const ENGINE: &str = "synthetic-project";
 const CODE: &str = "PRJ001";
@@ -48,13 +48,21 @@ impl Engine for Synthetic {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let mut reported = Vec::new();
         for file in req.files {
-            let diagnostics: Vec<Diagnostic> = file
-                .content
-                .lines()
-                .enumerate()
-                .filter(|(_, line)| line.contains(MARKER))
-                .map(|(index, _)| finding(index as u32 + 1))
-                .collect();
+            let mut offset = 0;
+            let mut diagnostics: Vec<Diagnostic> = Vec::new();
+            for (index, line) in file.content.split_inclusive('\n').enumerate() {
+                if let Some(at) = line.find(MARKER) {
+                    let mut found = finding(index as u32 + 1);
+                    // The edit deletes the marker, so a `--fix` run resolves the finding.
+                    found.fix = vec![Edit {
+                        start_byte: offset + at,
+                        end_byte: offset + at + MARKER.len(),
+                        replacement: String::new(),
+                    }];
+                    diagnostics.push(found);
+                }
+                offset += line.len();
+            }
             if !diagnostics.is_empty() {
                 reported.push((file.path.clone(), diagnostics));
             }
@@ -362,6 +370,7 @@ mod tree {
                     dir_default: "log".to_owned(),
                     paths_key: Some("paths".to_owned()),
                     recursive_key: Some("recursive".to_owned()),
+                    recursive_default: false,
                     list_unserved: true,
                 }),
             }
@@ -612,4 +621,62 @@ mod tree {
             );
         });
     }
+}
+
+#[test]
+fn fix_commits_the_edits_a_project_finding_carries_and_drops_the_finding() {
+    with_engine(|_| {
+        let dir = tempfile::tempdir().unwrap();
+        let flagged = write(dir.path(), "a.py", "x = 1\nFLAG_ME = 2\n");
+        let run = lint_run(
+            &[dir.path().to_path_buf()],
+            &Config::default(),
+            &opts(true),
+            true,
+            false,
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(&flagged).unwrap(), "x = 1\n = 2\n");
+        assert_eq!(project_findings(&run), vec![], "the resolved finding leaves the report");
+        let result = run
+            .results
+            .iter()
+            .find(|r| r.path == flagged)
+            .expect("a fixed file is kept");
+        assert_eq!(result.fixed, 1);
+    });
+}
+
+#[test]
+fn without_fix_the_edits_are_neither_applied_nor_advertised() {
+    with_engine(|_| {
+        let dir = tempfile::tempdir().unwrap();
+        let flagged = write(dir.path(), "a.py", "FLAG_ME = 2\n");
+        let run = lint(dir.path(), &Config::default(), true);
+        assert_eq!(fs::read_to_string(&flagged).unwrap(), "FLAG_ME = 2\n");
+        let result = run.results.iter().find(|r| r.path == flagged).unwrap();
+        assert!(result.diagnostics.iter().all(|d| d.fix.is_empty()));
+        assert_eq!(result.fixed, 0);
+    });
+}
+
+#[test]
+fn fix_leaves_a_hash_stamped_generated_file_alone() {
+    with_engine(|_| {
+        let dir = tempfile::tempdir().unwrap();
+        let text = "# alef:hash:a3f1c2d4e5b6a7980123456789abcdef0123456789abcdef0123456789abcdef\nFLAG_ME = 2\n";
+        let generated = write(dir.path(), "gen.py", text);
+        let config = Config::default();
+        let mut options = opts(true);
+        options.generated = Some(true);
+        let run = lint_run(&[dir.path().to_path_buf()], &config, &options, true, false).unwrap();
+        assert_eq!(
+            fs::read_to_string(&generated).unwrap(),
+            text,
+            "withheld without --fix-generated"
+        );
+        let result = run.results.iter().find(|r| r.path == generated).unwrap();
+        assert!(result.fix_withheld_generated);
+        assert_eq!(project_findings(&run).len(), 1);
+    });
 }

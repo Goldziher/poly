@@ -216,6 +216,10 @@ pub struct WireProjectDirs {
     pub paths_key: Option<String>,
     /// Boolean option extending the directories to their subdirectories.
     pub recursive_key: Option<String>,
+    /// Whether the directories extend to their subdirectories when the option is unset. Absent in
+    /// descriptions written before it existed, which read as `false`.
+    #[serde(default)]
+    pub recursive_default: bool,
     /// Whether the host also lists the files the engine does not serve (names only).
     pub list_unserved: bool,
 }

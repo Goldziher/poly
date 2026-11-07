@@ -17,6 +17,7 @@
 //! `(path, content digest)` list of the files it saw — any change to one file, the set, the config
 //! or the interpreter re-runs the whole check, and nothing else does.
 
+mod fixes;
 mod inputs;
 mod scope;
 
@@ -81,6 +82,14 @@ pub(super) struct ProjectFinding {
     path: PathBuf,
     config_id: usize,
     diagnostics: Vec<Diagnostic>,
+}
+
+/// Whether `--fix` applies the edits project findings carry, and whether it may rewrite a file that
+/// announces itself as machine-generated.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct FixMode {
+    pub(super) apply: bool,
+    pub(super) generated: bool,
 }
 
 /// What the phase produced.
@@ -305,8 +314,8 @@ fn report_for(
     Ok(reported)
 }
 
-/// Turn an engine's `reported` findings into [`ProjectFinding`]s: severity remapped, fixes dropped, and,
-/// when `narrowed_to` is set, only those on files the run named.
+/// Turn an engine's `reported` findings into [`ProjectFinding`]s: severity remapped and, when
+/// `narrowed_to` is set, only those on files the run named.
 fn collect_findings(
     plan: &ProjectPlan,
     reported: Vec<(PathBuf, Vec<Diagnostic>)>,
@@ -324,11 +333,6 @@ fn collect_findings(
         };
         if !remap.is_empty() {
             remap.apply(&mut diagnostics);
-        }
-        // The edits were computed against the engine's own view of the project and nothing
-        // applies them, so advertising them as fixable would be a promise `--fix` cannot keep.
-        for diagnostic in &mut diagnostics {
-            diagnostic.fix.clear();
         }
         findings.push(ProjectFinding {
             path,
@@ -420,6 +424,7 @@ pub(super) fn merge_findings(
     outcome: ProjectOutcome,
     ignores: &[PerFileIgnores],
     ignore_bases: &[Vec<PathBuf>],
+    fix: FixMode,
 ) {
     let ProjectOutcome {
         findings, mut contents, ..
@@ -431,8 +436,9 @@ pub(super) fn merge_findings(
             config_id,
             mut diagnostics,
         } = finding;
-        let content = contents
-            .remove(&path)
+        let loaded = contents.remove(&path);
+        let content = loaded
+            .clone()
             .or_else(|| std::fs::read_to_string(&path).ok().map(Arc::from));
         let mut suppressed: Vec<SuppressedDiagnostic> = Vec::new();
         if let Some(content) = &content {
@@ -446,13 +452,16 @@ pub(super) fn merge_findings(
             let rel = relative_for_match(&path, bases);
             this_ignores.apply(&rel, &path, &mut diagnostics, &mut suppressed);
         }
-        if diagnostics.is_empty() && suppressed.is_empty() {
+        let applied = fixes::resolve(&path, loaded.as_deref(), &mut diagnostics, fix);
+        if diagnostics.is_empty() && suppressed.is_empty() && applied.fixed == 0 {
             continue;
         }
         match index.get(&path) {
             Some(&at) => {
                 linted[at].diagnostics.append(&mut diagnostics);
                 linted[at].suppressed.append(&mut suppressed);
+                linted[at].fixed += applied.fixed;
+                linted[at].fix_withheld_generated |= applied.withheld_generated;
             }
             None => {
                 index.insert(path.clone(), linted.len());
@@ -461,8 +470,8 @@ pub(super) fn merge_findings(
                     config: config_id,
                     diagnostics,
                     suppressed,
-                    fix_withheld_generated: false,
-                    fixed: 0,
+                    fix_withheld_generated: applied.withheld_generated,
+                    fixed: applied.fixed,
                     skipped: None,
                     error: None,
                     debug: None,

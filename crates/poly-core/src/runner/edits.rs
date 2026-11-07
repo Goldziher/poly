@@ -24,18 +24,25 @@ use crate::engine::Edit;
 /// no edit was applied. The count is what lets the report say how many issues a
 /// `--fix` run resolved rather than only how many survived it.
 pub(super) fn apply_edits(content: &str, edit_groups: &[&[Edit]]) -> Option<(String, usize)> {
-    let mut valid: Vec<&[Edit]> = edit_groups
+    apply_edits_indexed(content, edit_groups).map(|(result, applied)| (result, applied.len()))
+}
+
+/// [`apply_edits`], additionally naming which groups were committed (their positions in
+/// `edit_groups`, ascending), for a caller that must drop exactly the diagnostics it resolved.
+pub(super) fn apply_edits_indexed(content: &str, edit_groups: &[&[Edit]]) -> Option<(String, Vec<usize>)> {
+    let mut valid: Vec<(usize, &[Edit])> = edit_groups
         .iter()
         .copied()
-        .filter(|g| !g.is_empty() && !has_internal_overlap(g))
+        .enumerate()
+        .filter(|(_, g)| !g.is_empty() && !has_internal_overlap(g))
         .collect();
-    valid.sort_by_key(|g| std::cmp::Reverse(g.iter().map(|e| e.end_byte).max().unwrap_or(0)));
+    valid.sort_by_key(|(_, g)| std::cmp::Reverse(g.iter().map(|e| e.end_byte).max().unwrap_or(0)));
 
     let mut result = content.to_string();
     let mut prev_start = usize::MAX;
-    let mut applied = 0usize;
+    let mut applied: Vec<usize> = Vec::new();
 
-    'groups: for group in &valid {
+    'groups: for (index, group) in &valid {
         for e in *group {
             if e.start_byte > e.end_byte || e.end_byte > result.len() || e.end_byte > prev_start {
                 continue 'groups;
@@ -56,10 +63,11 @@ pub(super) fn apply_edits(content: &str, edit_groups: &[&[Edit]]) -> Option<(Str
         }
 
         prev_start = group.iter().map(|e| e.start_byte).min().unwrap_or(prev_start);
-        applied += 1;
+        applied.push(*index);
     }
 
-    (applied > 0).then_some((result, applied))
+    applied.sort_unstable();
+    (!applied.is_empty()).then_some((result, applied))
 }
 
 /// Returns `true` when any two edits in `group` have overlapping byte ranges.
