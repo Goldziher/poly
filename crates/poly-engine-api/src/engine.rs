@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+pub use poly_component_protocol::WireSelection;
 use serde::{Deserialize, Serialize};
 
 use crate::config::EngineConfig;
@@ -863,6 +864,12 @@ pub trait Engine: Send + Sync {
     /// backend raises the floor so a small group stays one invocation.
     fn batch_shard_floor(&self) -> usize {
         2
+    }
+
+    /// How a config table picks this engine among alternatives sharing it (ty and pyrefly share
+    /// `[engines.python-types]`, told apart by its `backend`). `None` for an engine nothing chooses between.
+    fn selection(&self) -> Option<WireSelection> {
+        None
     }
 
     /// Whether this catalog backend, enabled by name and covering the whole

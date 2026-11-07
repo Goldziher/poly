@@ -32,6 +32,7 @@ use std::path::PathBuf;
 use anyhow::{Context, anyhow, bail};
 use poly_engine_api::engine::{
     Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, OptionType, ProjectFile, ProjectInputs, ProjectRequest,
+    WireSelection,
 };
 use poly_engine_api::language::Language;
 use ruff_db::Db as SourceDb;
@@ -49,6 +50,9 @@ pub const ENGINE_NAME: &str = "python-types";
 
 /// The `backend` value that switches this engine on.
 const BACKEND: &str = "ty";
+
+/// The `backend` value served by the `pyrefly` component instead.
+const OTHER_BACKEND: &str = "pyrefly";
 
 const OPTION_KEYS: &[(&str, OptionType)] = &[
     ("backend", OptionType::STRING),
@@ -99,11 +103,22 @@ impl Engine for TyEngine {
         }
     }
 
+    fn selection(&self) -> Option<WireSelection> {
+        Some(WireSelection {
+            table: ENGINE_NAME.to_owned(),
+            key: "backend".to_owned(),
+            value: BACKEND.to_owned(),
+            default: true,
+        })
+    }
+
     fn project_check(&self, req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {
         match req.config.options.get("backend") {
             None => return Ok(Vec::new()),
             Some(value) if value.as_str() == Some(BACKEND) => {}
-            Some(other) => bail!("unknown `backend` {other} for `{ENGINE_NAME}`; the only backend is \"{BACKEND}\""),
+            Some(other) => bail!(
+                "unknown `backend` {other} for `{ENGINE_NAME}`; the backends are \"{BACKEND}\" and \"{OTHER_BACKEND}\""
+            ),
         }
         let files: Vec<&ProjectFile> = req
             .files

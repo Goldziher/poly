@@ -8,7 +8,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use poly_component_protocol::{
     Payload, Request, WireBatchSupport, WireDiagnostic, WireEngineDesc, WireFile, WireFileSlice, WireFormatOutput,
-    WireKind, WireOptionTable, WireProjectInputs, hooks,
+    WireKind, WireOptionTable, WireProjectInputs, WireSelection, hooks,
 };
 use poly_engine_api::component_wire::OffsetOutOfRange;
 use poly_engine_api::config::EngineConfig;
@@ -61,6 +61,7 @@ pub struct ComponentEngine {
     supersedes_generic_formatter: bool,
     batch_shard_floor: usize,
     project_inputs: ProjectInputs,
+    selection: Option<WireSelection>,
     slot: Arc<ComponentSlot>,
     unavailable: Option<String>,
     unavailable_skips: bool,
@@ -181,6 +182,7 @@ impl ComponentEngine {
             supersedes_generic_formatter: desc.supersedes_generic_formatter,
             batch_shard_floor: usize::try_from(desc.batch_shard_floor).unwrap_or(usize::MAX),
             project_inputs: project_inputs(&desc.project_inputs),
+            selection: desc.selection.clone(),
             slot,
             unavailable: None,
             unavailable_skips: false,
@@ -504,6 +506,7 @@ impl Engine for ComponentEngine {
             originals.insert(rel, file.path.clone());
         }
         let environment = req.environment.to_wire_pairs();
+        let threads = req.threads.map(|n| u32::try_from(n).unwrap_or(u32::MAX));
         let root = req.root.display().to_string();
         let payload = connection.call(
             self.name,
@@ -514,6 +517,7 @@ impl Engine for ComponentEngine {
                 files: files.clone(),
                 config,
                 environment: environment.clone(),
+                threads,
             },
             &body,
         )?;
@@ -654,6 +658,10 @@ impl Engine for ComponentEngine {
             tracing::warn!(engine = self.name, "lint_cache_salt unavailable: {error:#}");
             None
         })
+    }
+
+    fn selection(&self) -> Option<WireSelection> {
+        self.selection.clone()
     }
 
     fn batch_shard_floor(&self) -> usize {

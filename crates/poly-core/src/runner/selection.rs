@@ -26,14 +26,14 @@ use crate::resolve::ConfigSet;
 /// Borrowed from [`crate::RunOptions`] for the length of a run; both lists are
 /// normally empty, and `selects` is a no-op scan in that case.
 #[derive(Debug, Clone, Copy)]
-pub(super) struct EngineSelection<'a> {
+pub(crate) struct EngineSelection<'a> {
     only: &'a [String],
     skip: &'a [String],
 }
 
 impl<'a> EngineSelection<'a> {
     /// Borrow the selection out of a run's options.
-    pub(super) fn new(only: &'a [String], skip: &'a [String]) -> Self {
+    pub(crate) fn new(only: &'a [String], skip: &'a [String]) -> Self {
         Self { only, skip }
     }
 
@@ -47,6 +47,26 @@ impl<'a> EngineSelection<'a> {
             return false;
         }
         !self.skip.iter().any(|entry| entry == name)
+    }
+
+    /// Whether an engine survives the selection when `--only` / `--skip` may name it or the config table it
+    /// declares it shares with the alternative backends (`python-types` for both ty and pyrefly).
+    pub(crate) fn selects_declared(&self, name: &str, table: Option<&str>) -> bool {
+        let names = |entry: &String| entry == name || table.is_some_and(|table| entry == table);
+        if !self.only.is_empty() && !self.only.iter().any(names) {
+            return false;
+        }
+        !self.skip.iter().any(names)
+    }
+
+    /// The `--only` entries.
+    pub(super) fn only(&self) -> &'a [String] {
+        self.only
+    }
+
+    /// The `--skip` entries.
+    pub(super) fn skip(&self) -> &'a [String] {
+        self.skip
     }
 
     /// Whether the caller restricted this run at all.
@@ -104,7 +124,7 @@ pub(super) fn apply(
 /// diagnostic is produced, and the exit code is 0.
 ///
 /// The recognised set is every registry engine, every engine the run's component
-/// index describes (a core build links none of them, yet `--only sqruff` must
+/// index describes (and the config table an engine declares it shares with its alternatives) (a core build links none of them, yet `--only sqruff` must
 /// select the sql component's engine), plus the catalog tools any config in this
 /// run configures. A catalog tool no config mentions is rejected
 /// even though the catalog knows the name, because naming it would restrict the
@@ -124,6 +144,13 @@ pub(super) fn validate_selection(
             .components
             .iter()
             .flat_map(|component| component.engines.iter().map(|desc| desc.name.as_str())),
+    );
+    known.extend(
+        index
+            .components
+            .iter()
+            .flat_map(|component| component.engines.iter())
+            .filter_map(|desc| desc.selection.as_ref().map(|selection| selection.table.as_str())),
     );
     // Every resolved config, not just the root one: a monorepo (ADR 0018) can
     // enable a catalog tool in a nested `poly.toml`, and naming it is a
@@ -250,5 +277,43 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn the_table_an_engine_shares_with_its_alternatives_is_a_recognized_name() {
+        use poly_component_index::{Component, ComponentKind};
+        use poly_component_protocol::{WireEngineDesc, WireSelection};
+
+        let mut desc: WireEngineDesc = serde_json::from_value(serde_json::json!({
+            "name": "alt", "languages": ["python"],
+            "capabilities": {"lint": false, "format": false, "fix": false, "project": true},
+            "version": "1", "option_keys": [], "hooks": 0, "takes_over_tier_one": false,
+            "claimed_paths": [], "host_hook": "none", "supplements_tier_one": false,
+            "self_manages_enabled": false, "supersedes_generic_formatter": false, "batch_shard_floor": 2,
+        }))
+        .expect("engine description");
+        desc.selection = Some(WireSelection {
+            table: "shared-table".into(),
+            key: "backend".into(),
+            value: "alt".into(),
+            default: false,
+        });
+        let index = ComponentIndex {
+            schema: 1,
+            components: vec![Component {
+                name: "alt".into(),
+                kind: ComponentKind::Engines,
+                opt_in: true,
+                download_only: false,
+                features: vec!["engine-alt".into()],
+                engines: vec![desc],
+                lock_sha: None,
+            }],
+            presets: Default::default(),
+        };
+        let check = |name: &str| validate_selection(&set(Config::default()), &index, &names(&[name]), &[]);
+        assert!(check("shared-table").is_ok());
+        assert!(check("alt").is_ok());
+        assert!(check("other-table").is_err());
     }
 }

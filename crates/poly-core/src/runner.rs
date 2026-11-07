@@ -29,7 +29,7 @@ mod generated;
 mod lint_pass;
 mod plan;
 mod project;
-mod selection;
+pub(crate) mod selection;
 mod skips;
 mod types;
 mod write;
@@ -230,9 +230,9 @@ pub fn lint_run(
     let mut linted: Vec<LintResult> = oks.into_iter().map(Result::unwrap).collect();
     // Whole-project engines run after the per-file tier, on the files as the fix passes left them,
     // and their findings join the per-file results before anything is counted or sorted.
-    let inputs = project::RunInputs::new(&configs, &act_on_generated, paths, &opts.exclude);
+    let inputs = project::RunInputs::new(&configs, &act_on_generated, paths, opts);
     let mut project_phase = project::run_project_phase(&files, &inputs, selection, &cache, plan.resolved_components());
-    let project_errors = std::mem::take(&mut project_phase.errors);
+    let (project_errors, project_skips) = project_phase.take_reports();
     project::merge_findings(&mut linted, project_phase, &ignores, &ignore_bases);
     linted.sort_by(|a, b| a.path.cmp(&b.path));
     // Taken before the filter below, which keeps only files with something to
@@ -267,6 +267,7 @@ pub fn lint_run(
     for error in &errors {
         tracing::warn!(path = %error.path.display(), "lint failed: {}", error.message);
     }
+    skipped.extend(project_skips);
     skipped.extend(unmatched_explicit_paths(
         paths,
         &files,

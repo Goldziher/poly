@@ -103,6 +103,7 @@ pub fn engine_desc(engine: &dyn Engine) -> WireEngineDesc {
         supersedes_generic_formatter: engine.supersedes_generic_formatter(),
         batch_shard_floor: u32::try_from(engine.batch_shard_floor()).unwrap_or(u32::MAX),
         project_inputs: project_inputs_desc(engine),
+        selection: engine.selection(),
     }
 }
 
@@ -149,6 +150,46 @@ mod tests {
         assert_eq!(desc.host_hook, "none");
         assert_eq!(desc.batch_shard_floor, 2);
         assert!(desc.claimed_paths.is_empty() && !desc.takes_over_tier_one);
+    }
+
+    struct Chosen;
+
+    impl Engine for Chosen {
+        fn name(&self) -> &'static str {
+            "chosen"
+        }
+        fn languages(&self) -> &'static [Language] {
+            &[Language::Python]
+        }
+        fn capabilities(&self) -> Capabilities {
+            Capabilities::default()
+        }
+        fn version(&self) -> &str {
+            "1"
+        }
+        fn selection(&self) -> Option<crate::engine::WireSelection> {
+            Some(crate::engine::WireSelection {
+                table: "shared".to_owned(),
+                key: "backend".to_owned(),
+                value: "chosen".to_owned(),
+                default: false,
+            })
+        }
+    }
+
+    #[test]
+    fn describes_the_selection_an_engine_declares() {
+        assert_eq!(engine_desc(&Probe).selection, None);
+        let selection = engine_desc(&Chosen).selection.unwrap();
+        assert_eq!(
+            (
+                selection.table.as_str(),
+                selection.key.as_str(),
+                selection.value.as_str(),
+                selection.default
+            ),
+            ("shared", "backend", "chosen", false)
+        );
     }
 
     struct Narrow;

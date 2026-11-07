@@ -110,6 +110,7 @@ impl Producer {
                 files,
                 config,
                 environment,
+                threads,
             } => {
                 let engine = self.engine(&engine, None)?;
                 let cfg = self.config(config)?;
@@ -128,6 +129,7 @@ impl Producer {
                     files: &members,
                     config: &cfg,
                     environment: &environment,
+                    threads: threads.map(|n| n as usize),
                 };
                 let per_file = guarded(engine.name(), || engine.project_check(&request))?;
                 Ok(Payload::Project(

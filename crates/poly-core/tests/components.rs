@@ -48,6 +48,7 @@ fn desc_for(language: &str) -> WireEngineDesc {
         supersedes_generic_formatter: false,
         batch_shard_floor: 2,
         project_inputs: Default::default(),
+        selection: None,
     }
 }
 
@@ -62,6 +63,7 @@ fn index_of(desc: WireEngineDesc) -> ComponentIndex {
             name: "demo".into(),
             kind: ComponentKind::Engines,
             opt_in: false,
+            download_only: false,
             features: vec!["engine-demo".into()],
             engines: vec![desc],
             lock_sha: None,

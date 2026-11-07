@@ -28,7 +28,7 @@ list` names the engines in each component.
 | JavaScript / TypeScript / JSX / TSX | oxc | yes | yes |
 | JSON / JSONC | oxc parse diagnostics + formatter | yes | yes |
 | Python | ruff internals | yes | yes |
-| Python (type checking) | opt-in ty project check (`[engines.python-types] backend = "ty"`; imports resolve through the detected virtualenv's `site-packages`) | opt-in | no |
+| Python (type checking) | opt-in project check, ty (`[engines.python-types] backend = "ty"`) or pyrefly (`backend = "pyrefly"`, its own component); imports resolve through the detected virtualenv's `site-packages`; `--only`/`--skip` accept `python-types` for either, and a backend whose component is disabled or missing is an error, not a silent skip (see [Python type checking](/poly/reference/configuration/#python-type-checking)) | opt-in | no |
 | TOML | taplo (lint) + `oxc_formatter_toml` (format; taplo's formatter when a taplo layout key is set) | yes | yes |
 | Markdown | rumdl (lint) + `oxc_formatter_markdown` (format; rumdl's fixer when a rumdl rule key is set) | yes | yes |
 | Markdown ADRs (`NNNN-*.md`) | adrlint (opt-in MADR structural rules) | opt-in | no |

@@ -1,0 +1,6 @@
+---
+source: crates/poly-engines-pyrefly/tests/pyrefly_engine.rs
+expression: "summarize(dir.path(), &reported).join(\"\\n\")"
+---
+app.py:5:5 bad-argument-type Argument `Literal['x']` is not assignable to parameter `a` with type `int` in function `add`
+app.py:6:14 bad-assignment `Literal['three']` is not assignable to `int`

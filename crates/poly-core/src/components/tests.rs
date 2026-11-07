@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use poly_component_index::{Component, ComponentIndex, ComponentKind};
-use poly_component_protocol::{WireCapabilities, WireEngineDesc};
+use poly_component_protocol::{WireCapabilities, WireEngineDesc, WireSelection};
 use poly_config::v2::{ComponentsConfig, Enable, EngineTable};
 
 use super::{ComponentsReport, MissingComponent, needed_components, selected_components};
@@ -29,6 +29,7 @@ fn engine(name: &str, languages: &[&str]) -> WireEngineDesc {
         supersedes_generic_formatter: false,
         batch_shard_floor: 2,
         project_inputs: Default::default(),
+        selection: None,
     }
 }
 
@@ -37,6 +38,7 @@ fn component(name: &str, feature: &str, opt_in: bool, engines: Vec<WireEngineDes
         name: name.into(),
         kind: ComponentKind::Engines,
         opt_in,
+        download_only: false,
         features: vec![feature.into()],
         engines,
         lock_sha: None,
@@ -83,14 +85,14 @@ fn lua() -> Language {
 #[test]
 fn auto_derives_the_language_and_cross_cutting_components_but_not_opt_in_or_linked_ones() {
     let index = index();
-    let selected = selected_components(&index, &Config::default(), &lua(), &linked, &|_| true);
+    let selected = selected_components(&index, &Config::default(), &lua(), &linked, &|_, _| true);
     assert_eq!(names(selected), ["lua", "everywhere"]);
 }
 
 #[test]
 fn only_a_language_without_a_component_gets_the_cross_cutting_one() {
     let index = index();
-    let selected = selected_components(&index, &Config::default(), &Language::Rust, &linked, &|_| true);
+    let selected = selected_components(&index, &Config::default(), &Language::Rust, &linked, &|_, _| true);
     assert_eq!(names(selected), ["everywhere"]);
 }
 
@@ -99,7 +101,7 @@ fn an_opt_in_component_needs_its_engine_table_enabled() {
     let mut config = Config::default();
     config.engines.insert("speller".into(), EngineTable::default());
     assert_eq!(
-        names(selected_components(&index(), &config, &lua(), &linked, &|_| true)),
+        names(selected_components(&index(), &config, &lua(), &linked, &|_, _| true)),
         ["lua", "everywhere"],
         "a bare table does not opt in"
     );
@@ -111,7 +113,7 @@ fn an_opt_in_component_needs_its_engine_table_enabled() {
         },
     );
     assert_eq!(
-        names(selected_components(&index(), &config, &lua(), &linked, &|_| true)),
+        names(selected_components(&index(), &config, &lua(), &linked, &|_, _| true)),
         ["lua", "everywhere", "spell"]
     );
 }
@@ -123,7 +125,13 @@ fn an_opt_in_component_enabled_through_a_v1_lint_table_is_selected() {
         ..Config::default()
     };
     assert_eq!(
-        names(selected_components(&index(), &per_language, &lua(), &linked, &|_| true)),
+        names(selected_components(
+            &index(),
+            &per_language,
+            &lua(),
+            &linked,
+            &|_, _| true
+        )),
         ["lua", "everywhere", "spell"],
         "[lint.<lang>.<engine>] enabled = true opts in"
     );
@@ -138,7 +146,9 @@ fn an_opt_in_component_enabled_through_a_v1_lint_table_is_selected() {
         ..Config::default()
     };
     assert_eq!(
-        names(selected_components(&index, &cross_cutting, &lua(), &linked, &|_| true)),
+        names(selected_components(&index, &cross_cutting, &lua(), &linked, &|_, _| {
+            true
+        })),
         ["lua", "everywhere", "typos"],
         "[lint.typos] enabled = true opts in"
     );
@@ -157,10 +167,10 @@ fn index_with_uncomment() -> ComponentIndex {
 #[test]
 fn the_uncomment_component_is_selected_only_when_enabled() {
     let index = index_with_uncomment();
-    let select = |config: &Config| names(selected_components(&index, config, &lua(), &linked, &|_| true));
+    let select = |config: &Config| names(selected_components(&index, config, &lua(), &linked, &|_, _| true));
     let needed = |config: &Config| {
         let pairs = [(0, lua())];
-        needed_components(&index, &[config], &pairs, &linked, &|_| true)
+        needed_components(&index, &[config], &pairs, &linked, &|_, _| true)
             .into_iter()
             .map(|c| c.name.clone())
             .collect::<Vec<_>>()
@@ -190,7 +200,7 @@ fn the_uncomment_component_is_selected_only_when_enabled() {
         &per_language,
         &Language::Rust,
         &linked,
-        &|_| true,
+        &|_, _| true,
     ));
     assert!(!other_language.contains(&"uncomment"), "another language stays off");
 
@@ -222,7 +232,7 @@ fn an_opt_in_component_ignores_tables_for_a_capability_it_lacks() {
         ..Config::default()
     };
     assert_eq!(
-        names(selected_components(&index, &fmt_table, &lua(), &linked, &|_| true)),
+        names(selected_components(&index, &fmt_table, &lua(), &linked, &|_, _| true)),
         ["lua", "everywhere"],
         "a lint-only engine never runs from [fmt], so [fmt.typos] does not opt in"
     );
@@ -235,7 +245,7 @@ fn an_explicit_list_is_exact_and_presets_expand() {
         ..ComponentsConfig::default()
     });
     assert_eq!(
-        names(selected_components(&index(), &config, &lua(), &linked, &|_| true)),
+        names(selected_components(&index(), &config, &lua(), &linked, &|_, _| true)),
         ["lua"]
     );
     let preset = self::config(ComponentsConfig {
@@ -248,7 +258,7 @@ fn an_explicit_list_is_exact_and_presets_expand() {
             &preset,
             &Language::Rust,
             &linked,
-            &|_| true
+            &|_, _| true
         )),
         ["lua", "everywhere"]
     );
@@ -260,7 +270,7 @@ fn disable_removes_a_component_or_a_preset() {
         disable: vec!["all".into()],
         ..ComponentsConfig::default()
     });
-    assert!(selected_components(&index(), &config, &lua(), &linked, &|_| true).is_empty());
+    assert!(selected_components(&index(), &config, &lua(), &linked, &|_, _| true).is_empty());
 }
 
 #[test]
@@ -269,8 +279,8 @@ fn front_ends_and_linked_components_are_never_needed() {
         enable: Enable::List(vec!["server".into(), "builtin".into()]),
         ..ComponentsConfig::default()
     });
-    assert!(selected_components(&index(), &config, &lua(), &linked, &|_| true).is_empty());
-    assert!(needed_components(&index(), &[&config], &[], &linked, &|_| true).is_empty());
+    assert!(selected_components(&index(), &config, &lua(), &linked, &|_, _| true).is_empty());
+    assert!(needed_components(&index(), &[&config], &[], &linked, &|_, _| true).is_empty());
 }
 
 #[test]
@@ -280,11 +290,11 @@ fn explicit_selections_are_needed_even_when_no_file_matches() {
         ..ComponentsConfig::default()
     });
     assert_eq!(
-        names(needed_components(&index(), &[&config], &[], &linked, &|_| true)),
+        names(needed_components(&index(), &[&config], &[], &linked, &|_, _| true)),
         ["lua"]
     );
     let auto = Config::default();
-    assert!(needed_components(&index(), &[&auto], &[], &linked, &|_| true).is_empty());
+    assert!(needed_components(&index(), &[&auto], &[], &linked, &|_, _| true).is_empty());
 }
 
 #[test]
@@ -292,16 +302,16 @@ fn needed_is_the_union_over_pairs_in_index_order() {
     let auto = Config::default();
     let pairs = [(0, Language::Rust), (0, lua())];
     assert_eq!(
-        names(needed_components(&index(), &[&auto], &pairs, &linked, &|_| true)),
+        names(needed_components(&index(), &[&auto], &pairs, &linked, &|_, _| true)),
         ["lua", "everywhere"]
     );
 }
 
-fn skipping<'a>(skipped: &'a [&'a str]) -> impl Fn(&str) -> bool + 'a {
-    move |name| !skipped.contains(&name)
+fn skipping<'a>(skipped: &'a [&'a str]) -> impl Fn(&str, Option<&str>) -> bool + 'a {
+    move |name, _| !skipped.contains(&name)
 }
 
-fn needed_for_lua(config: &Config, selected: &dyn Fn(&str) -> bool) -> Vec<String> {
+fn needed_for_lua(config: &Config, selected: &dyn Fn(&str, Option<&str>) -> bool) -> Vec<String> {
     let pairs = [(0, lua())];
     needed_components(&index(), &[config], &pairs, &linked, selected)
         .into_iter()
@@ -321,9 +331,9 @@ fn a_component_whose_engines_are_all_skipped_is_not_needed() {
 #[test]
 fn only_naming_none_of_a_components_engines_drops_it() {
     let config = Config::default();
-    let only = |name: &str| name == "scanner";
+    let only = |name: &str, _: Option<&str>| name == "scanner";
     assert_eq!(needed_for_lua(&config, &only), ["everywhere"]);
-    let only = |name: &str| name == "native";
+    let only = |name: &str, _: Option<&str>| name == "native";
     assert!(needed_for_lua(&config, &only).is_empty());
 }
 
@@ -374,7 +384,7 @@ fn a_v2_engine_table_with_enabled_false_drops_the_component() {
             ..EngineTable::default()
         },
     );
-    assert_eq!(needed_for_lua(&config, &|_| true), ["everywhere"]);
+    assert_eq!(needed_for_lua(&config, &|_, _| true), ["everywhere"]);
 }
 
 #[test]
@@ -384,12 +394,12 @@ fn v1_enabled_false_in_both_phases_drops_the_component_but_one_phase_does_not() 
         ..Config::default()
     };
     assert_eq!(
-        needed_for_lua(&config, &|_| true),
+        needed_for_lua(&config, &|_, _| true),
         ["lua", "everywhere"],
         "the format phase may still run it"
     );
     config.fmt = toml::from_str("[lua.lualint]\nenabled = false\n").unwrap();
-    assert_eq!(needed_for_lua(&config, &|_| true), ["everywhere"]);
+    assert_eq!(needed_for_lua(&config, &|_, _| true), ["everywhere"]);
 }
 
 #[test]
@@ -401,7 +411,7 @@ fn an_explicit_selection_is_not_needed_when_its_engines_are_skipped() {
     let skipped = ["lualint"];
     assert!(needed_components(&index(), &[&config], &[], &linked, &skipping(&skipped)).is_empty());
     assert_eq!(
-        names(needed_components(&index(), &[&config], &[], &linked, &|_| true)),
+        names(needed_components(&index(), &[&config], &[], &linked, &|_, _| true)),
         ["lua"]
     );
 }
@@ -409,7 +419,7 @@ fn an_explicit_selection_is_not_needed_when_its_engines_are_skipped() {
 /// Families whose engines live outside `poly-core`: a build links them only through an engine
 /// provider that declares the feature with `register_linked_features`.
 #[cfg(feature = "all-engines")]
-const EXTERNAL_FAMILIES: &[&str] = &["engine-biome", "engine-ruby", "engine-web"];
+const EXTERNAL_FAMILIES: &[&str] = &["engine-biome", "engine-pyrefly", "engine-ruby", "engine-web"];
 
 #[cfg(feature = "all-engines")]
 #[test]
@@ -431,7 +441,7 @@ fn the_committed_index_needs_only_the_external_families_in_the_core_build() {
             &[&config],
             &pairs,
             &super::feature_is_linked,
-            &|_| true
+            &|_, _| true
         )),
         ["web", "biome", "ruby"]
     );
@@ -452,4 +462,124 @@ fn the_report_is_empty_until_a_component_is_needed_and_blocking_follows_its_entr
     assert!(!report.blocking());
     report.missing[0].blocking = true;
     assert!(report.blocking());
+}
+
+fn declaring(mut desc: WireEngineDesc, value: &str, default: bool) -> WireEngineDesc {
+    desc.selection = Some(WireSelection {
+        table: "python-types".into(),
+        key: "backend".into(),
+        value: value.into(),
+        default,
+    });
+    desc
+}
+
+fn python_index() -> ComponentIndex {
+    ComponentIndex {
+        schema: 1,
+        components: vec![
+            component(
+                "python",
+                "engine-python",
+                false,
+                vec![declaring(engine("python-types", &["python"]), "ty", true)],
+            ),
+            component(
+                "pyrefly",
+                "engine-pyrefly",
+                true,
+                vec![declaring(engine("pyrefly", &["python"]), "pyrefly", false)],
+            ),
+        ],
+        presets: BTreeMap::new(),
+    }
+}
+
+fn python_types(backend: &str) -> EngineTable {
+    let mut options = toml::Table::new();
+    options.insert("backend".into(), toml::Value::String(backend.to_owned()));
+    EngineTable {
+        options,
+        ..EngineTable::default()
+    }
+}
+
+fn python_names(config: &Config) -> Vec<String> {
+    let index = python_index();
+    let pairs = [(0, Language::Python)];
+    needed_components(&index, &[config], &pairs, &|_| false, &|_, _| true)
+        .into_iter()
+        .chain(selected_components(
+            &index,
+            config,
+            &Language::Python,
+            &|_| false,
+            &|_, _| true,
+        ))
+        .map(|c| c.name.clone())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+#[test]
+fn the_pyrefly_component_is_fetched_only_when_the_backend_names_it() {
+    assert_eq!(python_names(&Config::default()), ["python"], "pyrefly is opt-in");
+
+    let mut ty = Config::default();
+    ty.engines.insert("python-types".into(), python_types("ty"));
+    assert_eq!(python_names(&ty), ["python"], "the ty backend leaves pyrefly alone");
+
+    let mut pyrefly = Config::default();
+    pyrefly.engines.insert("python-types".into(), python_types("pyrefly"));
+    assert_eq!(python_names(&pyrefly), ["pyrefly", "python"]);
+}
+
+#[test]
+fn a_v1_language_table_selecting_pyrefly_fetches_its_component() {
+    let config = Config {
+        lint: toml::toml! { [python.python-types] backend = "pyrefly" },
+        ..Config::default()
+    };
+    assert_eq!(python_names(&config), ["pyrefly", "python"]);
+}
+
+#[test]
+fn switching_the_shared_table_off_does_not_fetch_pyrefly() {
+    let mut config = Config::default();
+    let mut table = python_types("pyrefly");
+    table.enabled = Some(false);
+    config.engines.insert("python-types".into(), table);
+    assert!(
+        !python_names(&config).contains(&"pyrefly".to_owned()),
+        "`enabled = false` on the shared table switches the routed engine off with it"
+    );
+}
+
+/// The components a run over Python files fetches when the selection is `only` / `skip`, matching an engine by its
+/// name or the table it shares (the way the run's own selection does).
+fn python_names_under(config: &Config, only: &[&str], skip: &[&str]) -> Vec<String> {
+    let index = python_index();
+    let pairs = [(0, Language::Python)];
+    let selected = |name: &str, table: Option<&str>| {
+        let names = |entry: &&str| *entry == name || table == Some(*entry);
+        (only.is_empty() || only.iter().any(names)) && !skip.iter().any(names)
+    };
+    needed_components(&index, &[config], &pairs, &|_| false, &selected)
+        .into_iter()
+        .map(|c| c.name.clone())
+        .collect()
+}
+
+#[test]
+fn the_shared_table_name_deselects_the_component_of_the_routed_engine() {
+    let mut config = Config::default();
+    config.engines.insert("python-types".into(), python_types("pyrefly"));
+    assert!(python_names_under(&config, &[], &["python-types"]).is_empty());
+    assert_eq!(
+        python_names_under(&config, &["python-types"], &[]),
+        ["python", "pyrefly"]
+    );
+    assert_eq!(python_names_under(&config, &["pyrefly"], &[]), ["pyrefly"]);
+    assert_eq!(python_names_under(&config, &[], &["pyrefly"]), ["python"]);
 }
