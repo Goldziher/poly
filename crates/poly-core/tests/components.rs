@@ -653,6 +653,15 @@ fn switching_shfmt_off_leaves_shell_alone_instead_of_reindenting_it() {
     let run = format(dir.path(), &config, &inject(host, sidecar_index()));
     assert_eq!(fake.formats.load(Ordering::SeqCst), 0, "the sidecar is not called");
     assert!(run.errors.is_empty(), "{:?}", run.errors);
+    assert_eq!(
+        run.skipped
+            .iter()
+            .map(|skip| (skip.path.file_name().and_then(|n| n.to_str()), skip.reason.as_str()))
+            .collect::<Vec<_>>(),
+        [(Some("run.sh"), "every engine disabled by config: [fmt.shell.shfmt]")],
+        "the file is a counted skip naming the key, not silent"
+    );
+    assert!(poly_core::is_withdrawal_reason(&run.skipped[0].reason));
     assert!(
         run.results.iter().all(|result| !result.changed),
         "the tree-sitter reindenter does not take shell over: {:?}",
