@@ -36,4 +36,4 @@ esac
 
 mkdir -p "$(dirname "${OUT}")"
 cd "${SRC}"
-CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" go build -trimpath -ldflags="-s -w -buildid=" -o "${OUT}" .
+CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" -o "${OUT}" .
