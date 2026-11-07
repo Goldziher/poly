@@ -8,9 +8,9 @@ lockfile_platforms = ["linux-x64", "linux-arm64", "macos-arm64", "macos-x64", "w
 
 [tools]
 python = "3.15.2"
-uv = "0.13.6"
+uv = "0.13.7"
 node = "26.13.0"
-pnpm = "12.16.1"
+pnpm = "12.18.0"
 go = "1.27.3"
 # The Go sidecar's gates (components/sidecars): lint, vulnerability scan and licence check.
 golangci-lint = "2.15.0"
@@ -19,7 +19,7 @@ shfmt = "3.14.1"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
 "go:github.com/google/go-licenses/v2" = "2.0.1"
 # The component build tool; keep in step with alef-component-abi/runtime in Cargo.toml.
-"github:xberg-io/alef" = "0.127.2"
+"github:xberg-io/alef" = "0.128.0"
 
 [vars]
 # Tasks run the bundled poly (core plus the web, biome and ruby engines, built from components/) from this
