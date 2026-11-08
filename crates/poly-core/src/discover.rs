@@ -637,6 +637,20 @@ pub(crate) fn detect(path: &std::path::Path) -> Option<Language> {
         return Some(language);
     }
     let name = tree_sitter_language_pack::detect_language(&path.to_string_lossy())?;
+    // The pack resolves every `*.txt` to `vimdoc`, which mislabels licenses, notices and CMake
+    // lists; a build file is CMake, any other `.txt` is plain text.
+    let name = if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("txt")) {
+        if path
+            .file_name()
+            .is_some_and(|n| n.eq_ignore_ascii_case("CMakeLists.txt"))
+        {
+            "cmake"
+        } else {
+            "text"
+        }
+    } else {
+        name
+    };
     Some(Language::Other(name.to_string()))
 }
 

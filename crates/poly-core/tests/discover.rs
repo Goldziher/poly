@@ -646,3 +646,28 @@ fn a_replayed_walk_prunes_an_excluded_subtree_and_reports_it() {
     assert_eq!(report.excluded_directories, 1, "{report:?}");
     assert_eq!(report.pruned_directories, 1, "{report:?}");
 }
+
+#[test]
+fn txt_files_are_plain_text_and_cmake_lists_are_cmake() {
+    let temp = tempfile::tempdir().unwrap();
+    write_file(&temp.path().join("LICENSE.txt"), "MIT\n");
+    write_file(&temp.path().join("sub/CMakeLists.txt"), "project(x)\n");
+    let configs = ConfigSet::single(Config::default());
+    let mut found: Vec<(String, String)> = discover(&[temp.path().to_path_buf()], &configs, &[])
+        .into_iter()
+        .map(|f| {
+            (
+                f.path.file_name().unwrap().to_string_lossy().into_owned(),
+                f.language.id().to_owned(),
+            )
+        })
+        .collect();
+    found.sort();
+    assert_eq!(
+        found,
+        vec![
+            ("CMakeLists.txt".to_owned(), "cmake".to_owned()),
+            ("LICENSE.txt".to_owned(), "text".to_owned()),
+        ]
+    );
+}
