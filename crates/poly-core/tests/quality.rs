@@ -245,3 +245,34 @@ fn an_unmodelled_language_still_reports_the_floor_it_does_not_get_coverage_for()
     );
     assert!(!QualityEngine.provides_language_lint(&Language::Zig, &cfg));
 }
+
+/// A long changelog or YAML file is not a code-size problem; the same line count in code is.
+#[test]
+fn file_too_long_skips_prose_and_data_formats() {
+    let cfg = engine_cfg(toml::Table::new());
+    let long = || "x\n".repeat(1200);
+    for (path, language) in [
+        ("CHANGELOG.md", Language::Markdown),
+        ("ci.yaml", Language::Yaml),
+        ("data.json", Language::Json),
+        ("Cargo.toml", Language::Toml),
+    ] {
+        let src = SourceFile {
+            path: path.into(),
+            language,
+            content: long().into(),
+        };
+        let diags = QualityEngine.lint(&src, &cfg).unwrap();
+        assert!(
+            diags.iter().all(|d| d.code.as_deref() != Some("file-too-long")),
+            "{path} must not get file-too-long: {diags:?}"
+        );
+    }
+    let code = SourceFile {
+        path: "big.zig".into(),
+        language: Language::Zig,
+        content: long().into(),
+    };
+    let diags = QualityEngine.lint(&code, &cfg).unwrap();
+    assert!(diags.iter().any(|d| d.code.as_deref() == Some("file-too-long")));
+}
