@@ -1,6 +1,6 @@
 //! Release sources: where a downloadable tool's releases come from and how its
 //! assets are named, so poly can resolve *any* upstream version instead of only
-//! the ones pinned in the overlay (ADR 0046).
+//! the ones pinned in the overlay (ADR 0047).
 //!
 //! A [`Source`] is data, not code. It names the host (a GitHub repository or a
 //! plain URL), a template for each platform's asset, and where the SHA-256 of an

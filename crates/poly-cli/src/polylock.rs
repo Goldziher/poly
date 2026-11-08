@@ -1,5 +1,5 @@
 //! `poly.lock` — the single lock file for remote `extends` bases, Git hook
-//! sources and downloadable tool releases (ADR 0038, ADR 0046). It replaces `poly-config.lock` and `poly-hooks.lock`.
+//! sources and downloadable tool releases (ADR 0038, ADR 0047). It replaces `poly-config.lock` and `poly-hooks.lock`.
 //!
 //! Entries are kept in a deterministic order so a re-lock of unchanged inputs
 //! rewrites the file byte for byte.

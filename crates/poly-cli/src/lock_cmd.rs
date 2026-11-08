@@ -1,5 +1,5 @@
 //! `poly lock` — resolve remote `extends` bases, Git hook sources and
-//! downloadable tool releases into the single `poly.lock` (ADR 0038, ADR 0046),
+//! downloadable tool releases into the single `poly.lock` (ADR 0038, ADR 0047),
 //! or verify it is current (`--check`).
 
 use std::path::Path;

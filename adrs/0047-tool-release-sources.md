@@ -1,4 +1,4 @@
-# 0046 — Tool Release Sources: Download Any Upstream Version, Default to Latest
+# 0047 — Tool Release Sources: Download Any Upstream Version, Default to Latest
 
 - Status: Accepted
 - Date: 2026-11-08
@@ -35,13 +35,17 @@ safe: the binary is verified before it can run, runs are reproducible, and a cac
 - **`poly.lock` records the answer.** `[[tools]]` entries carry the version and every platform's URL
   and SHA-256, so a lock made on a laptop serves CI on another platform. `poly lock` resolves `latest`
   into the lock and keeps an entry that still satisfies the config; `--upgrade` moves to the newest
-  release; `--check` compares offline (the recorded names are the lockable ones, an exact `version`
-  matches), and with `--upgrade` re-resolves and compares. With an entry, a run does no resolution I/O.
-  Re-locking refuses an asset of the locked version whose digest changed upstream.
+  release (an exact `version` is already fixed, so `--upgrade` keeps it); `--check` compares offline
+  (the recorded names are the lockable ones, an exact `version` matches), and with `--upgrade` re-resolves
+  and compares. A plain `poly lock` also re-resolves an entry that lacks a platform the source now
+  publishes. With an entry, a run does no resolution I/O. Re-locking refuses an asset of the locked
+  version whose digest changed upstream.
 - **Without a lock entry, `latest` is cached** under the poly cache for 24 hours (`resolve_ttl`, per
   tool), with the response's `ETag`/`Last-Modified`; an expired entry is revalidated with
   `If-None-Match`, so a 304 costs no API quota. A refresh that fails keeps the last answer and warns
-  once. An exact version's digests are immutable and cached per version. Installed binaries are stored
+  once. When `version` is not set (it is implicitly `latest`) and the lookup fails with nothing cached
+  to fall back on (a rate limit, an outage), poly uses the newest seeded release, else the tool on
+  `PATH`, with one warning; an explicit `version` never falls back and the tool is reported missing. An exact version's digests are immutable and cached per version. Installed binaries are stored
   under `tools/<tool>/<version>/` with a digest stamp and never downloaded again.
 - **Resilience.** Every fetch retries connection errors, timeouts, 429, 500, 502, 503 and 504 up to three
   attempts with the exponential backoff already used for `helm dependency build` (`Retry`), honouring

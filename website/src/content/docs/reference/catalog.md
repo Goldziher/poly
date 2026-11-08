@@ -118,7 +118,9 @@ How they differ from the breadth tier above:
   entry a run does no lookup at all, and a re-published asset with a different digest is refused. Without
   one, a resolved `latest` is cached for `resolve_ttl` (default `24h`, `0` always revalidates), revalidated
   with `If-None-Match`, and kept if a refresh fails. Fetches retry transient failures (connection errors,
-  timeouts, 429, 5xx) with backoff and honour `Retry-After`. With `--offline` / `POLY_OFFLINE` only the
+  timeouts, 429, 5xx) with backoff and honour `Retry-After` (seconds or an HTTP date, up to 30 s). If `version` is
+  not set and `latest` cannot be looked up, poly warns once and uses the newest release the catalog bundles, else the
+  tool on `PATH`; an explicit `version` never falls back. With `--offline` / `POLY_OFFLINE` only the
   lock, the cache and installed binaries are used; a tool with none is reported as skipped.
 - **helm.** `prepare` runs `helm dependency build` once per chart (skipped when `charts/` already
   satisfies `Chart.lock`, or when `POLY_OFFLINE` is set), retried `prepare_attempts` (5) times with
