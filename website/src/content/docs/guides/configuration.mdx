@@ -304,7 +304,7 @@ enabled = false      # ...or for one phase only
 
 An absent `enabled` means *the engine's own default*, which is not the same as `false`: most
 backends are on, `typos`, `uncomment` and `adrlint` are opt-in (`[engines.typos] enabled = true`), and each native-toolchain tool carries its own default
-(`rustfmt`, `gofmt`, `shfmt` and `shellcheck` run when present, `zig fmt` does not). Only an explicit `false` withdraws
+(`rustfmt`, `gofmt` and `shellcheck` run when present, `zig fmt` does not; shfmt comes from the `sh` component). Only an explicit `false` withdraws
 an engine.
 
 Switching off the only backend that holds rules for a language withdraws that language's lint

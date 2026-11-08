@@ -36,8 +36,9 @@ change to how you invoke poly.
    coverage.
 
 3. **Native-toolchain backends.** For languages whose canonical formatter is a first-party CLI with
-   no usable Rust library. `rustfmt`, `gofmt`, `shfmt` and `shellcheck` run automatically when
-   present on `PATH`; `zig fmt`, `google-java-format`, `ktfmt`, `swift-format`, `dart format`,
+   no usable Rust library. `rustfmt`, `gofmt` and `shellcheck` run automatically when
+   present on `PATH` (shell formatting comes from the `sh` component, with the host `shfmt` as the
+   fallback when that component is disabled); `zig fmt`, `google-java-format`, `ktfmt`, `swift-format`, `dart format`,
    `gleam format` and `styler` are opt-in. When the tool is absent the language simply falls
    through to tier 2.
 

@@ -281,7 +281,7 @@ marked as such.
   are on by default**; the other 13 ship `severity: off` and are one config line away. Your own rules under
   `[engines.astgrep] rule_dirs` sit above the pack — a rule with the same `id` replaces the built-in one outright.
 
-A fourth cross-cutting engine, `uncomment` (comment removal), is off by default.
+A fourth cross-cutting engine, `uncomment` (comment removal), is off by default and ships as its own component.
 
 | Quality rule | Default |
 |---|---|
@@ -305,8 +305,9 @@ does not redden an unconfigured CI.
 
 ### Native toolchain CLIs
 
-`gofmt`, `rustfmt`, `shfmt` and `shellcheck` run automatically when found on `PATH`; `shellcheck` is the only one
-that lints. `zig fmt`, `google-java-format`, `ktfmt`, `styler` (R), `swift-format`, `dart format` and `gleam format`
+`gofmt`, `rustfmt` and `shellcheck` run automatically when found on `PATH`; `shellcheck` is the only one
+that lints. Shell is formatted by the `sh` component, shfmt's own Go library run as a sidecar, so it no longer needs
+`shfmt` on `PATH` (the bundled build and `[components] disable = ["sh"]` still use the host `shfmt`). `zig fmt`, `google-java-format`, `ktfmt`, `styler` (R), `swift-format`, `dart format` and `gleam format`
 are opt-in. When a tool is absent the language falls through to the tree-sitter tier, so the
 zero-dependency promise holds either way.
 
@@ -346,6 +347,8 @@ network. See [ADR 0037](adrs/0037-adrlint-madr-linting.md) and
 | YAML | serde_yaml (libyaml) + oxc_formatter_yaml | yes | yes |
 | Markdown / MDX | rumdl (lint) + oxc_formatter_markdown | yes | yes |
 | Markdown ADRs (`NNNN-*.md`) | adrlint, opt-in | opt-in | no |
+| Python type checking | ty or pyrefly, opt-in project check | opt-in | no |
+| JS/TS workspaces (npm, pnpm, yarn, bun) | skif, opt-in project check | opt-in | no |
 | SQL | sqruff | yes | yes |
 | CSS / SCSS | oxc_formatter_css (malva on request) + biome | yes | yes |
 | Less | oxc_formatter_css (malva on request) | no | yes |
@@ -360,7 +363,7 @@ network. See [ADR 0037](adrs/0037-adrlint-madr-linting.md) and
 | Nix | alejandra | no | yes |
 | Go | `gofmt`, automatic when installed | no | yes |
 | Rust | `rustfmt`, automatic when installed | no | yes |
-| Shell | `shellcheck` and `shfmt`, automatic when installed | yes | yes |
+| Shell | shfmt (`sh` component); `shellcheck`, automatic when installed | yes | yes |
 | Zig / Java / Kotlin / R / Swift / Dart / Gleam | first-party CLI, opt-in | no | opt-in |
 | Everything else identified | tree-sitter generic tier | no | best effort |
 
