@@ -631,3 +631,11 @@ fn a_file_held_open_on_windows_is_skipped() {
     let later = ops::prune(&fixture.env(), false, false, 30).unwrap();
     assert_eq!(row_names(&later, "removed"), [ORPHAN_SHA]);
 }
+
+#[test]
+fn the_mcp_front_end_is_linked_exactly_when_the_server_is_compiled_in() {
+    let mcp = poly_component_index::index()
+        .component("mcp")
+        .expect("the index has mcp");
+    assert_eq!(super::is_linked(mcp), cfg!(feature = "bundled-mcp"));
+}

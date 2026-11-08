@@ -17,6 +17,7 @@ use std::process::ExitCode;
 use anyhow::Context;
 use clap::{Args, Subcommand};
 use poly_component_host::ComponentHost;
+use poly_component_index::{Component, ComponentKind};
 use poly_core::components::{component_is_linked, default_cache_root, host_options, needed_component_names};
 
 use crate::OutputFormat;
@@ -112,6 +113,17 @@ fn open_host(offline: bool) -> anyhow::Result<(ComponentHost, String)> {
     Ok((ComponentHost::new(options)?, lock))
 }
 
+/// Whether `component` is compiled into this binary: an engine component whose families are linked, or
+/// the `mcp` front end in a build that serves the MCP server in-process (`bundled-mcp`). The index gives
+/// the front end no cargo feature, so the planner's feature check alone would call it unavailable here.
+pub(crate) fn is_linked(component: &Component) -> bool {
+    component_is_linked(component) || (cfg!(feature = "bundled-mcp") && is_mcp_frontend(component))
+}
+
+fn is_mcp_frontend(component: &Component) -> bool {
+    component.kind == ComponentKind::Frontend && component.name == "mcp"
+}
+
 fn cache_root_of(host: Option<&ComponentHost>) -> PathBuf {
     host.map_or_else(
         || poly_config::network::component_cache_dir().unwrap_or_else(default_cache_root),
@@ -162,7 +174,7 @@ fn run(args: ComponentsArgs) -> anyhow::Result<ExitCode> {
         host: host.as_ref(),
         no_host,
         lock_json: lock_json.as_deref(),
-        linked: &component_is_linked,
+        linked: &is_linked,
         offline,
         cache_root: cache_root_of(host.as_ref()),
     };
@@ -223,7 +235,7 @@ pub fn component_summaries() -> Vec<poly_frontend_api::dto::ComponentSummary> {
         host: host.as_ref(),
         no_host,
         lock_json: None,
-        linked: &component_is_linked,
+        linked: &is_linked,
         offline: crate::offline(),
         cache_root: cache_root_of(host.as_ref()),
     };
@@ -271,7 +283,7 @@ pub fn doctor_components() -> DoctorComponents {
         host: host.as_ref(),
         no_host,
         lock_json: None,
-        linked: &component_is_linked,
+        linked: &is_linked,
         offline,
         cache_root: cache_root_of(host.as_ref()),
     };
