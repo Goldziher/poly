@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:6d5969b5a41571584eee48f20ba8a482b2fdd17208238ff27e0542767646dae1
-Source-Hash: blake3:e7ab877d931980c90f1404cb645dfa2e45d36c8e6ce966690ca12f6407d95f00
+Content-Hash: blake3:2c681d000481edd63e0749daee13c03d18f147c3525386319b5ed99ac68ded23
+Source-Hash: blake3:d423fda6aef47ec0661e9460a04f849c62839d8306d1a6e168cc1314db55f78b
 Schema-Version: v1
 -->
 
@@ -20,8 +20,8 @@ Schema-Version: v1
 
 Five mechanisms decide what actually inspects a file (`crates/poly-core/src/registry.rs`):
 
-1. **Tier-1 native crate backends** — one in-process Rust crate registered for specific
-   languages, by engine id: `ruff`, `oxc`, `taplo`, `rumdl`, `sqruff`, `yaml`, `malva`
+1. **Tier-1 engines** — linked into the bundled build, or loaded from a signed component a core
+   build downloads on first use; registered for specific languages, by engine id: `ruff`, `oxc`, `taplo`, `rumdl`, `sqruff`, `yaml`, `malva`
    (+ `biome` for CSS/SCSS), `markup_fmt`, `mago`, `rubyfmt`, `graphql` (+ `biome`),
    `alejandra` (Nix), `hcl`, `dockerfile`, `dotenv`, `ini`.
 2. **Tier-2 tree-sitter generic tier** (ADR 0004) — the catch-all for every language with no
@@ -30,11 +30,13 @@ Five mechanisms decide what actually inspects a file (`crates/poly-core/src/regi
    coverage mechanism, not a fallback to avoid — but it is explicitly *not* gofmt/rustfmt
    parity.
 3. **Native-toolchain tier** (ADR 0014, `engines/native_tool/`) — the language's canonical
-   first-party CLI, run per file over stdin/stdout. `rustfmt`, `gofmt`, `shfmt` and
+   first-party CLI, run as a subprocess over stdin/stdout. `rustfmt`, `gofmt` and
    `shellcheck` are **on by default whenever the tool is found on PATH**; `zigfmt`,
    `google-java-format`, `ktfmt`, `styler`, `swift-format`, `dartfmt`, and `gleamfmt` are
    opt-in via `[engines.<id>] enabled = true`.
    Absent tool ⇒ the language falls through to tier 2 with an info-level notice, never an error.
+   Shell formatting is the exception: it comes from the `sh` component (shfmt as a Go sidecar),
+   and a host `shfmt` is used only by the bundled build or with `[components] disable = ["sh"]`.
 4. **`quality`, the code-quality metric tier** (ADR 0027) — cross-cutting, appended to every
    language: file/function/type length, nesting depth, cyclomatic complexity, parameter
    count, `lazy-ignore`, and `uncollected-test-file` (a test-named file the language's runner

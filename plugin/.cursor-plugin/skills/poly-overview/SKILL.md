@@ -9,22 +9,27 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:5278b4cb21420b3a8c4a2dc35e202b7001d1041e8319913baa4978442db2bff4
-Source-Hash: blake3:e7ab877d931980c90f1404cb645dfa2e45d36c8e6ce966690ca12f6407d95f00
+Content-Hash: blake3:9e5a0f18ed2071c6e6607090deb76281b8ce63da183ab45a7030ff788a8f2f07
+Source-Hash: blake3:d423fda6aef47ec0661e9460a04f849c62839d8306d1a6e168cc1314db55f78b
 Schema-Version: v1
 -->
 
 # poly Overview
 
-poly is a single pure-Rust binary that lints and formats a whole repository across
-languages. It wraps best-in-class tools as in-process crate backends and falls back to a
-tree-sitter generic tier for everything else, so it runs the same on any machine and in CI.
-No system tool is ever *required*; the one scoped exception is the native-toolchain tier
-below, which uses a language's canonical CLI when it happens to be installed.
+polylint (the command is `poly`, the config `poly.toml`) is one linter and formatter for every
+language in a repository. Its engines (ruff, oxc, biome, mago, sqruff, …) ship as signed,
+checksum-verified **components** that a core binary downloads the first time a run needs them;
+it also runs a language's canonical host CLI when installed (`rustfmt`, `gofmt`, `shellcheck`),
+ecosystem tools as opt-in **recipes**, and a tree-sitter tier for the long tail.
+
+A first run on a core build may download components and tree-sitter grammars. A needed component
+that cannot be installed is exit `2` (or, with `[components] on_missing = "skip"`, a counted skip
+listed in `components.missing`), never a silent downgrade. Only the Linux musl release binary is
+bundled with every engine linked in.
 
 ## Per-language coverage tiers
 
-- **Tier 1 — native in-process backends.** Highest fidelity, registered per language: linked
+- **Tier 1 — engine components.** Highest fidelity, registered per language: linked
   into a bundled build (the Linux musl release binary) or loaded from signed components that a core
   build (every other release binary) downloads on first use (`poly components list`). Listed by the engine id you configure them
   under (`[engines.<id>]`): `ruff` (Python), `oxc`
@@ -37,20 +42,23 @@ below, which uses a language's canonical CLI when it happens to be installed.
 - **Tier 2 — tree-sitter generic tier.** The catch-all for the long tail (Elixir, C/C++,
   C#, protobuf, and the rest of 300+ grammars). CST-driven structural reindent for
   brace-family grammars, whitespace normalization otherwise, and a `LEAVE_UNTOUCHED` list
-  for grammars where whitespace is significant. Best-effort, pure Rust, grammars loaded on
-  demand — never gofmt/rustfmt parity, by design.
-- **Native-toolchain tier (scoped exception).** A language's canonical first-party CLI run
-  per file over stdin/stdout when installed: `rustfmt`, `gofmt`, `shfmt` and `shellcheck` are
-  **on by default when found on PATH**; `zigfmt`, `google-java-format`, `ktfmt`, `styler` (R),
-  `swift-format`, `dartfmt`, and `gleamfmt` are opt-in via
-  `[engines.<id>] enabled = true`. When the
-  tool is absent, formatting falls through to tier 2 with an info-level notice, so the
-  zero-dependency guarantee always holds.
+  for grammars where whitespace is significant. Best-effort, grammars fetched on demand —
+  never gofmt/rustfmt parity, by design.
+- **Host tools.** A language's canonical CLI run as a subprocess when installed: `rustfmt`,
+  `gofmt` and `shellcheck` are **on by default when found on PATH**; `zigfmt`,
+  `google-java-format`, `ktfmt`, `styler` (R), `swift-format`, `dartfmt`, and `gleamfmt` are
+  opt-in via `[engines.<id>] enabled = true`. When the tool is absent, formatting falls through
+  to tier 2 with an info-level notice.
+- **Shell.** Formatted by the `sh` component (shfmt's Go library, run as a sidecar), not by a
+  host `shfmt`. The host `shfmt` is used only by the bundled build or with
+  `[components] disable = ["sh"]`.
 - **Catalog and recipe tools (opt-in).** Any tool in poly's vendored catalog —
   `golangci-lint`, `actionlint`, `hadolint`, `helm`, `tflint`, `buf`, `buildifier`, … — runs
   once you set `[tools.<name>] enabled = true`. Nothing is downloaded unless you also pin
   `version` and set `install = "auto"`, which fetches a checksum-verified release into poly's
-  tool cache; otherwise a missing binary logs a warning and the tool is skipped.
+  tool cache; otherwise a missing binary logs a warning and the tool is skipped. JVM, Node and
+  Python tools (`checkstyle`, `npm-groovy-lint`, `pyproject-fmt`) use the runtime on the host;
+  poly never bundles a runtime, so do not enable one on a machine without it.
 
 ## Cross-cutting engines (every language)
 
