@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="polylint">
+  <title>polylint</title>
+  <defs>
+    <linearGradient id="gold" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="118">
+      <stop offset="0" stop-color="#f8e7b0" />
+      <stop offset=".46" stop-color="#e0bb5e" />
+      <stop offset=".5" stop-color="#b48a3a" />
+      <stop offset=".54" stop-color="#e0bb5e" />
+      <stop offset="1" stop-color="#b48a3a" />
+    </linearGradient>
+    <linearGradient id="zg" x1="0" y1="168" x2="0" y2="208" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e0bb5e" />
+      <stop offset="1" stop-color="#b48a3a" />
+    </linearGradient>
+    <radialGradient id="bg" cx="128.0" cy="168" r="184.32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#16213a" />
+      <stop offset="1" stop-color="#070a13" />
+    </radialGradient>
+    <radialGradient id="rf" cx="128.0" cy="168" r="158.72" gradientUnits="userSpaceOnUse">
+      <stop offset=".15" stop-color="#e0bb5e" stop-opacity=".55" />
+      <stop offset="1" stop-color="#e0bb5e" stop-opacity="0" />
+    </radialGradient>
+    <clipPath id="tile"><rect width="256" height="256" rx="44" /></clipPath>
+  </defs>
+  <g clip-path="url(#tile)">
+    <rect width="256" height="256" fill="url(#bg)" />
+    <path
+      fill="url(#rf)"
+      d="M110 168.17L-63.86 175.37L-63.86 160.63L110 167.83ZM110.26 164.95L-61.63 137.93L-60.48 131.4L110.29 164.8ZM111.03 162.01L-54.81 109.31L-49.77 95.45L111.15 161.68ZM112.37 159.07L-39.91 74.89L-36.59 69.14L112.45 158.93ZM114.1 156.56L-23.71 50.32L-14.23 39.03L114.32 156.3ZM116.37 154.26L2.06 23.07L7.14 18.81L116.49 154.16ZM118.85 152.5L25.69 5.53L38.45 -1.84L119.15 152.33ZM121.77 151.11L59.22 -11.26L65.46 -13.53L121.92 151.06ZM124.7 150.3L87.43 -19.66L101.94 -22.22L125.04 150.24ZM127.92 150L124.68 -23.97L131.32 -23.97L128.08 150ZM130.96 150.24L154.06 -22.22L168.57 -19.66L131.3 150.3ZM134.08 151.06L190.54 -13.53L196.78 -11.26L134.23 151.11ZM136.85 152.33L217.55 -1.84L230.31 5.53L137.15 152.5ZM139.51 154.16L248.86 18.81L253.94 23.07L139.63 154.26ZM141.68 156.3L270.23 39.03L279.71 50.32L141.9 156.56ZM143.55 158.93L292.59 69.14L295.91 74.89L143.63 159.07ZM144.85 161.68L305.77 95.45L310.81 109.31L144.97 162.01ZM145.71 164.8L316.48 131.4L317.63 137.93L145.74 164.95ZM146 167.83L319.86 160.63L319.86 175.37L146 168.17Z"
+    />
+  </g>
+  <path
+    fill="none"
+    stroke="#e0bb5e"
+    stroke-width="3"
+    d="M16 34L25 34L25 25L34 25L34 16L222 16L222 25L231 25L231 34L240 34L240 222L231 222L231 231L222 231L222 240L34 240L34 231L25 231L25 222L16 222Z"
+  />
+  <path
+    transform="translate(102.86 53)"
+    fill="#070a13"
+    opacity=".7"
+    d="M0 0h17.7v118h-17.7ZM0 0H22.42A31.86 31.86 0 0 1 22.42 63.72H0ZM17.7 8.26V55.46H22.42A14.16 23.6 0 0 0 22.42 8.26Z"
+  />
+  <path
+    transform="translate(102.86 50)"
+    fill="url(#gold)"
+    d="M0 0h17.7v118h-17.7ZM0 0H22.42A31.86 31.86 0 0 1 22.42 63.72H0ZM17.7 8.26V55.46H22.42A14.16 23.6 0 0 0 22.42 8.26Z"
+  />
+  <path fill="url(#zg)" d="M88 168h80v9h-80ZM71 181h114v9h-114ZM54 194h148v9h-148Z" />
+</svg>

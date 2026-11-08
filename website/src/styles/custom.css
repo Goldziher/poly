@@ -1,7 +1,7 @@
 :root {
-  --sl-color-accent-low: #14294d;
-  --sl-color-accent: #5b8def;
-  --sl-color-accent-high: #c4d8ff;
+  --sl-color-accent-low: #2b2210;
+  --sl-color-accent: #e0bb5e;
+  --sl-color-accent-high: #f6e4ae;
 
   --sl-color-white: #f2f5fa;
   --sl-color-gray-1: #dfe5ee;
@@ -12,15 +12,15 @@
   --sl-color-gray-6: #1a2130;
   --sl-color-black: #080b13;
 
-  --poly-blue: #5b8def;
-  --poly-green: #3ddc97;
+  --poly-gold: #e0bb5e;
+  --poly-brass: #b48a3a;
   --poly-muted: #8b97a8;
 }
 
 :root[data-theme="light"] {
-  --sl-color-accent-low: #dbe6ff;
-  --sl-color-accent: #2f63cf;
-  --sl-color-accent-high: #10254a;
+  --sl-color-accent-low: #f5ead0;
+  --sl-color-accent: #8a6116;
+  --sl-color-accent-high: #3b2a08;
 
   --sl-color-white: #0f131c;
   --sl-color-gray-1: #1d2431;
@@ -32,23 +32,23 @@
   --sl-color-gray-7: #f4f7fb;
   --sl-color-black: #ffffff;
 
-  --poly-blue: #2f63cf;
-  --poly-green: #128f5d;
+  --poly-gold: #8a6116;
+  --poly-brass: #6b4a10;
   --poly-muted: #5a6474;
 }
 
 [data-has-hero] .page {
   background:
-    radial-gradient(60ch 40ch at 12% -10%, color-mix(in oklch, var(--poly-blue) 18%, transparent), transparent 70%),
-    radial-gradient(50ch 32ch at 90% -6%, color-mix(in oklch, var(--poly-green) 14%, transparent), transparent 70%);
+    radial-gradient(60ch 40ch at 12% -10%, color-mix(in oklch, var(--poly-gold) 16%, transparent), transparent 70%),
+    radial-gradient(50ch 32ch at 90% -6%, color-mix(in oklch, var(--poly-brass) 14%, transparent), transparent 70%);
 }
 
 .hero .stack a[data-variant="primary"] {
-  background: linear-gradient(120deg, var(--poly-blue), var(--poly-green));
+  background: linear-gradient(120deg, var(--poly-gold), var(--poly-brass));
   border: none;
-  color: #041018;
+  color: var(--sl-color-black);
   font-weight: 600;
-  box-shadow: 0 8px 30px -12px color-mix(in oklch, var(--poly-blue) 80%, transparent);
+  box-shadow: 0 8px 30px -12px color-mix(in oklch, var(--poly-gold) 80%, transparent);
 }
 
 .hero .stack a[data-variant="primary"]:hover {
@@ -64,13 +64,13 @@
 }
 
 .card:hover {
-  border-color: color-mix(in oklch, var(--poly-blue) 60%, var(--sl-color-gray-5));
+  border-color: color-mix(in oklch, var(--poly-gold) 60%, var(--sl-color-gray-5));
   transform: translateY(-2px);
 }
 
 .card .icon {
-  color: var(--poly-blue);
-  background: color-mix(in oklch, var(--poly-blue) 12%, transparent);
+  color: var(--poly-gold);
+  background: color-mix(in oklch, var(--poly-gold) 12%, transparent);
 }
 
 .site-title img {

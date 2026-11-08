@@ -17,7 +17,7 @@ export default defineConfig({
         "no toolchain to install.",
       logo: {
         src: "./src/assets/logo.svg",
-        alt: "poly",
+        alt: "polylint",
       },
       favicon: "/favicon.svg",
       customCss: ["./src/styles/custom.css"],
