@@ -1584,6 +1584,24 @@ mod whole_tree {
     }
 
     #[test]
+    fn a_mixed_run_naming_an_owner_of_other_languages_judges_the_same_tree_as_a_run_on_the_project() {
+        let dir = nested_project("", "[format]\n");
+        write(dir.path(), "data.json", "{}\n");
+        let (whole, _) = lint_findings(dir.path(), &["."], graph(), &[NAME]);
+        let (mixed, _) = lint_findings(dir.path(), &["data.json", "nested/n.md"], graph(), &[NAME]);
+        let nested_of_whole: Vec<_> = whole
+            .iter()
+            .filter(|(file, ..)| file.starts_with("nested/"))
+            .cloned()
+            .collect();
+        assert_eq!(files_of(&mixed), ["nested/n.md"]);
+        assert_eq!(
+            mixed, nested_of_whole,
+            "the root config owns data.json, so it still judges the tree for nested/n.md"
+        );
+    }
+
+    #[test]
     fn a_nested_config_the_outer_directory_does_not_reach_is_analysed_on_its_own() {
         let dir = tempfile::tempdir().unwrap();
         write(

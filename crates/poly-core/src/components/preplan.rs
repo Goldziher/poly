@@ -151,21 +151,32 @@ pub(crate) fn resolve(
             pairs.push(pair);
         }
     }
-    // A config above a named path owns no file of the run, yet its whole-tree project engines are planned
-    // for every language the run saw.
-    let languages: FxHashSet<Language> = files.iter().map(|file| file.language.clone()).collect();
-    let mut ancestor_pairs = Vec::new();
-    for config_id in crate::runner::without_owning(ancestors.to_vec(), files) {
-        for language in &languages {
-            let pair = (config_id, language.clone());
-            if seen.insert(pair.clone()) {
-                ancestor_pairs.push(pair);
-            }
-        }
-    }
+    // A config at or above a named path is planned for the languages of the run it does not own, so a
+    // whole-tree project engine judges the same tree as a run on the project; see `ancestor_pairs`.
     let all: Vec<&Config> = configs.iter().collect();
     let selection = crate::runner::selection::EngineSelection::new(&opts.only, &opts.skip);
     let selected = |name: &str, table: Option<&str>| selection.selects_declared(name, table);
+    let owners: FxHashSet<usize> = seen.iter().map(|(id, _)| *id).collect();
+    // A config that owns files supersedes a nested config's own whole-tree plan, so it needs the
+    // component only where a nested config would otherwise have fetched it.
+    let ancestor_pairs: Vec<(usize, Language)> = crate::runner::ancestor_pairs(ancestors, files, &seen)
+        .into_iter()
+        .filter(|(id, language)| {
+            !owners.contains(id)
+                || files.iter().any(|file| {
+                    file.config_id != *id
+                        && file.language == *language
+                        && !selected_whole_tree_components(
+                            index,
+                            all[file.config_id],
+                            language,
+                            &feature_is_linked,
+                            &selected,
+                        )
+                        .is_empty()
+                })
+        })
+        .collect();
     let needed = needed_components_with_ancestors(index, &all, &pairs, &ancestor_pairs, &feature_is_linked, &selected);
     if needed.is_empty() {
         return ResolvedComponents::default();
