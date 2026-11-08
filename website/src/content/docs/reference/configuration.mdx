@@ -49,14 +49,14 @@ key no engine reads. The v2 schema is committed as `schemas/poly-v2.schema.json`
     This page documents the v2 schema (ADR 0038). The loader still reads v1 files
     (`[lint.<lang>.<tool>]`, `[fmt.<lang>.<tool>]`, `[rules]`, `[lint] workspace`,
     `[workspace] root`, `per-file-ignores`), and rejects a file that mixes the two.
-    [Migrating to poly 2](/poly/guides/migrating-to-v2/) maps each v1 spelling to v2.
+    [Migrating to the v2 config schema](/poly/guides/migrating-to-v2/) maps each v1 spelling to v2.
 </Aside>
 
 ## Top-level sections
 
 | Section | Purpose |
 | --- | --- |
-| [`required_version`, `root`](#required_version-and-root) | Pin the poly version; stop the config cascade. |
+| [`required_version`, `root`](#required_version-and-root) | Name the poly versions CI installs; stop the config cascade. |
 | [`[components]`](#components) | Which downloadable engine components a run may use. |
 | [`[defaults]`](#defaults) | Line width, line endings, whitespace — the base every formatter layers on. |
 | [`[discovery]`](#discovery) | The file walk: excludes, the prune set, generated files. |
@@ -73,7 +73,7 @@ key no engine reads. The v2 schema is committed as `schemas/poly-v2.schema.json`
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `required_version` | string | — | Semver requirement on the running poly (`">=2.0, <3"`). Components version in lock-step with poly, so it pins them too. The GitHub Action reads it for `version: from-config`. |
+| `required_version` | string | — | The poly versions this repository expects (`">=0.34, <0.35"`). Components version in lock-step with poly, so it selects them too. Read by the GitHub Action's `version: from-config`, which installs the newest release in the range, and written by `poly migrate --to-v2`; the `poly` binary does not check it. |
 | `root` | boolean | `false` | Stop the upward config cascade here (a `.git` directory is an implicit boundary). Replaces v1's `[workspace] root`. |
 
 ## `[components]`
@@ -112,7 +112,7 @@ setting.
 ## Engines
 
 `[engines.<id>]`: one table per engine, keyed by the engine id (`ruff`, `oxc`, `taplo`, `rumdl`, `typos`,
-`astgrep`, `quality`, `uncomment`, …). See the [Backend coverage](/poly/reference/backends/)
+`astgrep`, `quality`, `uncomment`, …). See [Languages and engines](/poly/reference/backends/)
 page for which engine serves each language. Options that apply everywhere sit directly in the
 table; narrow with sub-tables:
 

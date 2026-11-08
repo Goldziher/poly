@@ -1,0 +1,38 @@
+---
+title: Why polylint
+description: >-
+  How polylint compares with running each linter yourself, with pre-commit or lefthook, and with
+  container-based linters — including the trade-offs.
+---
+
+polylint replaces a per-language stack — a linter and formatter per ecosystem, each with its own
+config, report format and install step, glued together by a hook framework — with one binary and
+one `poly.toml`.
+
+## Compared with what you may use now
+
+| If you use… | What changes | Trade-off |
+| --- | --- | --- |
+| ruff, oxlint, biome, mago, … individually | The same engines — ruff, oxc, biome and mago are linked as libraries, not reimplemented — behind one config, one report format, one cache and one exit-code contract. No per-ecosystem toolchain for the built-in engines. | polylint pins each engine to its own release; a new upstream version arrives with a polylint release. |
+| pre-commit or lefthook | `poly hooks` runs from `poly.toml`, checks a snapshot of the staged index rather than the worktree, and needs no Python environment. `poly migrate` converts `.pre-commit-config.yaml` and `lefthook.yml`. | Hooks from arbitrary repositories run as commands polylint shells out to, as they would under those frameworks. |
+| MegaLinter or Super-Linter | No Docker image: a native binary fast enough for local runs and git hooks as well as CI, with a content-hash cache and per-line findings parsed from each tool's report. | They wrap more linters; polylint covers the long tail with tree-sitter formatting and an opt-in catalog with file-level verdicts. |
+| dprint | polylint lints as well as formats. | dprint's plugin model is open to third-party formatters; polylint's engine set is curated. |
+
+## What it guarantees
+
+- **One contract.** Exit `0` is clean, `1` is findings, `2` is "verified less than it claims" — a
+  file an engine failed on, a skip budget exceeded, a missing component.
+- **Coverage is counted.** A file nothing could check is named with its reason, and
+  `--deny-skips` makes that a failure, so a run that checked nothing cannot pass as clean.
+- **Pinned engines.** Components are signed, verified against a lock embedded in the binary, and
+  versioned with polylint. What varies by machine — host tools and recipe tools — is listed in
+  [Toolchains, runtimes and recipes](/poly/guides/toolchains/).
+- **Agents use the same surface.** `poly mcp` exposes lint, format, config and component tools
+  with structured output, so an agent does not parse terminal text.
+
+## When it is not the right tool
+
+- You need a specific linter polylint has no engine or recipe for, with per-line findings. A
+  catalog tool runs it, but reports one verdict per file.
+- Your CI image cannot run a native binary or reach a component mirror, and you cannot use the
+  bundled Linux musl build.

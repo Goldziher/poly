@@ -7,17 +7,25 @@ description: >-
 
 import { Aside, Tabs, TabItem, Code, Steps } from '@astrojs/starlight/components';
 
-poly ships its own agent integration rather than expecting one to be bolted on: plugins for Claude
+polylint ships its own agent integration rather than expecting one to be bolted on: plugins for Claude
 Code, Codex, OpenCode, Pi, Hermes and more, and a stdio MCP server exposing the same lint, format, cache, rules and config surface as
 the CLI — with structured output an agent can consume directly instead of parsing terminal text.
 
 ## The operating rule
 
 <Aside type="tip" title="poly first">
-    poly is one binary for both linting and formatting across every language in the repository.
-    Prefer `poly lint` and `poly fmt` over invoking ruff, oxlint, biome, `rustfmt` or `gofmt`
-    directly: poly wraps them in-process behind a single `poly.toml`, one report format, and one
-    exit-code contract. Over MCP, call the tools rather than shelling out.
+    polylint is one binary, `poly`, for both linting and formatting across every language in the
+    repository. Prefer `poly lint` and `poly fmt` over invoking ruff, oxlint, biome, `rustfmt` or
+    `gofmt` directly: poly runs them behind a single `poly.toml`, one report format, and one
+    exit-code contract (ruff, oxc and biome as engines, `rustfmt` and `gofmt` as host subprocesses
+    when installed). Over MCP, call the tools rather than shelling out.
+</Aside>
+
+<Aside type="caution" title="A first run may download">
+    In a core build, a lint or format call may install engine components first. Check the result's
+    `components` block: a needed component listed in `components.missing` was not available, so
+    the files it would have handled were not checked. Gate on `summary.checked` and `isError`, not
+    on an empty `results`.
 </Aside>
 
 ## The plugin
@@ -71,7 +79,7 @@ schemas), and the skills load by namespace, e.g. `poly:poly-mcp`.
 
 Cursor, Gemini, Kimi, Factory and Copilot bundles are generated alongside these and attached to
 every GitHub release as `poly-plugins-v<version>.tar.gz`; the
-[plugin README](https://github.com/Goldziher/poly/blob/main/plugin/README.md) lists each entry
+[plugin README](https://github.com/Goldziher/polylint/blob/main/plugin/README.md) lists each entry
 point. The skills alone also install with `npx skills add Goldziher/poly --skill <name>`.
 
 ## As a plain MCP server
@@ -185,7 +193,7 @@ intent since they change files.
 
 Each result carries a `poly` block (version, build id, channel, executable, pid, `flavor` —
 `bundled`, `core` or `partial` — `components_lock` — a digest of the embedded component lock, or
-null — and `engines`, a blake3 digest of every compiled-in backend and the upstream version it wraps) in
+null — and `engines`, a blake3 digest of every engine linked into the binary and the upstream version it wraps) in
 `structured_content` and in `_meta`, because an MCP caller has no `poly --version` to fall back on.
 The `version` tool returns the full engine→version map the digest summarizes.
 The server fingerprints its own executable at startup and re-checks it per request: if the binary is

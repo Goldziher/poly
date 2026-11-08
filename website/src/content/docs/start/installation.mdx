@@ -1,17 +1,39 @@
 ---
 title: Installation
 description: >-
-  Every channel that ships poly — installer scripts, GitHub Actions, Homebrew, Scoop, npm, PyPI,
-  and the agent plugin — and what each one actually installs.
+  Supported platforms, bundled and core builds, and every channel that ships polylint — installer
+  scripts, GitHub Actions, Homebrew, Scoop, npm, PyPI, and the agent plugin.
 ---
 
 import { Aside, Tabs, TabItem, Code, Steps } from '@astrojs/starlight/components';
 
-poly ships **one binary**. Every channel below installs that same prebuilt executable: none of
-them compiles anything, and none needs a Rust, Node or Python toolchain at run time. The
-executable is a **core** build that downloads engine components on first use, except on Linux musl,
-which is **bundled** with every engine and the MCP server linked in; see
-[Bundled and core builds](#bundled-and-core-builds).
+polylint ships **one binary**, `poly`. Every channel below installs that same prebuilt executable:
+none of them compiles anything, and none needs a Rust, Node or Python toolchain at run time.
+
+## Platforms and builds
+
+| Target | Triple | Build |
+| --- | --- | --- |
+| Linux x86_64 (glibc) | `x86_64-unknown-linux-gnu` | core |
+| Linux aarch64 (glibc) | `aarch64-unknown-linux-gnu` | core |
+| Linux x86_64 (musl) | `x86_64-unknown-linux-musl` | **bundled** |
+| macOS Apple silicon | `aarch64-apple-darwin` | core |
+| Windows x86_64 | `x86_64-pc-windows-msvc` | core |
+
+Not supported: **Intel macOS** from the release after 0.34.0 (build from source; see
+[ADR 0046](https://github.com/Goldziher/polylint/blob/main/adrs/0046-drop-intel-macos.md)),
+Windows arm64 and Linux musl aarch64.
+
+- A **core** build (under 14 MiB) embeds the release's signed component lock. Its engines are
+  components it downloads the first time a run needs them — the first `poly lint` in a Python and
+  TypeScript repository fetches `python` and `web`, among others — verified against that lock and cached.
+  Later runs download nothing.
+- The **bundled** build links every engine and the MCP server in, embeds no component lock, and
+  downloads nothing at run time.
+
+A core host must reach the download origin (or a mirror, `POLY_COMPONENT_MIRROR`), or be seeded
+with `poly components import`. `poly rules` works in a core build too, through the `astgrep`
+component. See [Components and offline use](/poly/guides/components/).
 
 <Aside type="note" title="The command is `poly` everywhere">
     The package is called `polylint` on PyPI and `@goldziher/polylint` on npm, because the unscoped
@@ -35,7 +57,7 @@ Both detect the platform, download the matching release archive, and verify it a
 release's `sha256sums.txt`. Set `POLY_VERSION` to pin an exact release:
 
 ```sh
-POLY_VERSION=0.31.0 curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh
+POLY_VERSION=0.34.0 curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh
 ```
 
 ## GitHub Actions
@@ -43,7 +65,7 @@ POLY_VERSION=0.31.0 curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/
 ```yaml title=".github/workflows/ci.yaml"
 - uses: Goldziher/poly@v0
   with:
-    version: v0.31.0 # omit for the latest release
+    version: v0.34.0 # omit for the latest release
 
 - run: poly lint .
 - run: poly fmt .
@@ -54,7 +76,7 @@ platform. `version: from-config` installs the version that `required_version` in
 (`config-file` picks another file), and `components` (`auto`, `all`, `none` or a list such as
 `sql,php`) downloads engine components before the first run and caches them. Its full input/output
 reference lives in
-[`ACTION_USAGE.md`](https://github.com/Goldziher/poly/blob/main/ACTION_USAGE.md).
+[`ACTION_USAGE.md`](https://github.com/Goldziher/polylint/blob/main/ACTION_USAGE.md).
 
 ## Homebrew
 
@@ -129,17 +151,6 @@ This resolves the same GitHub release archives — it does not build from source
     poly` will not work.
 </Aside>
 
-## Bundled and core builds
-
-The `x86_64-unknown-linux-musl` archive is the only **bundled** build: every engine family and the
-MCP server are linked in, it embeds no component lock, and it downloads nothing at run time. The
-other five archives (Linux gnu x86_64 and aarch64, macOS aarch64, Windows x86_64) are
-**core** builds with the release's signed component lock embedded. Their engines are components that poly downloads the first time a run
-needs them, so the host must reach the download origin (or a mirror), or be seeded with
-`poly components import`. `poly rules` works in a core build too, through the `astgrep`
-component. See
-[Components and offline use](/poly/guides/components/).
-
 ## As an agent plugin
 
 poly ships its own Claude/Codex plugin, registering `poly mcp` as a stdio server plus 5 skills and
@@ -192,10 +203,10 @@ Any MCP-capable client can run poly directly:
 
    ```console
    $ poly --version
-   poly 0.31.0 (release build v0.31.0, release)
+   poly 0.34.0 (release build v0.34.0, release)
    ```
 
-   A development build reads `poly 0.31.0 (dev build v0.31.0-8-g18aa5e8, debug)` instead, so an
+   A development build reads `poly 0.34.0 (dev build v0.34.0-8-g18aa5e8, debug)` instead, so an
    unreleased build carrying local changes can never be quoted as a release.
 
 </Steps>

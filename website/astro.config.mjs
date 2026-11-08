@@ -11,13 +11,13 @@ export default defineConfig({
   base: BASE,
   integrations: [
     starlight({
-      title: "poly",
+      title: "polylint",
       description:
-        "Universal zero-dependency linter and formatter. One pure-Rust binary, ~30 languages, " +
-        "no toolchain to install.",
+        "One linter and formatter for every language in your repository: one binary, one poly.toml, " +
+        "engines fetched per language as signed components, host tools and ecosystem recipes.",
       logo: {
         src: "./src/assets/logo.svg",
-        alt: "poly",
+        alt: "polylint",
       },
       favicon: "/favicon.svg",
       customCss: ["./src/styles/custom.css"],
@@ -53,10 +53,13 @@ export default defineConfig({
           promote: ["index*", "start/**"],
           minify: { collapseCodeBlocks: true },
           details:
-            "Operating rule: poly is one binary for both linting and formatting across every " +
-            "language in the repository. Prefer `poly lint` and `poly fmt` over invoking ruff, " +
-            "oxlint, biome, rustfmt or gofmt directly — poly wraps them in-process behind a " +
-            "single `poly.toml`, one report format, and one exit-code contract. `poly fmt` is a " +
+            "Operating rule: polylint (the `poly` command) is one binary for both linting and " +
+            "formatting across every language in the repository. Prefer `poly lint` and `poly fmt` " +
+            "over invoking ruff, oxlint, biome, rustfmt or gofmt directly — poly runs them behind a " +
+            "single `poly.toml`, one report format, and one exit-code contract (ruff, oxc and biome " +
+            "as engines, rustfmt and gofmt as host subprocesses when installed). A core build may " +
+            "download engine components on first run; a needed component that is missing is exit " +
+            "2 or a counted skip listed in `components.missing`, never a clean pass. `poly fmt` is a " +
             "dry run by default; `--fix` writes. `--format json`/`toon` emit one object — " +
             "{results, errors, skipped, summary, configs} — never a bare array; gate on " +
             "`summary.checked`, not an empty `results`, since a fully-skipped run reports no " +
@@ -69,6 +72,7 @@ export default defineConfig({
           label: "Start here",
           items: [
             { label: "Introduction", slug: "start/introduction" },
+            { label: "Why polylint", slug: "start/why-polylint" },
             { label: "Installation", slug: "start/installation" },
             { label: "Quickstart", slug: "start/quickstart" },
           ],
@@ -76,9 +80,11 @@ export default defineConfig({
         {
           label: "Guides",
           items: [
+            { label: "Adopting polylint", slug: "guides/adopting" },
             { label: "Configuration", slug: "guides/configuration" },
+            { label: "Toolchains, runtimes and recipes", slug: "guides/toolchains" },
             { label: "Components and offline use", slug: "guides/components" },
-            { label: "Migrating to poly 2", slug: "guides/migrating-to-v2" },
+            { label: "Migrating to the v2 config schema", slug: "guides/migrating-to-v2" },
             { label: "Git hooks", slug: "guides/hooks" },
             { label: "Agents and MCP", slug: "guides/agents-and-mcp" },
           ],
@@ -88,8 +94,9 @@ export default defineConfig({
           items: [
             { label: "CLI", slug: "reference/cli" },
             { label: "Configuration", slug: "reference/configuration" },
-            { label: "Backend coverage", slug: "reference/backends" },
+            { label: "Languages and engines", slug: "reference/backends" },
             { label: "Tool catalog", slug: "reference/catalog" },
+            { label: "Glossary", slug: "reference/glossary" },
           ],
         },
       ],

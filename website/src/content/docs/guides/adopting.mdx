@@ -1,0 +1,96 @@
+---
+title: Adopting polylint in a polyglot repo
+description: >-
+  Moving an existing repository with several languages, tool configs and a hook framework onto
+  polylint: migration, what each language gets, CI rollout and air-gapped runners.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+This guide is for a repository that already has ruff, eslint or oxlint, prettier, a hook framework
+and per-language CI jobs, and wants one gate instead.
+
+<Steps>
+
+1. ## Import the existing configs
+
+   ```sh
+   poly migrate              # dry run: what it would import, and what it would delete
+   poly migrate --write      # apply it (--allow-dirty on a dirty tree)
+   poly migrate --recurse    # every package of a monorepo
+   ```
+
+   `poly migrate` reads ruff, taplo, markdownlint and typos configs (including `pyproject.toml`'s
+   `[tool.ruff]`, `[tool.typos]`, `[tool.codespell]`), and turns a `.pre-commit-config.yaml` or
+   `lefthook.yml` into `[hooks]`, `[hooks.builtin]` and `[tools]` entries — mapping jobs such as
+   golangci-lint, hadolint or actionlint onto their [recipes](/poly/guides/toolchains/#recipes). It
+   deletes a source only when nothing in it was lost; `--verify` re-runs polylint afterwards.
+   There is no eslint or prettier importer; an existing `.oxlintrc.json` or `.oxfmtrc.json` is read
+   directly.
+
+2. ### See what each language gets
+
+   Run `poly lint --verbose .` and read the summary. Every file is either checked or listed as
+   skipped with a reason, such as `no lint rules for Zig`. Compare that with what your current
+   tools cover; the [language table](/poly/reference/backends/#language-table) shows how each
+   language runs. Gaps that commonly matter:
+
+   | Language | What to enable |
+   | --- | --- |
+   | Go | Lint needs the `golangci-lint` recipe (and a Go toolchain); formatting uses the host `gofmt`. |
+   | Rust | `cargo clippy` and friends run in the whole-project phase from `[hooks]`; formatting uses the host `rustfmt`. |
+   | Java | Lint needs the `checkstyle` recipe and a host JRE; formatting needs `google-java-format` (host) or `palantir-java-format` (recipe). |
+   | Ruby | rubyfmt formats; lint is the quality tier and ast-grep pack only. |
+   | Kotlin, Swift, Zig, Dart, Gleam, R | Formatting needs the host tool, opt-in; otherwise tree-sitter. |
+   | Protobuf, Starlark, Helm, GitHub Actions | Recipes: `buf`, `buildifier`, `helm`, `actionlint`. |
+
+3. ### Tune in one place
+
+   Put shared settings in the root `poly.toml`. A nested `poly.toml` deep-merges over its
+   ancestors for the files beneath it, so a package can tune rules without repeating the baseline;
+   `root = true` stops the cascade. `extends` shares a baseline across repositories. See
+   [Nested config in a monorepo](/poly/guides/configuration/#nested-config-in-a-monorepo).
+
+4. ### Replace the hook framework
+
+   ```sh
+   poly hooks install
+   ```
+
+   A foreign hook already in place is kept as `<hook>.legacy` and run before polylint; a lefthook
+   hook is kept but not run (`--replace-lefthook` discards it). Hooks check a snapshot of the staged
+   index, so unstaged edits neither hide nor cause failures. See [Git hooks](/poly/guides/hooks/).
+
+5. ### Roll out in CI
+
+   ```yaml title=".github/workflows/ci.yaml"
+   - uses: actions/checkout@v4
+   - uses: Goldziher/poly@v0
+     with:
+       version: from-config   # the release required_version in poly.toml allows
+       components: auto       # pre-install and cache what this repository needs
+   - run: poly fmt .
+   - run: poly lint --max-skips 25 .
+   ```
+
+   Start with `--max-skips <N>` set to today's count of charged skips, then lower it to zero and
+   switch to `--deny-skips`. Either way, a job that silently stops covering part of the tree fails
+   with exit `2`. New findings from the quality tier and the ast-grep pack are warnings and do not
+   fail the job.
+
+</Steps>
+
+## Runners without network access
+
+- Use the bundled Linux x86_64 musl build, which downloads no components; or
+- on a core build, run `poly components sync .` on a connected machine and seed the runner with
+  `poly components import <archive>`, or point `POLY_COMPONENT_MIRROR` at an internal mirror.
+- Run with `--offline` (or `POLY_OFFLINE=1`) so nothing is attempted. Recipe tools need their
+  binaries installed or cached the same way.
+
+See [Components and offline use](/poly/guides/components/).
+
+<Aside type="caution" title="Windows runners">
+    Recipe downloads are available on macOS and Linux only. On Windows, install recipe tools
+    yourself and point `bin` at them if they are not on `PATH`.
+</Aside>

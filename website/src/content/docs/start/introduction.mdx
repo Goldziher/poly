@@ -1,57 +1,61 @@
 ---
 title: Introduction
 description: >-
-  What poly is, how its coverage tiers fit together, and the guarantees it makes about what a run
-  actually checked.
+  What polylint is, how a file gets checked, and the guarantees it makes about what a run actually
+  checked.
 ---
 
 import { Aside, CardGrid, Card, LinkCard, Steps } from '@astrojs/starlight/components';
 
-poly is a single binary that lints and formats every language in a repository. It exists because
-the alternative — ruff for Python, oxlint for TypeScript, `rustfmt` for Rust, `gofmt` for Go,
-prettier for CSS, a YAML linter, a TOML formatter, and a hook framework to orchestrate them —
-means a toolchain per ecosystem, a config file per tool, and a different report format from each.
+polylint is one linter and formatter for every language in a repository: a small binary, `poly`,
+and one `poly.toml`. It exists because the alternative — ruff for Python, oxlint for TypeScript,
+`rustfmt` for Rust, `gofmt` for Go, prettier for CSS, a YAML linter, a TOML formatter, and a hook
+framework to orchestrate them — means a toolchain per ecosystem, a config file per tool, and a
+different report format from each.
 
-poly compiles those tools in as **Rust crate dependencies** and runs them in-process. There is no
-subprocess, no `node_modules`, no virtualenv, and nothing to install beyond the binary itself.
+polylint runs those tools as **engines** behind one config, one report format and one exit-code
+contract. The built-in engines need no Node, Python or Ruby runtime: they ship as signed
+**components** that the binary downloads the first time a run needs them, verified against a lock
+embedded in the binary. Where a language's canonical tool is a CLI (`rustfmt`, `gofmt`), polylint
+runs the one you have installed. Terms used throughout the docs are defined in the
+[glossary](/poly/reference/glossary/).
 
-## The coverage tiers
+## How a file gets checked
 
 Every file resolves through the same ladder. Nothing here is a fallback you should avoid — the
-lower tiers are the coverage mechanism, and a language can be promoted upward later without any
+lower rungs are the coverage mechanism, and a language can be promoted upward later without any
 change to how you invoke poly.
 
 <Steps>
 
-1. **Native Rust backends (tier 1).** The highest-fidelity path: ruff for Python, oxc for
+1. **Engines from components.** The highest-fidelity path: ruff for Python, oxc for
    JavaScript/TypeScript/JSON (and oxfmt's own formatter crates for YAML, TOML, Markdown and CSS),
    taplo and rumdl for TOML and Markdown lint, sqruff for SQL, mago for PHP, `markup_fmt` for
-   HTML/Vue/Svelte, and more. All in-process: compiled into a bundled build, or loaded from
-   signed components that a core build downloads on first use (see
+   HTML/Vue/Svelte, shfmt for shell (a Go sidecar), and more. Linked into the bundled Linux musl
+   build, or downloaded as signed components by every other build (see
    [Components and offline use](/poly/guides/components/)).
 
-2. **Tree-sitter generic tier (tier 2).** The catch-all for everything else — Java, Elixir, C,
-   C++, protobuf, and the long tail of 300+ grammars. Best-effort structural reindent, still pure
-   Rust, still no system dependency. Tier 2 is **formatting only**: it establishes no lint
-   coverage.
+2. **Host tools.** For languages whose canonical formatter is a CLI with no usable Rust library.
+   `rustfmt`, `gofmt` and `shellcheck` run as subprocesses automatically when present on `PATH`;
+   `zig fmt`, `google-java-format`, `ktfmt`, `swift-format`, `dart format`, `gleam format` and
+   `styler` are opt-in. When the tool is absent the language falls through to the tree-sitter
+   tier with a notice.
 
-3. **Native-toolchain backends.** For languages whose canonical formatter is a first-party CLI with
-   no usable Rust library. `rustfmt`, `gofmt` and `shellcheck` run automatically when
-   present on `PATH` (shell formatting comes from the `sh` component, with the host `shfmt` as the
-   fallback when that component is disabled); `zig fmt`, `google-java-format`, `ktfmt`, `swift-format`, `dart format`,
-   `gleam format` and `styler` are opt-in. When the tool is absent the language simply falls
-   through to tier 2.
+3. **Tree-sitter tier.** The catch-all for everything else — Elixir, C, C++, protobuf, and the
+   long tail of 300+ grammars, fetched on demand. Best-effort structural reindent, **formatting
+   only**: it establishes no lint coverage.
 
-4. **Catalog tier.** Any of 348 tools from the embedded catalog, enabled per tool with
-   `[tools.<name>] enabled = true`. Probed on `PATH`; a missing binary is a warning, never an error.
-   Fourteen of them — `golangci-lint`, `helm`, `buf`, `hadolint`, `tflint`, `checkstyle`, … — carry
-   a recipe that runs them batched and parses their reports, and most can be downloaded as a
-   pinned, checksummed release with `install = "auto"`.
+4. **Recipes and catalog tools.** Any of 348 tools from the embedded catalog, opt-in per tool with
+   `[tools.<name>] enabled = true`, probed on `PATH` and giving a file-level verdict. Fifteen of
+   them — `golangci-lint`, `helm`, `buf`, `hadolint`, `tflint`, `actionlint`, `checkstyle`, … —
+   carry a **recipe** that runs them batched, parses their reports into per-line findings, and for
+   most can download a checksummed release. See
+   [Toolchains, runtimes and recipes](/poly/guides/toolchains/).
 
 </Steps>
 
 On top of all four, two **cross-cutting** lint tiers run on every language, both on by default at
-*warning* severity so adopting poly never reddens an unconfigured CI:
+*warning* severity so adopting polylint never reddens an unconfigured CI:
 
 - The native **code-quality engine** — file and function length, parameter count, nesting depth,
   cyclomatic complexity, lazy ignore markers, and test files the test runner will not collect. It defers to a tier-1 backend wherever one
@@ -60,16 +64,18 @@ On top of all four, two **cross-cutting** lint tiers run on every language, both
   Ruby, Rust and Swift, embedded in the binary and loaded through the same parser as your own
   custom rules.
 
-<Aside type="tip" title="Zero-dependency is a guarantee, not a default">
-    A machine with only the `poly` binary on it still lints and formats the whole repository. The
-    native-toolchain and catalog tiers raise fidelity where their tools happen to be installed;
-    their absence lowers fidelity and is never an error.
+<Aside type="tip" title="Missing is never silent">
+    Every engine polylint runs is pinned to its version and verified. A needed component that
+    cannot be installed is an error (exit `2`) or, with `[components] on_missing = "skip"`, a
+    counted skip — never a quiet fallback to a different formatter. Host tools and catalog tools
+    raise fidelity where they are installed; their absence lowers fidelity with a notice. For a
+    machine with no network, use the bundled Linux musl build or `poly components import`.
 </Aside>
 
 ## How a run works
 
-poly discovers files once, plans engines once per language, then runs the per-file work in
-parallel on a rayon pool.
+poly discovers files once, installs any component the run needs, plans engines once per language,
+then runs the per-file work in parallel on a rayon pool.
 
 ```mermaid
 flowchart LR
@@ -123,6 +129,7 @@ less than it claims exits **2**, distinct from the **1** that means real finding
 <CardGrid>
     <LinkCard title="Installation" href="/poly/start/installation/" description="Every channel, and what each one actually installs." />
     <LinkCard title="Quickstart" href="/poly/start/quickstart/" description="First lint, first format, first hook install." />
-    <LinkCard title="Backend coverage" href="/poly/reference/backends/" description="The language-by-language table." />
+    <LinkCard title="Why polylint" href="/poly/start/why-polylint/" description="How it compares with the tools you may use now." />
+    <LinkCard title="Languages and engines" href="/poly/reference/backends/" description="The language-by-language table." />
     <LinkCard title="Configuration" href="/poly/guides/configuration/" description="Everything poly.toml can say." />
 </CardGrid>

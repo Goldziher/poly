@@ -7,8 +7,8 @@ description: >-
 
 import { Aside, Steps, Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
 
-poly needs no configuration to be useful. Point it at a repository and it works out what each file
-is and which backend should handle it.
+polylint needs no configuration to be useful. Point `poly` at a repository and it works out what
+each file is and which engine should handle it.
 
 <Steps>
 
@@ -28,6 +28,15 @@ is and which backend should handle it.
 
    Only the `error` line fails the run. Warning-severity findings — the code-quality tier, opt-in `typos` (`[engines.typos] enabled = true`),
    and the widened rule selections — never redden CI on their own.
+
+   <Aside type="note" title="The first run downloads engines">
+   Except on the bundled Linux musl build, the first run downloads the engine components for
+   the languages it finds — here `python` among them — plus any tree-sitter grammars it needs, verifies
+   each against the signed lock embedded in the binary, and caches them in the per-user cache
+   directory. Later runs download nothing. `poly components status .` shows what a directory
+   needs; `--offline` forbids downloads. See
+   [Components and offline use](/poly/guides/components/).
+   </Aside>
 
 2. ### Check formatting
 
@@ -137,6 +146,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Goldziher/poly@v0
+        with:
+          components: auto   # pre-install and cache the components this repository needs
       - run: poly fmt .
       - run: poly lint --deny-skips .
 ```
@@ -154,9 +165,10 @@ appears in the summary.
 ## Next
 
 <CardGrid>
+    <LinkCard title="Adopting polylint" href="/poly/guides/adopting/" description="Migrating an existing polyglot repository and rolling it out in CI." />
     <LinkCard title="Configuration" href="/poly/guides/configuration/" description="Rule selection, inline suppression, monorepo cascade, quality metrics." />
     <LinkCard title="Components and offline use" href="/poly/guides/components/" description="Bundled and core builds, downloads, mirrors, air-gapped hosts." />
     <LinkCard title="Git hooks" href="/poly/guides/hooks/" description="Builtins, stages, staged isolation, timeouts, caching." />
     <LinkCard title="CLI reference" href="/poly/reference/cli/" description="Every flag and every subcommand." />
-    <LinkCard title="Backend coverage" href="/poly/reference/backends/" description="Which backend handles which language." />
+    <LinkCard title="Languages and engines" href="/poly/reference/backends/" description="Which engine handles which language, and how it runs." />
 </CardGrid>

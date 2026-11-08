@@ -7,9 +7,10 @@ description: >-
 
 import { Aside } from '@astrojs/starlight/components';
 
-poly's engines ship as signed, downloadable **components**: bundles of engines that a core binary
-fetches the first time a run needs them. The engine remains the unit you configure; a component
-only decides where an engine's code lives.
+polylint's engines ship as signed, downloadable **components**: bundles of engines that a core
+binary fetches the first time a run needs them. The engine remains the unit you configure; a
+component only decides where an engine's code lives. Host tools and recipe tools are not
+components; see [Toolchains, runtimes and recipes](/poly/guides/toolchains/).
 
 ## Build flavors
 
@@ -19,8 +20,9 @@ only decides where an engine's code lives.
 | **core** | `poly-cli --no-default-features --features core` | Config, discovery, cache, runner, hooks and the tree-sitter tier, plus the quality engine and the native-toolchain and catalog tiers. Every other engine is a component. |
 
 `x86_64-unknown-linux-musl` is the only release archive that is a bundled build: it embeds no
-component lock and downloads nothing. The other five (Linux gnu x86_64 and aarch64, macOS x86_64
-and aarch64, Windows x86_64) are core builds with the release's signed component lock embedded.
+component lock and downloads nothing. The other four (Linux gnu x86_64 and aarch64, macOS aarch64,
+Windows x86_64) are core builds with the release's signed component lock embedded. Intel macOS
+has no release binary after 0.34.0.
 `poly rules` and the MCP `rules` tool work in a core build by installing the `astgrep` component on
 demand; `--offline` and `[components] install = "never"` stop that download, and the command then fails.
 `poly doctor` has a `components` section with the flavor, the cache root and what the current
@@ -163,9 +165,11 @@ a second run downloads nothing:
 - run: poly lint .
 ```
 
-Pin `required_version` in `poly.toml` to fix the poly version, and with it every component:
-components are versioned in lock-step with poly, so there is no separate component lock to commit.
-See [`ACTION_USAGE.md`](https://github.com/Goldziher/poly/blob/main/ACTION_USAGE.md) for the inputs.
+Set `required_version` in `poly.toml` (for example `">=0.34, <0.35"`) to fix the poly version the
+Action installs, and with it every component: components are versioned in lock-step with poly, so
+there is no separate component lock to commit. The `poly` binary itself does not check
+`required_version`.
+See [`ACTION_USAGE.md`](https://github.com/Goldziher/polylint/blob/main/ACTION_USAGE.md) for the inputs.
 
 <Aside type="note" title="MCP in a core build">
     A core build serves MCP through the `mcp` component: `poly mcp` installs it on first use unless
