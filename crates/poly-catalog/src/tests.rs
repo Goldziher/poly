@@ -373,3 +373,71 @@ fn buf_and_hadolint_are_pinned_for_every_desktop_and_server_platform() {
         }
     }
 }
+
+const MIGRATED_TOOLS: [&str; 11] = [
+    "checkstyle",
+    "palantir-java-format",
+    "buildifier",
+    "buf",
+    "actionlint",
+    "hadolint",
+    "golangci-lint",
+    "helm",
+    "helm-template",
+    "tflint",
+    "tofu",
+];
+
+#[test]
+fn every_downloadable_tool_declares_a_valid_release_source() {
+    for name in MIGRATED_TOOLS {
+        let install = recipe_of(name).install.as_ref().expect("install");
+        let source = install
+            .source
+            .as_ref()
+            .unwrap_or_else(|| panic!("{name} has no source"));
+        source.validate().unwrap_or_else(|error| panic!("{name}: {error:#}"));
+        assert!(
+            !install.releases.is_empty(),
+            "{name} keeps its releases as an offline seed"
+        );
+    }
+}
+
+/// The source must reproduce every seeded release's URL and archive member
+/// exactly, or an old pin would resolve to a different file than it did before.
+#[test]
+fn a_source_reproduces_every_seeded_release() {
+    for name in MIGRATED_TOOLS {
+        let install = recipe_of(name).install.as_ref().expect("install");
+        let source = install.source.as_ref().expect("source");
+        for (version, release) in &install.releases {
+            assert_eq!(release.kind, source.kind, "{name} {version}");
+            for (platform, asset) in &release.assets {
+                let spec = source
+                    .asset_spec(platform)
+                    .unwrap_or_else(|| panic!("{name} source lacks {platform}"));
+                let url = source
+                    .asset_url(version, &crate::Source::asset_name(spec, version))
+                    .expect("url");
+                assert_eq!(url, asset.url, "{name} {version} {platform}");
+                assert_eq!(
+                    crate::Source::member(spec, version),
+                    asset.member,
+                    "{name} {version} {platform}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn an_invalid_overlay_source_fails_the_catalog_parse() {
+    let overlay = r#"[{"name":"x","binary":"x","categories":["linter"],"languages":[],"commands":{"lint":{"arguments":[],"stdin":false}},
+        "recipe":{"install":{"hint":"h","source":{"kind":"binary","assets":{"any":{"name":"x"}}}}}}]"#;
+    let error = Catalog::parse("[]", overlay).expect_err("must reject");
+    assert!(
+        format!("{error:#}").contains("invalid release source of tool `x`"),
+        "{error:#}"
+    );
+}

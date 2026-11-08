@@ -20,6 +20,7 @@
 
 mod model;
 mod recipe;
+mod source;
 
 #[cfg(test)]
 mod tests;
@@ -34,6 +35,7 @@ pub use model::{
     PATH_PLACEHOLDER, ROOT_PLACEHOLDER, Tool, takes_files,
 };
 pub use recipe::{Asset, Findings, Group, Install, Output, Recipe, Release, ReleaseKind, Target};
+pub use source::{AssetSpec, Checksum, Latest, Source, URL_PLACEHOLDER, VERSION_PLACEHOLDER, version_from_tag};
 
 /// The vendored catalog JSON, embedded at compile time.
 const CATALOG_JSON: &str = include_str!("../data/catalog.json");
@@ -83,6 +85,18 @@ impl Catalog {
                     tools[position] = tool;
                 }
                 None => tools.push(tool),
+            }
+        }
+        for tool in &tools {
+            let source = tool
+                .recipe
+                .as_ref()
+                .and_then(|r| r.install.as_ref())
+                .and_then(|i| i.source.as_ref());
+            if let Some(source) = source {
+                source
+                    .validate()
+                    .with_context(|| format!("invalid release source of tool `{}`", tool.name))?;
             }
         }
         let index = tools

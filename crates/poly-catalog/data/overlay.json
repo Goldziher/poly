@@ -29,6 +29,16 @@
       "shard_floor": 25,
       "install": {
         "hint": "brew install checkstyle, or set [tools.checkstyle] version to a pinned release poly can download",
+        "source": {
+          "kind": "jar",
+          "github": "checkstyle/checkstyle",
+          "tag": "checkstyle-{version}",
+          "assets": {
+            "any": {
+              "name": "checkstyle-{version}-all.jar"
+            }
+          }
+        },
         "releases": {
           "12.3.1": {
             "kind": "jar",
@@ -86,6 +96,27 @@
     "recipe": {
       "install": {
         "hint": "download palantir-java-format-native from Maven Central, or set [tools.palantir-java-format] version to a pinned release poly can download",
+        "source": {
+          "kind": "binary",
+          "base_url": "https://repo1.maven.org/maven2/com/palantir/javaformat/palantir-java-format-native/{version}",
+          "latest": {
+            "maven_metadata": "https://repo1.maven.org/maven2/com/palantir/javaformat/palantir-java-format-native/maven-metadata.xml"
+          },
+          "checksum": {
+            "sidecar": "{url}.sha256"
+          },
+          "assets": {
+            "darwin-aarch64": {
+              "name": "palantir-java-format-native-{version}-nativeImage-macos_aarch64.bin"
+            },
+            "linux-x86_64": {
+              "name": "palantir-java-format-native-{version}-nativeImage-linux-glibc_x86-64.bin"
+            },
+            "linux-aarch64": {
+              "name": "palantir-java-format-native-{version}-nativeImage-linux-glibc_aarch64.bin"
+            }
+          }
+        },
         "releases": {
           "2.102.0": {
             "kind": "binary",
@@ -158,6 +189,24 @@
       ],
       "install": {
         "hint": "brew install buildifier, or set [tools.buildifier] version to a pinned release poly can download",
+        "source": {
+          "kind": "binary",
+          "github": "bazelbuild/buildtools",
+          "assets": {
+            "darwin-aarch64": {
+              "name": "buildifier-darwin-arm64"
+            },
+            "darwin-x86_64": {
+              "name": "buildifier-darwin-amd64"
+            },
+            "linux-x86_64": {
+              "name": "buildifier-linux-amd64"
+            },
+            "linux-aarch64": {
+              "name": "buildifier-linux-arm64"
+            }
+          }
+        },
         "releases": {
           "8.5.1": {
             "kind": "binary",
@@ -232,6 +281,24 @@
       ],
       "install": {
         "hint": "brew install bufbuild/buf/buf, or set [tools.buf] version to a pinned release poly can download",
+        "source": {
+          "kind": "binary",
+          "github": "bufbuild/buf",
+          "assets": {
+            "darwin-aarch64": {
+              "name": "buf-Darwin-arm64"
+            },
+            "darwin-x86_64": {
+              "name": "buf-Darwin-x86_64"
+            },
+            "linux-aarch64": {
+              "name": "buf-Linux-aarch64"
+            },
+            "linux-x86_64": {
+              "name": "buf-Linux-x86_64"
+            }
+          }
+        },
         "releases": {
           "1.75.0": {
             "kind": "binary",
@@ -293,6 +360,28 @@
       ],
       "install": {
         "hint": "brew install actionlint, or set [tools.actionlint] version to a pinned release poly can download",
+        "source": {
+          "kind": "binary",
+          "github": "rhysd/actionlint",
+          "assets": {
+            "darwin-aarch64": {
+              "name": "actionlint_{version}_darwin_arm64.tar.gz",
+              "member": "actionlint"
+            },
+            "darwin-x86_64": {
+              "name": "actionlint_{version}_darwin_amd64.tar.gz",
+              "member": "actionlint"
+            },
+            "linux-aarch64": {
+              "name": "actionlint_{version}_linux_arm64.tar.gz",
+              "member": "actionlint"
+            },
+            "linux-x86_64": {
+              "name": "actionlint_{version}_linux_amd64.tar.gz",
+              "member": "actionlint"
+            }
+          }
+        },
         "releases": {
           "1.7.12": {
             "kind": "binary",
@@ -393,6 +482,24 @@
       ],
       "install": {
         "hint": "brew install hadolint, or set [tools.hadolint] version to a pinned release poly can download",
+        "source": {
+          "kind": "binary",
+          "github": "hadolint/hadolint",
+          "assets": {
+            "darwin-aarch64": {
+              "name": "hadolint-macos-arm64"
+            },
+            "darwin-x86_64": {
+              "name": "hadolint-macos-x86_64"
+            },
+            "linux-aarch64": {
+              "name": "hadolint-linux-arm64"
+            },
+            "linux-x86_64": {
+              "name": "hadolint-linux-x86_64"
+            }
+          }
+        },
         "releases": {
           "2.15.1": {
             "kind": "binary",
@@ -488,6 +595,28 @@
       ],
       "install": {
         "hint": "brew install golangci-lint, or set [tools.golangci-lint] version to a pinned release poly can download",
+        "source": {
+          "kind": "binary",
+          "github": "golangci/golangci-lint",
+          "assets": {
+            "darwin-aarch64": {
+              "name": "golangci-lint-{version}-darwin-arm64.tar.gz",
+              "member": "golangci-lint-{version}-darwin-arm64/golangci-lint"
+            },
+            "darwin-x86_64": {
+              "name": "golangci-lint-{version}-darwin-amd64.tar.gz",
+              "member": "golangci-lint-{version}-darwin-amd64/golangci-lint"
+            },
+            "linux-aarch64": {
+              "name": "golangci-lint-{version}-linux-arm64.tar.gz",
+              "member": "golangci-lint-{version}-linux-arm64/golangci-lint"
+            },
+            "linux-x86_64": {
+              "name": "golangci-lint-{version}-linux-amd64.tar.gz",
+              "member": "golangci-lint-{version}-linux-amd64/golangci-lint"
+            }
+          }
+        },
         "releases": {
           "2.15.0": {
             "kind": "binary",
@@ -571,6 +700,34 @@
       ],
       "install": {
         "hint": "brew install helm, or set [tools.helm] version to a pinned release poly can download",
+        "source": {
+          "kind": "binary",
+          "base_url": "https://get.helm.sh",
+          "latest": {
+            "github": "helm/helm"
+          },
+          "checksum": {
+            "sidecar": "{url}.sha256sum"
+          },
+          "assets": {
+            "darwin-aarch64": {
+              "name": "helm-v{version}-darwin-arm64.tar.gz",
+              "member": "darwin-arm64/helm"
+            },
+            "darwin-x86_64": {
+              "name": "helm-v{version}-darwin-amd64.tar.gz",
+              "member": "darwin-amd64/helm"
+            },
+            "linux-aarch64": {
+              "name": "helm-v{version}-linux-arm64.tar.gz",
+              "member": "linux-arm64/helm"
+            },
+            "linux-x86_64": {
+              "name": "helm-v{version}-linux-amd64.tar.gz",
+              "member": "linux-amd64/helm"
+            }
+          }
+        },
         "releases": {
           "4.3.1": {
             "kind": "binary",
@@ -655,6 +812,34 @@
       ],
       "install": {
         "hint": "brew install helm, or set [tools.helm-template] version to a pinned release poly can download",
+        "source": {
+          "kind": "binary",
+          "base_url": "https://get.helm.sh",
+          "latest": {
+            "github": "helm/helm"
+          },
+          "checksum": {
+            "sidecar": "{url}.sha256sum"
+          },
+          "assets": {
+            "darwin-aarch64": {
+              "name": "helm-v{version}-darwin-arm64.tar.gz",
+              "member": "darwin-arm64/helm"
+            },
+            "darwin-x86_64": {
+              "name": "helm-v{version}-darwin-amd64.tar.gz",
+              "member": "darwin-amd64/helm"
+            },
+            "linux-aarch64": {
+              "name": "helm-v{version}-linux-arm64.tar.gz",
+              "member": "linux-arm64/helm"
+            },
+            "linux-x86_64": {
+              "name": "helm-v{version}-linux-amd64.tar.gz",
+              "member": "linux-amd64/helm"
+            }
+          }
+        },
         "releases": {
           "4.3.1": {
             "kind": "binary",
@@ -724,6 +909,28 @@
       ],
       "install": {
         "hint": "brew install tflint, or set [tools.tflint] version to a pinned release poly can download",
+        "source": {
+          "kind": "binary",
+          "github": "terraform-linters/tflint",
+          "assets": {
+            "darwin-aarch64": {
+              "name": "tflint_darwin_arm64.zip",
+              "member": "tflint"
+            },
+            "darwin-x86_64": {
+              "name": "tflint_darwin_amd64.zip",
+              "member": "tflint"
+            },
+            "linux-aarch64": {
+              "name": "tflint_linux_arm64.zip",
+              "member": "tflint"
+            },
+            "linux-x86_64": {
+              "name": "tflint_linux_amd64.zip",
+              "member": "tflint"
+            }
+          }
+        },
         "releases": {
           "0.65.0": {
             "kind": "binary",
@@ -813,6 +1020,28 @@
     "recipe": {
       "install": {
         "hint": "brew install opentofu, or set [tools.tofu] version to a pinned release poly can download",
+        "source": {
+          "kind": "binary",
+          "github": "opentofu/opentofu",
+          "assets": {
+            "darwin-aarch64": {
+              "name": "tofu_{version}_darwin_arm64.tar.gz",
+              "member": "tofu"
+            },
+            "darwin-x86_64": {
+              "name": "tofu_{version}_darwin_amd64.tar.gz",
+              "member": "tofu"
+            },
+            "linux-aarch64": {
+              "name": "tofu_{version}_linux_arm64.tar.gz",
+              "member": "tofu"
+            },
+            "linux-x86_64": {
+              "name": "tofu_{version}_linux_amd64.tar.gz",
+              "member": "tofu"
+            }
+          }
+        },
         "releases": {
           "1.13.2": {
             "kind": "binary",

@@ -18,6 +18,8 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
+use crate::source::Source;
+
 /// The report format a tool prints, i.e. which parser reads it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -103,7 +105,13 @@ pub struct Install {
     /// Shell-free, human-readable instruction shown when the tool is absent
     /// (`brew install buf`).
     pub hint: String,
-    /// Pinned releases poly can download itself, keyed by version.
+    /// Where releases come from, so poly can resolve `latest` and any other
+    /// upstream version. Absent for a tool poly only downloads from the seed.
+    #[serde(default)]
+    pub source: Option<Source>,
+    /// Releases poly knows without asking the network, keyed by version: an
+    /// offline seed for [`Install::source`], and the only releases of a tool
+    /// that has no source.
     #[serde(default)]
     pub releases: BTreeMap<String, Release>,
 }
