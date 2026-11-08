@@ -655,7 +655,7 @@ jobs:
           # of the components/ workspace (every engine statically linked, including the git-pinned
           # oxc, biome and rubyfmt ones) and is given no POLY_COMPONENT_LOCK_FILE, so it embeds no
           # lock and downloads nothing. CARGO_TARGET_DIR puts its output at target/release/poly.
-          docker run --rm -v "$PWD":/work -v "$GOROOT_ON_HOST":/opt/go:ro -w /work \
+          docker run --rm -v "$PWD":/work -w /work \
             -e CARGO_TARGET_DIR=/work/target \
             -e LIBCLANG_PATH=/usr/lib \
             -e POLY_BUILD_ID="$POLY_BUILD_ID" \
