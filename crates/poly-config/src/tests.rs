@@ -1261,7 +1261,7 @@ fn top_level_keys_cover_the_typed_schema() {
         let value = match *key {
             "extends" => toml::Value::Array(Vec::new()),
             "exclude_mode" => toml::Value::String("replace".to_owned()),
-            "required_version" => toml::Value::String(">=2.0".to_owned()),
+            "required_version" => toml::Value::String(">=0.1".to_owned()),
             "root" => toml::Value::Boolean(true),
             _ => toml::Value::Table(toml::Table::new()),
         };
@@ -1373,10 +1373,10 @@ fn load_text(text: &str) -> anyhow::Result<PolyConfig> {
 #[test]
 fn v2_engine_tables_survive_parsing() {
     let config = load_text(
-        "required_version = \">=2.0\"\n[engines.ruff]\nselect = [\"E\"]\n[engines.ruff.lang.python]\nline_length = 99\n",
+        "required_version = \">=0.1\"\n[engines.ruff]\nselect = [\"E\"]\n[engines.ruff.lang.python]\nline_length = 99\n",
     )
     .expect("a v2 config loads");
-    assert_eq!(config.required_version.as_deref(), Some(">=2.0"));
+    assert_eq!(config.required_version.as_deref(), Some(">=0.1"));
     let ruff = config.engines.get("ruff").expect("ruff table");
     assert_eq!(
         ruff.options.get("select").and_then(toml::Value::as_array).map(Vec::len),
@@ -1557,4 +1557,26 @@ fn an_extends_base_engine_table_with_a_child_disable_loads_with_a_warning() {
     let config = PolyConfig::load_file(&path).expect("a child disable over an inherited engine table loads");
     let (error, warnings) = crate::v2::check_components(&config.components, &config.lint, &config.fmt, &config.engines);
     assert!(error.is_none() && warnings.len() == 1, "{error:?} {warnings:?}");
+}
+
+#[test]
+fn required_version_is_enforced_against_the_running_poly() {
+    use crate::check_required_version as check;
+    assert!(check(None, "0.34.0").is_ok());
+    assert!(check(Some(">=0.34, <0.35"), "0.34.2").is_ok());
+    let unmet = check(Some(">=9.0"), "0.34.0").unwrap_err().to_string();
+    assert!(unmet.contains(">=9.0") && unmet.contains("0.34.0"), "{unmet}");
+    let garbage = check(Some("garbage"), "0.34.0").unwrap_err().to_string();
+    assert!(garbage.contains("invalid `required_version`"), "{garbage}");
+}
+
+#[test]
+fn loading_a_config_whose_required_version_is_unmet_fails() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("poly.toml");
+    std::fs::write(&path, "required_version = \">=9.0\"\n").expect("write");
+    let error = PolyConfig::load_file(&path).unwrap_err().to_string();
+    assert!(error.contains("requires poly"), "{error}");
+    std::fs::write(&path, "required_version = \"garbage\"\n").expect("write");
+    assert!(PolyConfig::load_file(&path).is_err());
 }

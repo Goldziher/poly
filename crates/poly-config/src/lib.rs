@@ -673,6 +673,7 @@ fn finalize(mut table: toml::Table, typos_dir: &Path) -> anyhow::Result<PolyConf
     normalize_effective_table(&mut table);
     let raw: RawPolyConfig = table.try_into()?;
     let mut config: PolyConfig = raw.into();
+    check_required_version(config.required_version.as_deref(), env!("CARGO_PKG_VERSION"))?;
     config.rules.resolve_relative_to(typos_dir);
     v2::resolve_rule_dirs_typed(&mut config.engines, typos_dir);
     config.typos_native = resolve_typos_native(typos_dir);
@@ -690,6 +691,25 @@ fn finalize(mut table: toml::Table, typos_dir: &Path) -> anyhow::Result<PolyConf
         .validate()
         .map_err(|message| anyhow::anyhow!("invalid [tools] config: {message}"))?;
     Ok(config)
+}
+
+/// Enforce `required_version`: the running poly must satisfy the semver requirement the config states.
+///
+/// Both an unparsable requirement and an unmet one are errors, so a config that pins a poly range can never
+/// be read by a binary outside it. Lock-step versioning makes this crate's version the running `poly` version.
+pub fn check_required_version(requirement: Option<&str>, running: &str) -> anyhow::Result<()> {
+    let Some(requirement) = requirement else {
+        return Ok(());
+    };
+    let parsed = semver::VersionReq::parse(requirement).map_err(|error| {
+        anyhow::anyhow!("invalid `required_version` \"{requirement}\": {error} (expected a semver requirement such as \">=0.34, <0.35\")")
+    })?;
+    let running = semver::Version::parse(running)
+        .map_err(|error| anyhow::anyhow!("cannot parse the running poly version \"{running}\": {error}"))?;
+    if parsed.matches(&running) {
+        return Ok(());
+    }
+    anyhow::bail!("this config requires poly `{requirement}` (`required_version`), but the running poly is {running}")
 }
 
 /// The ancestor chain of config files governing `dir`, nearest first, each paired
