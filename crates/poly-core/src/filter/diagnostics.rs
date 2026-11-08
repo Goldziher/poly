@@ -224,6 +224,26 @@ pub(super) fn code_matches_rule(code: &str, rule: &str) -> bool {
     }
 }
 
+/// Put one file's findings in a deterministic order: location, then rule, message and engine.
+///
+/// Engines run in parallel and some (ast-grep rule sets) collect through hash maps, so the order
+/// they hand findings back in differs between runs; a machine-readable report that diffs between
+/// two identical runs is useless to a consumer. Span-less findings sort first.
+pub(crate) fn sort_diagnostics(diagnostics: &mut [Diagnostic]) {
+    diagnostics.sort_by(|a, b| {
+        let key = |d: &Diagnostic| {
+            d.span
+                .as_ref()
+                .map(|s| (s.start_line, s.start_col, s.end_line, s.end_col))
+        };
+        key(a)
+            .cmp(&key(b))
+            .then_with(|| a.code.cmp(&b.code))
+            .then_with(|| a.title.cmp(&b.title))
+            .then_with(|| a.engine.cmp(&b.engine))
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,6 +252,25 @@ mod tests {
     /// carried through to the suppression record, not matched.
     fn path() -> &'static std::path::Path {
         std::path::Path::new("src/foo.py")
+    }
+
+    #[test]
+    fn sort_diagnostics_orders_by_location_then_code_and_is_input_order_independent() {
+        let at = |line: u32, col: u32, code: &str| {
+            let mut d = diag(Some(code));
+            d.span = Some(crate::engine::Span {
+                start_line: line,
+                start_col: col,
+                end_line: line,
+                end_col: col + 1,
+            });
+            d
+        };
+        let expected = vec![diag(Some("Z")), at(1, 5, "A"), at(2, 1, "A"), at(2, 1, "B")];
+        let mut shuffled = vec![at(2, 1, "B"), at(2, 1, "A"), diag(Some("Z")), at(1, 5, "A")];
+        sort_diagnostics(&mut shuffled);
+        let key = |v: &[Diagnostic]| v.iter().map(|d| (d.span, d.code.clone())).collect::<Vec<_>>();
+        assert_eq!(key(&shuffled), key(&expected));
     }
 
     fn diag(code: Option<&str>) -> Diagnostic {
