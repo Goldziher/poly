@@ -37,6 +37,9 @@ impl RemoteExtendsResolver {
     /// `poly.lock` if present (an empty lock otherwise).
     pub fn new(root: &Path) -> anyhow::Result<Self> {
         let lock = polylock::read(root)?.unwrap_or_default();
+        // The tool provisioner reads pinned releases from here, so every command
+        // that builds a resolver sees the same `poly.lock`.
+        poly_config::tool_lock::install(lock.tools.clone());
         Ok(Self::from_lock(root, lock))
     }
 

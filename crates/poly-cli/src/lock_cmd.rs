@@ -1,23 +1,24 @@
-//! `poly lock` — resolve remote `extends` bases and Git hook sources into the
-//! single `poly.lock` (ADR 0038), or verify it is current (`--check`).
+//! `poly lock` — resolve remote `extends` bases, Git hook sources and
+//! downloadable tool releases into the single `poly.lock` (ADR 0038, ADR 0047),
+//! or verify it is current (`--check`).
 
 use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
-use poly_config::PolyConfig;
 use poly_config::extends::ExtendsSource;
+use poly_config::{PolyConfig, ToolsConfig};
 
 use crate::config_sources::{self, RemoteExtendsResolver};
 use crate::hooks::sources;
-use crate::polylock::{self, PolyLock};
+use crate::polylock::{self, LockedTool, PolyLock};
 
 /// `poly lock` argument surface.
 #[derive(Args)]
 pub struct LockArgs {
-    /// Re-resolve every symbolic ref to its latest object ID instead of keeping
-    /// the revisions already recorded in `poly.lock`.
+    /// Re-resolve every symbolic ref to its latest object ID, and every `latest`
+    /// tool to its newest release, instead of keeping what `poly.lock` records.
     #[arg(long)]
     upgrade: bool,
 
@@ -81,11 +82,12 @@ fn lock(args: LockArgs) -> Result<ExitCode> {
 }
 
 fn summary(lock: &PolyLock) -> String {
-    let (bases, sources) = (lock.extends.len(), lock.hook_sources.len());
+    let (bases, sources, tools) = (lock.extends.len(), lock.hook_sources.len(), lock.tools.len());
     format!(
-        "Locked {bases} remote config base{} and {sources} hook source{}.",
+        "Locked {bases} remote config base{}, {sources} hook source{} and {tools} tool{}.",
         if bases == 1 { "" } else { "s" },
-        if sources == 1 { "" } else { "s" }
+        if sources == 1 { "" } else { "s" },
+        if tools == 1 { "" } else { "s" }
     )
 }
 
@@ -111,6 +113,7 @@ pub fn sync(root: &Path, config_path: &Path, upgrade: bool, check: bool) -> Resu
     let config = PolyConfig::load_file_with(config_path, &resolver)
         .with_context(|| format!("loading {} to find hook sources", config_path.display()))?;
     next.hook_sources = sources::lock_sources(&config.hooks, &existing, upgrade)?;
+    next.tools = lock_tools(&config.tools, &existing, upgrade)?;
     next.normalize();
 
     if matches_disk(root, &next)? {
@@ -154,11 +157,40 @@ fn check_declared(
     if sources::declared_git_keys(&config.hooks) != recorded_hooks {
         return Ok(LockOutcome::Drift);
     }
+    if !tools_in_sync(&config.tools, &existing) {
+        return Ok(LockOutcome::Drift);
+    }
     if matches_disk(root, &existing)? {
         Ok(LockOutcome::InSync(existing))
     } else {
         Ok(LockOutcome::Drift)
     }
+}
+
+/// The lock entry of every downloadable tool the config enables. An entry that
+/// still satisfies the config is kept as recorded unless `upgrade`.
+fn lock_tools(tools: &ToolsConfig, existing: &PolyLock, upgrade: bool) -> Result<Vec<LockedTool>> {
+    let mut locked = Vec::new();
+    for name in poly_core::engines::catalog_tool::lockable_tools(tools) {
+        let config = tools.get(&name).expect("lockable tools come from the config");
+        let entry = poly_core::engines::catalog_tool::lock_tool(&name, config, upgrade, existing.tool(&name))
+            .map_err(|message| anyhow::anyhow!(message))?;
+        locked.push(entry);
+    }
+    Ok(locked)
+}
+
+/// Offline `--check` for tools: the recorded names are the lockable ones, and
+/// each entry still satisfies its config (an exact `version` matches).
+fn tools_in_sync(tools: &ToolsConfig, existing: &PolyLock) -> bool {
+    let declared = poly_core::engines::catalog_tool::lockable_tools(tools);
+    let recorded = sorted(existing.tools.iter().map(|entry| entry.name.clone()));
+    declared == recorded
+        && existing.tools.iter().all(|entry| {
+            tools
+                .get(&entry.name)
+                .is_some_and(|config| poly_core::engines::catalog_tool::lock_satisfies(config, entry))
+        })
 }
 
 fn sorted<T: Ord>(items: impl Iterator<Item = T>) -> Vec<T> {

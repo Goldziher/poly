@@ -373,3 +373,119 @@ fn buf_and_hadolint_are_pinned_for_every_desktop_and_server_platform() {
         }
     }
 }
+
+const MIGRATED_TOOLS: [&str; 11] = [
+    "checkstyle",
+    "palantir-java-format",
+    "buildifier",
+    "buf",
+    "actionlint",
+    "hadolint",
+    "golangci-lint",
+    "helm",
+    "helm-template",
+    "tflint",
+    "tofu",
+];
+
+#[test]
+fn every_downloadable_tool_declares_a_valid_release_source() {
+    for name in MIGRATED_TOOLS {
+        let install = recipe_of(name).install.as_ref().expect("install");
+        let source = install
+            .source
+            .as_ref()
+            .unwrap_or_else(|| panic!("{name} has no source"));
+        source.validate().unwrap_or_else(|error| panic!("{name}: {error:#}"));
+        assert!(
+            !install.releases.is_empty(),
+            "{name} keeps its releases as an offline seed"
+        );
+    }
+}
+
+/// The source must reproduce every seeded release's URL and archive member
+/// exactly, or an old pin would resolve to a different file than it did before.
+#[test]
+fn a_source_reproduces_every_seeded_release() {
+    for name in MIGRATED_TOOLS {
+        let install = recipe_of(name).install.as_ref().expect("install");
+        let source = install.source.as_ref().expect("source");
+        for (version, release) in &install.releases {
+            assert_eq!(release.kind, source.kind, "{name} {version}");
+            for (platform, asset) in &release.assets {
+                let spec = source
+                    .asset_spec(platform)
+                    .unwrap_or_else(|| panic!("{name} source lacks {platform}"));
+                let url = source
+                    .asset_url(version, &crate::Source::asset_name(spec, version))
+                    .expect("url");
+                assert_eq!(url, asset.url, "{name} {version} {platform}");
+                assert_eq!(
+                    crate::Source::member(spec, version),
+                    asset.member,
+                    "{name} {version} {platform}"
+                );
+            }
+        }
+    }
+}
+
+/// Windows builds upstream publishes (checked against each project's releases),
+/// so a Windows host downloads rather than reporting the platform unsupported.
+#[test]
+fn sources_declare_the_windows_builds_upstream_publishes() {
+    let both = [
+        "buildifier",
+        "buf",
+        "actionlint",
+        "golangci-lint",
+        "tofu",
+        "helm",
+        "helm-template",
+    ];
+    for name in both {
+        let source = recipe_of(name).install.as_ref().unwrap().source.as_ref().unwrap();
+        for platform in ["windows-x86_64", "windows-aarch64"] {
+            let spec = source
+                .asset_spec(platform)
+                .unwrap_or_else(|| panic!("{name} lacks {platform}"));
+            let member = crate::Source::member(spec, "1.0.0");
+            assert!(
+                crate::Source::asset_name(spec, "1.0.0").ends_with(".exe")
+                    || member.is_some_and(|m| m.ends_with(".exe")),
+                "{name} {platform}"
+            );
+        }
+    }
+    for name in ["hadolint", "tflint"] {
+        let source = recipe_of(name).install.as_ref().unwrap().source.as_ref().unwrap();
+        assert!(source.asset_spec("windows-x86_64").is_some(), "{name}");
+        assert!(
+            source.asset_spec("windows-aarch64").is_none(),
+            "{name} publishes no arm64 build"
+        );
+    }
+    let palantir = recipe_of("palantir-java-format")
+        .install
+        .as_ref()
+        .unwrap()
+        .source
+        .as_ref()
+        .unwrap();
+    assert!(
+        palantir.asset_spec("windows-x86_64").is_none(),
+        "no native Windows binary exists"
+    );
+}
+
+#[test]
+fn an_invalid_overlay_source_fails_the_catalog_parse() {
+    let overlay = r#"[{"name":"x","binary":"x","categories":["linter"],"languages":[],"commands":{"lint":{"arguments":[],"stdin":false}},
+        "recipe":{"install":{"hint":"h","source":{"kind":"binary","assets":{"any":{"name":"x"}}}}}}]"#;
+    let error = Catalog::parse("[]", overlay).expect_err("must reject");
+    assert!(
+        format!("{error:#}").contains("invalid release source of tool `x`"),
+        "{error:#}"
+    );
+}

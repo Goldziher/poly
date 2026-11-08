@@ -1,26 +1,24 @@
 //! Provisioning: downloading a pinned, checksummed release of a tool into poly's
 //! cache.
 //!
-//! Only ever reached when the config pins a `version` *and* sets
-//! `install = "auto"`; poly does not fetch executables on its own initiative.
+//! Only ever reached when the config sets `install = "auto"`; poly does not
+//! fetch executables on its own initiative. Which release and digest to install
+//! is decided by [`super::resolve`], the lock, or the config's own `url`.
 //! The download is verified against a SHA-256 digest before it is made
 //! executable and renamed into place, so a truncated or substituted file is never
 //! left where a later run would trust it. An asset that names a `member` is a
 //! `.tar.gz` / `.tgz` / `.zip`: the digest covers the archive as downloaded, and
 //! only that member is installed.
 
-use std::fs::File;
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use poly_catalog::{Asset, Release, ReleaseKind};
-use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 
 use super::archive::{self, Format};
+use super::net::Http;
+use super::resolve::FileLock;
 
 /// Platform key of the running host in the catalog's asset tables.
 pub(super) fn platform() -> String {
@@ -40,11 +38,16 @@ pub(super) fn asset_for(release: &Release) -> Option<&Asset> {
 /// Where a release of `tool` is stored: `<cache>/tools/<tool>/<version>/<file>`,
 /// where `<file>` is the archive member's name, or the download's own name.
 pub(super) fn destination(tool: &str, version: &str, asset: &Asset) -> Result<PathBuf> {
+    if !super::resolve::valid_version(version) {
+        bail!("`{version}` is not a version");
+    }
     let named = match &asset.member {
         Some(member) => Path::new(member).file_name().and_then(|name| name.to_str()),
         None => asset.url.rsplit('/').next(),
     };
-    let file = named.filter(|f| !f.is_empty()).unwrap_or(tool);
+    let file = named
+        .filter(|name| !matches!(*name, "" | "." | ".."))
+        .with_context(|| format!("{} does not name a file to install", asset.url))?;
     Ok(poly_cache::cache_home()?
         .join("tools")
         .join(tool)
@@ -68,6 +71,9 @@ fn stamp(path: &Path) -> PathBuf {
 /// Download `asset` to `path` unless it is already installed, verifying the
 /// digest. Returns the installed path.
 ///
+/// Parallel poly processes installing the same file serialize on a lock beside
+/// it, so the second finds the first's result instead of downloading again.
+///
 /// # Errors
 ///
 /// Returns `Err` on a network failure, a digest mismatch, or an unwritable
@@ -79,8 +85,10 @@ pub(super) fn ensure(path: &Path, asset: &Asset, kind: ReleaseKind) -> Result<()
 /// [`ensure`] with the offline decision passed in, so it can be tested without
 /// flipping the process-wide switch.
 fn ensure_when(offline: bool, path: &Path, asset: &Asset, kind: ReleaseKind) -> Result<()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    let _held = LOCK.lock().expect("install lock poisoned");
+    ensure_with(&Http::production(), offline, path, asset, kind)
+}
+
+fn ensure_with(http: &Http, offline: bool, path: &Path, asset: &Asset, kind: ReleaseKind) -> Result<()> {
     if is_installed(path, asset) {
         return Ok(());
     }
@@ -92,14 +100,22 @@ fn ensure_when(offline: bool, path: &Path, asset: &Asset, kind: ReleaseKind) -> 
     }
     let directory = path.parent().context("install path has no parent directory")?;
     std::fs::create_dir_all(directory).with_context(|| format!("creating {}", directory.display()))?;
+    let _held = FileLock::acquire(&directory.join(".install.lock"))?;
+    if is_installed(path, asset) {
+        return Ok(());
+    }
     let partial = tempfile::Builder::new()
         .prefix(".download-")
         .tempfile_in(directory)
         .with_context(|| format!("creating a download file in {}", directory.display()))?;
-    let digest = download(&asset.url, partial.as_file())?;
+    let digest = http
+        .download(&asset.url, partial.as_file())
+        .map_err(|error| anyhow::anyhow!("downloading {}: {error}", asset.url))?;
     if digest != asset.sha256 {
         bail!(
-            "downloaded {} has sha256 {digest}, expected {}; refusing to install it",
+            "downloaded {} has sha256 {digest}, expected {}; refusing to install it and discarding the file. \
+             The asset may have been re-published upstream; if you trust the new file, update the pinned digest \
+             (`poly lock --upgrade`, or `sha256` in [tools])",
             asset.url,
             asset.sha256
         );
@@ -136,38 +152,15 @@ fn unpack(download: &NamedTempFile, url: &str, member: &str, directory: &Path) -
     Ok(extracted)
 }
 
-/// Stream `url` into `target`, returning the hex SHA-256 of what was written.
-fn download(url: &str, target: &File) -> Result<String> {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(600)))
-        .build()
-        .into();
-    let mut response = agent.get(url).call().with_context(|| format!("downloading {url}"))?;
-    let mut reader = response.body_mut().as_reader();
-    let mut writer = std::io::BufWriter::new(target);
-    let mut hasher = Sha256::new();
-    let mut buffer = vec![0u8; 64 * 1024];
-    loop {
-        let read = reader.read(&mut buffer).with_context(|| format!("reading {url}"))?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-        writer.write_all(&buffer[..read]).context("writing the download")?;
-    }
-    writer.flush().context("flushing the download")?;
-    Ok(hex(&hasher.finalize()))
-}
-
-pub(super) fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
+    use sha2::{Digest, Sha256};
+
+    use super::super::net::hex;
+    use super::super::testserver::{Canned, Server};
     use super::*;
 
     fn serve(body: &'static [u8]) -> String {
@@ -252,6 +245,7 @@ mod tests {
         let mut left: Vec<_> = std::fs::read_dir(&version_dir)
             .expect("read_dir")
             .map(|entry| entry.expect("entry").file_name())
+            .filter(|name| name != ".install.lock")
             .collect();
         left.sort();
         assert_eq!(left, ["tool", "tool.sha256"], "no download or extraction files remain");
@@ -266,6 +260,25 @@ mod tests {
         };
         let path = destination("helm", "4.0.0", &asset).expect("destination");
         assert!(path.ends_with("tools/helm/4.0.0/helm"), "{}", path.display());
+    }
+
+    #[test]
+    fn a_download_that_names_no_file_or_a_hostile_version_has_no_destination() {
+        let asset = |url: &str| Asset {
+            url: url.to_owned(),
+            sha256: String::new(),
+            member: None,
+        };
+        for url in [
+            "https://example.invalid/dl/",
+            "https://example.invalid/..",
+            "https://example.invalid/.",
+        ] {
+            let error = destination("helm", "4.0.0", &asset(url)).expect_err(url);
+            assert!(error.to_string().contains("does not name a file"), "{url}: {error:#}");
+        }
+        assert!(destination("helm", "../x", &asset("https://example.invalid/helm")).is_err());
+        assert!(destination("helm", "4.0.0", &asset("https://example.invalid/helm")).is_ok());
     }
 
     #[test]
@@ -361,6 +374,132 @@ mod tests {
         std::fs::write(&path, body).expect("write");
         std::fs::write(stamp(&path), format!("{}\n", asset.sha256)).expect("stamp");
         ensure_when(true, &path, &asset, ReleaseKind::Binary).expect("installed tools need no network");
+    }
+
+    fn quick_http() -> Http {
+        use super::super::net::Policy;
+        use super::super::unit::Retry;
+        let policy = Policy {
+            retry: Retry::new(3, 0, 0),
+            connect: std::time::Duration::from_secs(2),
+            stall: std::time::Duration::from_millis(300),
+            request: std::time::Duration::from_millis(600),
+            download: std::time::Duration::from_secs(5),
+            max_retry_after: std::time::Duration::from_secs(30),
+        };
+        Http::with(policy, std::sync::Arc::new(|_| {}))
+    }
+
+    fn payload_asset(server: &Server, body: &[u8]) -> Asset {
+        Asset {
+            url: server.url("/tool-1.0"),
+            sha256: sha(body),
+            member: None,
+        }
+    }
+
+    #[test]
+    fn a_503_during_the_download_is_retried_and_the_install_completes() {
+        let body = b"#!/bin/sh\nexit 0\n";
+        let server = Server::start(vec![(
+            "/tool-1.0",
+            vec![Canned::new(503, "busy"), Canned::ok(body.to_vec())],
+        )]);
+        let asset = payload_asset(&server, body);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("tool");
+        ensure_with(&quick_http(), false, &path, &asset, ReleaseKind::Binary).expect("recovers");
+        assert!(is_installed(&path, &asset));
+        assert_eq!(server.hits("/tool-1.0"), 2);
+    }
+
+    #[test]
+    fn a_transfer_cut_short_is_retried_from_the_start() {
+        let body = b"complete payload";
+        let server = Server::start(vec![(
+            "/tool-1.0",
+            vec![Canned::ok(body.to_vec()).truncated(), Canned::ok(body.to_vec())],
+        )]);
+        let asset = payload_asset(&server, body);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("tool");
+        ensure_with(&quick_http(), false, &path, &asset, ReleaseKind::Binary).expect("second attempt completes");
+        assert_eq!(std::fs::read(&path).expect("read"), body);
+        assert_eq!(server.hits("/tool-1.0"), 2);
+    }
+
+    #[test]
+    fn a_stalled_download_times_out_and_installs_nothing() {
+        let server = Server::start(vec![(
+            "/tool-1.0",
+            vec![Canned::ok(b"late".to_vec()).delayed(std::time::Duration::from_secs(2))],
+        )]);
+        let asset = payload_asset(&server, b"late");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("tool");
+        let started = std::time::Instant::now();
+        let error = ensure_with(&quick_http(), false, &path, &asset, ReleaseKind::Binary).expect_err("stalls");
+        assert!(format!("{error:#}").contains("timed out"), "{error:#}");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(4),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_corrupt_download_is_refused_once_with_both_digests_and_leaves_nothing() {
+        let server = Server::start(vec![("/tool-1.0", vec![Canned::ok(b"corrupted".to_vec())])]);
+        let asset = payload_asset(&server, b"what upstream published");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("tool");
+        let error = ensure_with(&quick_http(), false, &path, &asset, ReleaseKind::Binary).expect_err("mismatch");
+        let text = format!("{error:#}");
+        assert!(
+            text.contains(&sha(b"corrupted")) && text.contains(&asset.sha256),
+            "{text}"
+        );
+        assert!(text.contains("re-published"), "{text}");
+        assert_eq!(
+            server.hits("/tool-1.0"),
+            1,
+            "a digest mismatch is not a transient failure"
+        );
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .expect("read_dir")
+            .map(|entry| entry.expect("entry").file_name())
+            .filter(|name| name != ".install.lock")
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "the bad file must not stay in the cache: {leftovers:?}"
+        );
+    }
+
+    #[test]
+    fn concurrent_installs_of_one_tool_download_it_once() {
+        let body = b"shared payload";
+        let server = Server::start(vec![(
+            "/tool-1.0",
+            vec![Canned::ok(body.to_vec()).delayed(std::time::Duration::from_millis(150))],
+        )]);
+        let asset = payload_asset(&server, body);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("1.0").join("tool");
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                scope.spawn(|| {
+                    ensure_with(&quick_http(), false, &path, &asset, ReleaseKind::Binary).expect("installs");
+                });
+            }
+        });
+        assert!(is_installed(&path, &asset));
+        assert_eq!(
+            server.hits("/tool-1.0"),
+            1,
+            "the later installers find the first one's result"
+        );
     }
 
     #[test]

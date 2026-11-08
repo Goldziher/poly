@@ -5281,6 +5281,7 @@ dependencies = [
  "anyhow",
  "blake3",
  "flate2",
+ "fs2",
  "globset",
  "ignore",
  "libc",

@@ -32,6 +32,7 @@ use poly_frontend_api::wire::InstallMode;
 /// network-free (see the module docs): load an explicit file when supplied,
 /// otherwise discover `poly.toml` from the working directory.
 pub fn resolve_config(explicit: Option<&Path>) -> anyhow::Result<Config> {
+    install_tool_lock(explicit)?;
     match explicit {
         Some(path) => Config::load_file(path),
         None => {
@@ -41,9 +42,21 @@ pub fn resolve_config(explicit: Option<&Path>) -> anyhow::Result<Config> {
     }
 }
 
+/// Make the repository's `poly.lock` tool pins visible to the tool provisioner,
+/// as the CLI's config resolver does, so a run served here downloads the locked
+/// releases rather than resolving `latest` afresh.
+fn install_tool_lock(explicit: Option<&Path>) -> anyhow::Result<()> {
+    let start = match explicit {
+        Some(path) => path.to_path_buf(),
+        None => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+    };
+    poly_config::tool_lock::install_from_repo(&start)
+}
+
 /// Resolve the full parsed [`PolyConfig`] (needed by `config_show` and the
 /// whole-project tools), network-free — mirroring [`resolve_config`].
 pub fn resolve_poly_config(explicit: Option<&Path>) -> anyhow::Result<PolyConfig> {
+    install_tool_lock(explicit)?;
     match explicit {
         Some(path) => PolyConfig::load_file(path),
         None => {
@@ -401,13 +414,41 @@ mod tests {
 
     #[test]
     fn cache_stats_reports_namespaces() {
+        let _serial = crate::CONFIG_LOADING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let report = cache_stats().unwrap();
         // The stats always carry the current format version.
         assert!(!report.format_version.is_empty(), "format version is populated");
     }
 
     #[test]
+    fn loading_a_config_installs_the_repositorys_tool_lock() {
+        let _serial = crate::CONFIG_LOADING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::create_dir(repo.path().join(".git")).unwrap();
+        let config = repo.path().join("poly.toml");
+        std::fs::write(&config, "").unwrap();
+        std::fs::write(
+            repo.path().join("poly.lock"),
+            "version = 1\n[[tools]]\nname = \"mcp-locked-tool\"\nversion = \"3.2.1\"\n\
+             [[tools.assets]]\nplatform = \"any\"\nurl = \"https://example.invalid/t\"\nsha256 = \"aa\"\n",
+        )
+        .unwrap();
+        resolve_config(Some(&config)).unwrap();
+        let locked = poly_config::tool_lock::get("mcp-locked-tool");
+        resolve_poly_config(Some(&config)).unwrap();
+        poly_config::tool_lock::install(Vec::new());
+        assert_eq!(locked.expect("the MCP config path installs poly.lock").version, "3.2.1");
+    }
+
+    #[test]
     fn resolve_poly_config_is_reachable() {
+        let _serial = crate::CONFIG_LOADING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // A missing explicit config is an error, exercising the PolyConfig path.
         let err = resolve_poly_config(Some(Path::new("/nonexistent/poly.toml")));
         assert!(err.is_err(), "missing explicit config should error");

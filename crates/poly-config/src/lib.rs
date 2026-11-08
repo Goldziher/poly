@@ -27,6 +27,7 @@ pub mod network;
 mod overrides;
 mod oxfmt_native;
 mod oxlint_native;
+pub mod tool_lock;
 mod tools;
 mod typos_native;
 pub mod v2;

@@ -18,7 +18,7 @@
 //! format_extra_args = []      # ... only when the tool formats
 //! lint_extra_args = []        # ... only when the tool lints
 //! bin = "/opt/tools/shfmt"    # use this executable instead of the one on PATH
-//! version = "3.12.0"          # a pinned release poly can provision (see below)
+//! version = "3.12.0"          # "latest" (default) or an exact upstream version
 //! install = "auto"            # download the pinned release when it is missing
 //!
 //! [tools.shfmt.env]           # environment variables injected when running the tool
@@ -154,10 +154,16 @@ pub struct ToolConfig {
     /// Executable to run instead of the catalog's `binary` looked up on `PATH`.
     /// For a JVM tool this is the `java` to launch the jar with.
     pub bin: Option<String>,
-    /// Release of the tool to use. Looked up in the catalog's pinned releases;
-    /// a version the catalog does not know needs `url` and `sha256` too.
+    /// Release of the tool to use: `"latest"` (the default for a tool poly can
+    /// download, when `install = "auto"`) or an exact upstream version such as
+    /// `"2.14.1"`. Resolved against the tool's release source; `poly.lock`
+    /// records the answer so runs need no lookup.
     pub version: Option<String>,
-    /// Download URL for `version` when the catalog has no such pinned release.
+    /// How long a resolved `latest` is trusted before it is revalidated with
+    /// upstream: a number with `s`, `m`, `h` or `d` (default `24h`; `0` always
+    /// revalidates).
+    pub resolve_ttl: Option<String>,
+    /// Download URL for `version`, overriding the release source (with `sha256`).
     pub url: Option<String>,
     /// Lower-case hex SHA-256 the download for `version` must have.
     pub sha256: Option<String>,

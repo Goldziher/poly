@@ -349,6 +349,9 @@ mod tests {
     #[cfg(feature = "all-engines")]
     #[test]
     fn a_lint_request_runs_the_pipeline_and_reports_the_summary() {
+        let _serial = crate::CONFIG_LOADING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("a.txt");
         std::fs::write(&file, "hello\n").unwrap();
