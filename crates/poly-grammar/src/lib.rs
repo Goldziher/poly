@@ -14,7 +14,7 @@
 //!   instead of poisoning the rest of the run.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use tree_sitter_language_pack::Language;
@@ -25,10 +25,16 @@ pub const RETRY_AFTER: Duration = Duration::from_secs(30);
 /// Why a grammar could not be provided.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum GrammarError {
-    /// The pack has no grammar of this name (also: not cached while offline).
-    /// Permanent for the process.
+    /// The pack has no grammar of this name. Permanent for the process.
     #[error("unknown grammar '{0}'")]
     Unknown(String),
+    /// The grammar exists but is not downloaded and poly is offline. Permanent
+    /// for the process: offline mode does not change mid-run.
+    #[error(
+        "grammar '{0}' is not downloaded and poly is offline (--offline / POLY_OFFLINE); \
+         run once online to fetch it"
+    )]
+    NotCached(String),
     /// The grammar exists but could not be loaded or downloaded. Retried after
     /// [`RETRY_AFTER`].
     #[error("grammar '{name}' is unavailable: {reason}")]
@@ -41,28 +47,57 @@ pub enum GrammarError {
 }
 
 #[derive(Default)]
-enum State<T> {
+enum State {
     #[default]
     Empty,
-    Found(T),
-    Unknown,
+    /// A permanent failure ([`GrammarError::Unknown`] or [`GrammarError::NotCached`]).
+    Settled(GrammarError),
     Failed {
         at: Instant,
         reason: String,
     },
 }
 
-/// Per-name memo with the success/unknown/transient-failure semantics above.
-/// Generic over the value so the semantics are testable without a grammar.
+/// One grammar name's memo. `found` is read without locking; `state` only
+/// serializes attempts and holds the failure bookkeeping.
+struct Slot<T> {
+    found: OnceLock<T>,
+    state: Mutex<State>,
+}
+
+impl<T> Default for Slot<T> {
+    fn default() -> Self {
+        Self {
+            found: OnceLock::new(),
+            state: Mutex::new(State::Empty),
+        }
+    }
+}
+
+/// Per-name memo with the success/permanent-failure/transient-failure semantics
+/// above. Generic over the value so the semantics are testable without a grammar.
 struct Memo<T> {
-    slots: Mutex<HashMap<String, Arc<Mutex<State<T>>>>>,
+    slots: RwLock<HashMap<String, Arc<Slot<T>>>>,
 }
 
 impl<T: Clone> Memo<T> {
     fn new() -> Self {
         Self {
-            slots: Mutex::new(HashMap::new()),
+            slots: RwLock::new(HashMap::new()),
         }
+    }
+
+    fn slot(&self, name: &str) -> Arc<Slot<T>> {
+        if let Some(slot) = self
+            .slots
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(name)
+        {
+            return Arc::clone(slot);
+        }
+        let mut slots = self.slots.write().unwrap_or_else(std::sync::PoisonError::into_inner);
+        Arc::clone(slots.entry(name.to_owned()).or_default())
     }
 
     fn get(
@@ -71,16 +106,19 @@ impl<T: Clone> Memo<T> {
         now: Instant,
         resolve: impl FnOnce() -> Result<T, GrammarError>,
     ) -> Result<T, GrammarError> {
-        let slot = {
-            let mut slots = self.slots.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-            Arc::clone(slots.entry(name.to_owned()).or_default())
-        };
+        let slot = self.slot(name);
+        // Hit: no mutex, so workers sharing a grammar never serialize.
+        if let Some(value) = slot.found.get() {
+            return Ok(value.clone());
+        }
         // Held across `resolve` so concurrent callers for one name wait for a
         // single attempt rather than each starting their own.
-        let mut state = slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut state = slot.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(value) = slot.found.get() {
+            return Ok(value.clone());
+        }
         match &*state {
-            State::Found(value) => return Ok(value.clone()),
-            State::Unknown => return Err(GrammarError::Unknown(name.to_owned())),
+            State::Settled(error) => return Err(error.clone()),
             State::Failed { at, reason } if now.saturating_duration_since(*at) < RETRY_AFTER => {
                 return Err(GrammarError::Unavailable {
                     name: name.to_owned(),
@@ -91,14 +129,14 @@ impl<T: Clone> Memo<T> {
         }
         match resolve() {
             Ok(value) => {
-                *state = State::Found(value.clone());
+                let _ = slot.found.set(value.clone());
                 Ok(value)
             }
-            Err(GrammarError::Unknown(n)) => {
-                *state = State::Unknown;
-                Err(GrammarError::Unknown(n))
+            Err(error @ (GrammarError::Unknown(_) | GrammarError::NotCached(_))) => {
+                *state = State::Settled(error.clone());
+                Err(error)
             }
-            Err(error @ GrammarError::Unavailable { .. }) => {
+            Err(error) => {
                 if let GrammarError::Unavailable { reason, .. } = &error {
                     *state = State::Failed {
                         at: now,
@@ -114,7 +152,7 @@ impl<T: Clone> Memo<T> {
 /// The grammar named `name`, or why it is not available.
 ///
 /// Offline (`poly_config::network::offline`), only grammars the pack can load
-/// without a download count: an uncached one is [`GrammarError::Unknown`].
+/// without a download count: an uncached one is [`GrammarError::NotCached`].
 pub fn try_language(name: &str) -> Result<Language, GrammarError> {
     static MEMO: OnceLock<Memo<Language>> = OnceLock::new();
     MEMO.get_or_init(Memo::new).get(name, Instant::now(), || resolve(name))
@@ -129,10 +167,18 @@ pub fn language(name: &str) -> Option<Language> {
 fn resolve(name: &str) -> Result<Language, GrammarError> {
     // `has_parser` answers from the static table and the download cache and never
     // fetches; `get_language` would take the download lock and hit the network.
-    if poly_config::network::offline() && !tree_sitter_language_pack::has_parser(name) {
-        return Err(GrammarError::Unknown(name.to_owned()));
+    if let Some(error) = offline_gate(name, poly_config::network::offline(), || {
+        tree_sitter_language_pack::has_parser(name)
+    }) {
+        return Err(error);
     }
     tree_sitter_language_pack::get_language(name).map_err(|error| classify(name, &error))
+}
+
+/// The error for a lookup that must not download: offline with the grammar not
+/// locally loadable. `loadable` is only consulted when offline.
+fn offline_gate(name: &str, offline: bool, loadable: impl FnOnce() -> bool) -> Option<GrammarError> {
+    (offline && !loadable()).then(|| GrammarError::NotCached(name.to_owned()))
 }
 
 fn classify(name: &str, error: &tree_sitter_language_pack::Error) -> GrammarError {
@@ -210,6 +256,51 @@ mod tests {
         );
         let got = classify("x", &Error::Download("HTTP 503".into()));
         assert!(matches!(&got, GrammarError::Unavailable { reason, .. } if reason.contains("HTTP 503")));
+    }
+
+    #[test]
+    fn offline_uncached_is_not_cached_not_unknown() {
+        assert_eq!(
+            offline_gate("go", true, || false),
+            Some(GrammarError::NotCached("go".into()))
+        );
+        assert_eq!(offline_gate("go", true, || true), None);
+        assert_eq!(offline_gate("go", false, || panic!("online never probes")), None);
+        let message = GrammarError::NotCached("go".into()).to_string();
+        assert!(
+            message.contains("not downloaded") && message.contains("POLY_OFFLINE"),
+            "{message}"
+        );
+        assert!(!message.contains("unknown"), "{message}");
+    }
+
+    #[test]
+    fn not_cached_is_remembered_for_the_process() {
+        let memo = Memo::<u32>::new();
+        let t0 = Instant::now();
+        let _ = memo.get("go", t0, || Err(GrammarError::NotCached("go".into())));
+        assert_eq!(
+            memo.get("go", t0 + RETRY_AFTER * 100, || panic!("no retry")),
+            Err(GrammarError::NotCached("go".into()))
+        );
+    }
+
+    #[test]
+    fn a_hit_does_not_take_the_slot_mutex() {
+        let memo = Memo::<u32>::new();
+        let t0 = Instant::now();
+        assert_eq!(memo.get("go", t0, || Ok(7)), Ok(7));
+        let slot = memo.slot("go");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            // Dropped on unwind too, so a failure panics instead of hanging the join.
+            let _held = slot.state.lock().unwrap();
+            scope.spawn(|| tx.send(memo.get("go", t0, || panic!("cached"))).unwrap());
+            let got = rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("a cached lookup must not block on the slot mutex");
+            assert_eq!(got, Ok(7));
+        });
     }
 
     #[test]
