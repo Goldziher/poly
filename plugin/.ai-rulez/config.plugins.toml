@@ -5,8 +5,8 @@ opencode_dependency_enabled = false
 include = ["assets/**"]
 display_name = "polylint"
 description = "polylint: one linter and formatter for every language in the repository, driven by poly.toml. Runs ruff, oxc, biome and more as signed components fetched on demand, host tools such as rustfmt and gofmt when present, and a tree-sitter tier for everything else. Exposes lint/format/cache tools over MCP with structured JSON output."
-homepage = "https://github.com/Goldziher/poly"
-repository = "https://github.com/Goldziher/poly"
+homepage = "https://github.com/Goldziher/polylint"
+repository = "https://github.com/Goldziher/polylint"
 license = "MIT"
 category = "developer-tools"
 keywords = ["linter", "formatter", "mcp", "code-quality", "rust"]
@@ -44,7 +44,7 @@ default_prompt = [
   "Apply poly's lint and format autofixes, then report what remains.",
   "Show poly's effective configuration for this repo.",
 ]
-website_url = "https://github.com/Goldziher/poly"
+website_url = "https://github.com/Goldziher/polylint"
 brand_color = "#F97316"
 
 

@@ -3,7 +3,7 @@
 
 set -eu
 
-REPO="Goldziher/poly"
+REPO="Goldziher/polylint"
 BINARIES="poly"
 
 VERSION="${POLY_VERSION:-latest}"

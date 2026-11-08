@@ -13,7 +13,7 @@ x-ai-rulez:
 poly ships **a single binary — `poly`** (driven by one config), distributed the way ruff /
 oxlint / biome are: **prebuilt, platform-specific binaries attached to a GitHub release, plus an
 installer**. The channels are the `curl | sh` / PowerShell installer (`install.sh` /
-`install.ps1`), the GitHub Action (`Goldziher/poly@v0`, `action.yml` — which shells out to the
+`install.ps1`), the GitHub Action (`Goldziher/polylint@v0`, `action.yml` — which shells out to the
 same `install.sh`), Homebrew (`brew install Goldziher/tap/poly`), Scoop
 (`Goldziher/scoop-bucket`, `scoop install poly`), **npm (`@goldziher/polylint`)** and **PyPI
 (`polylint`)**. The release artifacts are named `poly-<version>-<triple>.tar.gz` (`.zip` on

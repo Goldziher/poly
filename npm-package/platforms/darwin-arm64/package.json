@@ -2,15 +2,15 @@
   "name": "@goldziher/polylint-darwin-arm64",
   "version": "0.34.0",
   "description": "The macOS (Apple silicon) poly binary for @goldziher/polylint. Not useful on its own.",
-  "homepage": "https://github.com/Goldziher/poly#readme",
+  "homepage": "https://github.com/Goldziher/polylint#readme",
   "bugs": {
-    "url": "https://github.com/Goldziher/poly/issues"
+    "url": "https://github.com/Goldziher/polylint/issues"
   },
   "license": "MIT",
   "author": "Na'aman Hirschfeld <nhirschfeld@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Goldziher/poly.git",
+    "url": "git+https://github.com/Goldziher/polylint.git",
     "directory": "npm-package/platforms/darwin-arm64"
   },
   "os": [

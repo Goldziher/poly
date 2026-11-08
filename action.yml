@@ -2,8 +2,8 @@
 # so there is exactly one copy of that logic. This action adds: latest-version
 # default), and PATH wiring. A version bump changes the cache key, so the
 # previous version's cache is naturally not restored (invalidated).
-name: "Setup poly CLI"
-description: "Install poly with optional local caching"
+name: "Setup polylint CLI"
+description: "Install polylint (the poly command) with optional local caching"
 author: "Na'aman Hirschfeld"
 
 branding:
@@ -101,7 +101,7 @@ runs:
             exit 1
           else
             ver_ge() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$2" ]; }
-            tags="$(gh api --paginate repos/Goldziher/poly/releases --jq '.[] | select(.draft | not) | .tag_name' 2>/dev/null || true)"
+            tags="$(gh api --paginate repos/Goldziher/polylint/releases --jq '.[] | select(.draft | not) | .tag_name' 2>/dev/null || true)"
             version=""
             while IFS= read -r tag; do
               [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]] || continue
@@ -123,7 +123,7 @@ runs:
           fi
           echo "required_version \"$requirement\" -> poly $version"
         elif [ -z "$version" ] || [ "$version" = "latest" ]; then
-          version="$(gh release view --repo Goldziher/poly --json tagName -q '.tagName' 2>/dev/null || true)"
+          version="$(gh release view --repo Goldziher/polylint --json tagName -q '.tagName' 2>/dev/null || true)"
           if [ -z "$version" ]; then
             echo "::error::could not resolve the latest polylint release" >&2
             exit 1
@@ -201,12 +201,12 @@ runs:
         fi
         echo "selection=$selection" >> "$GITHUB_OUTPUT"
         # A release without the asset genuinely has no components; any other failure is a warning.
-        assets="$(gh release view "v${POLY_VERSION}" --repo Goldziher/poly --json assets -q '.assets[].name' 2>&1)" || {
+        assets="$(gh release view "v${POLY_VERSION}" --repo Goldziher/polylint --json assets -q '.assets[].name' 2>&1)" || {
           echo "::warning::could not read release v${POLY_VERSION}; skipping components: $assets"
           assets=""
         }
         if grep -qx poly-components.lock.json <<< "$assets"; then
-          if err="$(gh release download "v${POLY_VERSION}" --repo Goldziher/poly --pattern poly-components.lock.json \
+          if err="$(gh release download "v${POLY_VERSION}" --repo Goldziher/polylint --pattern poly-components.lock.json \
             --dir "$lock_dir" --clobber 2>&1)"; then
             if command -v sha256sum >/dev/null 2>&1; then
               lock_hash="$(sha256sum "$lock_dir/poly-components.lock.json" | cut -c1-16)"

@@ -16,7 +16,7 @@ import urllib.request
 from collections.abc import Callable
 
 API = "https://crates.io/api/v1/crates/{}"
-USER_AGENT = "poly-crates-io-watch (+https://github.com/Goldziher/poly)"
+USER_AGENT = "poly-crates-io-watch (+https://github.com/Goldziher/polylint)"
 ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 2
 

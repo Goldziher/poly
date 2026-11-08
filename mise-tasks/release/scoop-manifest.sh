@@ -2,21 +2,25 @@
 #MISE description="Print the Scoop manifest for a release, rewriting only version, url and hash of the existing one"
 #USAGE arg "<version>" help="Release version, without the leading v"
 #USAGE arg "<sums>" help="The release sha256sums.txt"
-#USAGE arg "<manifest>" help="The existing bucket/poly.json"
-#USAGE arg "[repo]" help="Release repository (default: Goldziher/poly)"
+#USAGE arg "<manifest>" help="The existing bucket manifest (bucket/poly.json or bucket/polylint.json)"
+#USAGE arg "[repo]" help="Release repository (default: Goldziher/polylint)"
 set -euo pipefail
 
 # mise run release:scoop-manifest <version> <sha256sums-file> <existing-manifest> [release-repo]
 #
-# Rewrites the Scoop manifest in Goldziher/scoop-bucket (`bucket/poly.json`) for
-# a new release and prints it to stdout, the way
-# `mise run release:homebrew-formula` emits the tap formula.
+# Rewrites the Scoop manifest in Goldziher/scoop-bucket (`bucket/polylint.json`,
+# mirrored to `bucket/poly.json` so `scoop install poly` keeps working) for a new
+# release and prints it to stdout, the way `mise run release:homebrew-formula`
+# emits the tap formula.
 #
-# Only `version`, the 64bit `url`, and the 64bit `hash` move. Everything else —
-# `bin` (which carries the poly + polylint shim pair), `checkver`, `autoupdate`,
-# `description`, `license` — is carried through from the existing manifest, so a
-# field the bucket added by hand cannot be silently dropped by a release. The
-# edits are structural (jq) rather than textual for the same reason.
+# `version`, the 64bit `url` and `hash` move, and so do the three fields that
+# embed the release repository (`homepage`, `checkver.github`, `autoupdate`
+# urls), so a manifest seeded from the pre-rename `poly.json` converges on the
+# repository the release actually lives in. Everything else — `bin` (which
+# carries the poly + polylint shim pair), `description`, `license` — is carried
+# through from the existing manifest, so a field the bucket added by hand cannot
+# be silently dropped by a release. The edits are structural (jq) rather than
+# textual for the same reason.
 #
 # The hash is read from the release's own sha256sums.txt, never recomputed from
 # a local file: recomputing is the one way the bucket and the published archive
@@ -33,7 +37,7 @@ fi
 VERSION="$1"
 SUMS_FILE="$2"
 MANIFEST="$3"
-RELEASE_REPO="${4:-Goldziher/poly}"
+RELEASE_REPO="${4:-Goldziher/polylint}"
 
 TARGET="x86_64-pc-windows-msvc"
 ASSET="poly-${VERSION}-${TARGET}.zip"
@@ -86,9 +90,16 @@ UPDATED="$(jq -a --indent 4 \
   --arg version "$VERSION" \
   --arg url "$URL" \
   --arg hash "$HASH" \
+  --arg repo_url "https://github.com/${RELEASE_REPO}" \
+  --arg auto_url "https://github.com/${RELEASE_REPO}/releases/download/v\$version/poly-\$version-${TARGET}.zip" \
+  --arg auto_sums "https://github.com/${RELEASE_REPO}/releases/download/v\$version/sha256sums.txt" \
   '.version = $version
 	 | .architecture["64bit"].url = $url
-	 | .architecture["64bit"].hash = $hash' "$MANIFEST")"
+	 | .architecture["64bit"].hash = $hash
+	 | .homepage = $repo_url
+	 | .checkver.github = $repo_url
+	 | .autoupdate.architecture["64bit"].url = $auto_url
+	 | .autoupdate.hash.url = $auto_sums' "$MANIFEST")"
 
 # Assert the substitutions landed rather than trusting jq's exit status: a
 # manifest whose shape drifted (a renamed architecture key, say) would otherwise
@@ -104,12 +115,15 @@ assert() {
 assert "version" "$VERSION" "$(printf '%s' "$UPDATED" | jq -r '.version')"
 assert "64bit url" "$URL" "$(printf '%s' "$UPDATED" | jq -r '.architecture["64bit"].url')"
 assert "64bit hash" "$HASH" "$(printf '%s' "$UPDATED" | jq -r '.architecture["64bit"].hash')"
+assert "homepage" "https://github.com/${RELEASE_REPO}" "$(printf '%s' "$UPDATED" | jq -r '.homepage')"
+assert "checkver.github" "https://github.com/${RELEASE_REPO}" "$(printf '%s' "$UPDATED" | jq -r '.checkver.github')"
+assert "autoupdate url" "https://github.com/${RELEASE_REPO}/releases/download/v\$version/poly-\$version-${TARGET}.zip" \
+  "$(printf '%s' "$UPDATED" | jq -r '.autoupdate.architecture["64bit"].url')"
 
-# `bin` is the poly + polylint shim pair; `checkver`/`autoupdate` let the bucket
-# refresh itself if a release ever fails to push. Losing any of them is silent —
-# the manifest still installs, it just stops creating the alias or stops
-# self-updating — so compare them against the input instead of hoping.
-for field in bin checkver autoupdate description license homepage; do
+# `bin` is the poly + polylint shim pair. Losing it is silent — the manifest
+# still installs, it just stops creating the alias — so compare it (and the
+# other hand-maintained fields) against the input instead of hoping.
+for field in bin description license; do
   before="$(jq -cS --arg f "$field" '.[$f] // null' "$MANIFEST")"
   after="$(printf '%s' "$UPDATED" | jq -cS --arg f "$field" '.[$f] // null')"
   assert "$field (must be carried through untouched)" "$before" "$after"

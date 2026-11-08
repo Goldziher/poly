@@ -81,11 +81,11 @@ scoop install poly
 ## Installer scripts
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Goldziher/polylint/main/install.sh | sh
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/Goldziher/poly/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Goldziher/polylint/main/install.ps1 | iex
 ```
 
 ## Agent plugins
@@ -123,7 +123,7 @@ PyPI API token anywhere in the workflow.
 **npm** — six packages (`@goldziher/polylint` plus the five platform packages) each need
 a trusted publisher pointing at:
 
-- Repository: `Goldziher/poly`
+- Repository: `Goldziher/polylint`
 - Workflow: `publish.yaml`
 - Environment: _(leave blank)_
 
@@ -182,7 +182,7 @@ the tagged manifest version, ai-rulez provenance, and the packed five Pi skills,
 two Pi prompts, and OpenCode adapter before publishing with provenance. It skips a version
 already on the registry, so a re-run is a no-op.
 
-Its npm trusted publisher is configured: GitHub Actions, repository `Goldziher/poly`, workflow
+Its npm trusted publisher is configured: GitHub Actions, repository `Goldziher/polylint`, workflow
 `publish.yaml`, no environment. The package's bootstrap publish is done, and since 0.31.0 CI
 publishes every release itself. The private root `package.json` aliases this bundle for
 Git-based Pi installs, which need no npm publication. The plugin package does not contain the
