@@ -113,7 +113,7 @@ static SKIP_CHECK: AtomicBool = AtomicBool::new(false);
 /// Warnings already printed this run; the same inherited table is seen by every nested config.
 static WARNED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 
-/// Stop [`validate_components`] from failing or warning for the rest of the process.
+/// Stop the load-time `[components]` check from failing or warning for the rest of the process.
 pub fn skip_components_check() {
     SKIP_CHECK.store(true, Ordering::Relaxed);
 }
