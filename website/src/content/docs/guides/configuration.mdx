@@ -872,6 +872,8 @@ and `MADR31` — and the **tree-wide** rules as a project check over the ADR log
 number, gaps, duplicates, file names) and `ADR50`/`ADR51` (immutability, from `adrlint.lock`). The result
 is cached on every ADR in the log and on the lock, so editing a sibling or the lock re-runs it.
 
+`MADR31` (`*` list markers) is off unless `select` or `extend_select` names it: poly's Markdown formatter writes `-` bullets and has no marker option, so enabling it by default would flag the formatter's own output.
+
 | Option | Meaning |
 | --- | --- |
 | `dir` | The ADR directory, relative to the project root. Default `docs/adr`. |

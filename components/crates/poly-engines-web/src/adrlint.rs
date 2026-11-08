@@ -63,7 +63,7 @@ use poly_engine_api::rule_config::string_list;
 ///
 /// Bump the suffix whenever the diagnostic/edit mapping below changes, and the version whenever
 /// `adrlint` is upgraded — either alters output, and a stale cache entry would survive both.
-const VERSION: &str = "adrlint-0.5.0+poly2";
+const VERSION: &str = "adrlint-0.5.0+poly3";
 
 /// Why a Markdown file is routed past this backend.
 const NOT_AN_ADR: &str = "not a numbered ADR file";
@@ -302,14 +302,31 @@ impl Selection {
     /// An empty `select` means every rule is active; `extend_select` still contributes when
     /// `select` narrowed the set. A code matches a pattern when the pattern is a case-insensitive
     /// prefix, so `MADR07` covers both `MADR07a` and `MADR07b`.
+    ///
+    /// `MADR31` (list marker `*`) is off unless a `select` / `extend_select` pattern names it: poly's
+    /// Markdown formatter writes `-` and has no marker option, so a default-on `MADR31` would flag
+    /// the formatter's own output with no fix that survives `fmt`.
     fn keeps(&self, code: &str) -> bool {
         let matches = |patterns: &[String]| patterns.iter().any(|pattern| matches_code(pattern, code));
         if !self.select.is_empty() && !matches(&self.select) && !matches(&self.extend_select) {
             return false;
         }
+        if code == LIST_MARKER_CODE && !self.names_list_marker() {
+            return false;
+        }
         !matches(&self.ignore)
     }
+
+    fn names_list_marker(&self) -> bool {
+        self.select
+            .iter()
+            .chain(&self.extend_select)
+            .any(|pattern| pattern.trim() != "*" && matches_code(pattern, LIST_MARKER_CODE))
+    }
 }
+
+/// The adrlint rule that wants `*` list markers, which the Markdown formatter cannot produce.
+const LIST_MARKER_CODE: &str = "MADR31";
 
 fn matches_code(pattern: &str, code: &str) -> bool {
     let pattern = pattern.trim();
@@ -466,6 +483,21 @@ Chosen option: Rust, because it is fast.
             .expect("lint");
         assert!(!findings.is_empty());
         assert!(findings.iter().all(|finding| finding.code.as_deref() == Some("MADR31")));
+    }
+
+    #[test]
+    fn should_not_flag_dash_bullets_unless_the_list_marker_rule_is_selected() {
+        let content = format!("{MADR}\n- extra\n");
+        let run = |extra: &[(&str, toml::Value)]| {
+            let mut options = vec![("enabled", toml::Value::Boolean(true))];
+            options.extend_from_slice(extra);
+            AdrlintEngine
+                .lint(&source("adrs/0001-use-rust.md", &content), &config(&options))
+                .expect("lint")
+        };
+        assert!(run(&[]).iter().all(|f| f.code.as_deref() != Some("MADR31")));
+        let extended = run(&[("extend_select", toml::Value::Array(vec!["MADR31".into()]))]);
+        assert!(extended.iter().any(|f| f.code.as_deref() == Some("MADR31")));
     }
 
     #[test]
