@@ -31,7 +31,6 @@ content.
 | Platform                | Platform package                      |
 | ----------------------- | ------------------------------------- |
 | macOS (Apple silicon)   | `@goldziher/polylint-darwin-arm64`    |
-| macOS (Intel)           | `@goldziher/polylint-darwin-x64`      |
 | Linux arm64 (glibc)     | `@goldziher/polylint-linux-arm64-gnu` |
 | Linux x64 (glibc)       | `@goldziher/polylint-linux-x64-gnu`   |
 | Linux x64 (musl/Alpine) | `@goldziher/polylint-linux-x64-musl`  |
@@ -94,7 +93,7 @@ for every runtime.
 
 ### How a release reaches each registry
 
-`.github/workflows/publish.yaml` builds the six platform archives, uploads them to the
+`.github/workflows/publish.yaml` builds the five platform archives, uploads them to the
 GitHub release, generates `sha256sums.txt`, and only then un-drafts the release. The
 `publish_npm`, `publish_pypi` and `publish_scoop` jobs run after that, and each one
 **downloads the archives back off the release** and verifies them against
@@ -112,7 +111,7 @@ take the release with it.
 Both registries authenticate by OIDC trusted publishing. There is no `NPM_TOKEN` and no
 PyPI API token anywhere in the workflow.
 
-**npm** — seven packages (`@goldziher/polylint` plus the six platform packages) each need
+**npm** — six packages (`@goldziher/polylint` plus the five platform packages) each need
 a trusted publisher pointing at:
 
 - Repository: `Goldziher/poly`
@@ -125,7 +124,7 @@ under a non-`latest` dist-tag (`pnpm publish --access public --tag placeholder`)
 not become what `pnpm add @goldziher/polylint` resolves to — note that npm sets `latest`
 on a package's very first publish regardless, so the umbrella's `latest` has to be moved by
 the first real release. **This applies to every platform package too**, not just the
-umbrella. All seven have had their bootstrap publish and exist on the registry; a new
+umbrella. All six have had their bootstrap publish and exist on the registry; a new
 platform target added later needs the same manual first publish before CI can take it over.
 `publish_npm` publishes the platform packages before the umbrella either way, because an
 umbrella on `latest` whose pinned binaries do not exist installs cleanly and then has no
@@ -151,7 +150,7 @@ be silent — `scoop install` would still succeed and produce no command.
 ### Version lock-step
 
 `mise run release:bump <version>` moves every surface at once: `Cargo.toml`, the npm
-umbrella package **and each of its six exact `optionalDependencies` pins**, the six
+umbrella package **and each of its five exact `optionalDependencies` pins**, the five
 platform `package.json` files, `pip-package/pyproject.toml`,
 `pip-package/polylint/__init__.py`, and `plugin/.ai-rulez/config.plugins.toml`. It then asserts each
 substitution actually landed, and that the pinned package names and the `platforms/`

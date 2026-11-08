@@ -90,7 +90,6 @@ is covered by the registry's integrity hashes like any other package content.
 | Platform                | Platform package                      |
 | ----------------------- | ------------------------------------- |
 | macOS (Apple silicon)   | `@goldziher/polylint-darwin-arm64`    |
-| macOS (Intel)           | `@goldziher/polylint-darwin-x64`      |
 | Linux arm64 (glibc)     | `@goldziher/polylint-linux-arm64-gnu` |
 | Linux x64 (glibc)       | `@goldziher/polylint-linux-x64-gnu`   |
 | Linux x64 (musl/Alpine) | `@goldziher/polylint-linux-x64-musl`  |
@@ -134,7 +133,7 @@ This resolves the same GitHub release archives — it does not build from source
 
 The `x86_64-unknown-linux-musl` archive is the only **bundled** build: every engine family and the
 MCP server are linked in, it embeds no component lock, and it downloads nothing at run time. The
-other five archives (Linux gnu x86_64 and aarch64, macOS x86_64 and aarch64, Windows x86_64) are
+other five archives (Linux gnu x86_64 and aarch64, macOS aarch64, Windows x86_64) are
 **core** builds with the release's signed component lock embedded. Their engines are components that poly downloads the first time a run
 needs them, so the host must reach the download origin (or a mirror), or be seeded with
 `poly components import`. `poly rules` works in a core build too, through the `astgrep`

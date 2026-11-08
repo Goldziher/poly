@@ -35,7 +35,6 @@
   ],
   "optionalDependencies": {
     "@goldziher/polylint-darwin-arm64": "0.34.0",
-    "@goldziher/polylint-darwin-x64": "0.34.0",
     "@goldziher/polylint-linux-arm64-gnu": "0.34.0",
     "@goldziher/polylint-linux-x64-gnu": "0.34.0",
     "@goldziher/polylint-linux-x64-musl": "0.34.0",

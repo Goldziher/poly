@@ -89,9 +89,11 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use ast_grep_config::{RuleConfig, from_yaml_string};
+
+use poly_grammar::GrammarError;
 
 use super::language::TslpLanguage;
 use super::rules::RuleMap;
@@ -132,40 +134,140 @@ const PACK_RULES: &[&str] = &[
     include_str!("builtin/swift/force-try.yml"),
 ];
 
-static BUILTIN_PACK: OnceLock<RuleMap> = OnceLock::new();
+/// The pack as built from the grammars available at one moment.
+struct Built {
+    rules: RuleMap,
+    /// Pack languages whose rules were left out, with the reason.
+    missing: HashMap<String, String>,
+    /// Whether any missing grammar may still recover (a failed download, as
+    /// opposed to an unknown or offline-uncached name, which cannot).
+    retryable: bool,
+}
 
-/// The embedded pack, parsed once per process and grouped by language name —
-/// the same shape [`super::rules::load_rules`] returns for user rules, so
-/// callers merge the two uniformly.
+static BUILTIN_PACK: Mutex<Option<&'static Built>> = Mutex::new(None);
+/// The final build, published once nothing missing can recover, so the common
+/// case is a lock-free read.
+static SETTLED_PACK: OnceLock<&'static Built> = OnceLock::new();
+
+/// The embedded pack, grouped by language name — the same shape
+/// [`super::rules::load_rules`] returns for user rules, so callers merge the
+/// two uniformly.
 ///
 /// Every pack file is parsed against one shared registration built from
 /// `builtin/utils.yml`, the same way [`super::rules::load_flat_with_paths`]
 /// resolves a user rule directory's own `utils.yml`. Rule-specific helpers
 /// still live in the rule's own `utils:` block.
+///
+/// A language whose grammar cannot be loaded (typically a failed download) is
+/// left out rather than failing the whole pack; see [`unavailable_reason`].
+/// While any language is missing, the pack is rebuilt once a missing grammar
+/// becomes loadable, so a transient outage does not permanently drop its rules.
 pub(super) fn builtin_pack() -> &'static RuleMap {
-    BUILTIN_PACK.get_or_init(|| {
-        let globals = super::rules::parse_global_utils(&[(PathBuf::from("builtin/utils.yml"), PACK_UTILS.to_string())])
-            .unwrap_or_else(|error| {
-                panic!(
-                    "poly's built-in ast-grep global utils failed to parse ({error}); this is a \
-                     poly release defect, not a user-fixable error"
-                )
-            });
-        let mut map: RuleMap = HashMap::new();
-        for yaml in PACK_RULES {
-            let rules: Vec<RuleConfig<TslpLanguage>> = from_yaml_string(yaml, &globals).unwrap_or_else(|error| {
-                panic!(
-                    "poly's built-in ast-grep pack failed to parse ({error}); this is a poly \
-                     release defect, not a user-fixable error — the pack is compiled into the \
-                     binary and validated by `poly rules test` in CI"
-                )
-            });
-            for rule in rules {
-                map.entry(rule.language.name().to_string()).or_default().push(rule);
+    &current().rules
+}
+
+/// Why the pack has no rules for `language`, when it would otherwise have some.
+pub(super) fn unavailable_reason(language: &str) -> Option<String> {
+    current().missing.get(language).cloned()
+}
+
+fn current() -> &'static Built {
+    if let Some(built) = SETTLED_PACK.get() {
+        return built;
+    }
+    let mut guard = BUILTIN_PACK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(built) = *guard
+        && !built
+            .missing
+            .keys()
+            .any(|lang| poly_grammar::try_language(lang).is_ok())
+    {
+        return built;
+    }
+    // Leaked on purpose: callers hold `&'static RuleMap`. A rebuild happens at
+    // most once per recovered language.
+    let built: &'static Built = Box::leak(Box::new(build(&|lang| poly_grammar::try_language(lang).map(drop))));
+    *guard = Some(built);
+    if !built.retryable {
+        let _ = SETTLED_PACK.set(built);
+    }
+    built
+}
+
+/// The language a pack YAML chunk declares: its first `language:` line.
+fn declared_language(yaml: &str) -> Option<&str> {
+    yaml.lines()
+        .find_map(|line| line.trim_start().strip_prefix("language:"))
+        .map(|value| value.trim().trim_matches(['"', '\'']))
+}
+
+/// `utils.yml` split into its top-level list entries, so one entry whose
+/// grammar is missing can be dropped without losing the rest.
+fn split_utils(yaml: &str) -> Vec<String> {
+    let mut chunks: Vec<String> = Vec::new();
+    for line in yaml.lines() {
+        if line.starts_with("- id:") {
+            chunks.push(String::new());
+        }
+        if let Some(chunk) = chunks.last_mut() {
+            chunk.push_str(line);
+            chunk.push('\n');
+        }
+    }
+    chunks
+}
+
+fn build(available: &dyn Fn(&str) -> Result<(), GrammarError>) -> Built {
+    let mut missing: HashMap<String, String> = HashMap::new();
+    let mut retryable = false;
+    let mut check = |yaml: &str| -> bool {
+        let Some(language) = declared_language(yaml) else {
+            return true;
+        };
+        match available(language) {
+            Ok(()) => true,
+            Err(error) => {
+                retryable |= matches!(error, GrammarError::Unavailable { .. });
+                if !missing.contains_key(language) {
+                    tracing::warn!(language, %error, "built-in ast-grep rules skipped: grammar unavailable");
+                    missing.insert(language.to_owned(), error.to_string());
+                }
+                false
             }
         }
-        map
-    })
+    };
+    let util_sources: Vec<(PathBuf, String)> = split_utils(PACK_UTILS)
+        .into_iter()
+        .filter(|chunk| check(chunk))
+        .map(|chunk| (PathBuf::from("builtin/utils.yml"), chunk))
+        .collect();
+    let globals = super::rules::parse_global_utils(&util_sources).unwrap_or_else(|error| {
+        panic!(
+            "poly's built-in ast-grep global utils failed to parse ({error:#}); this is a \
+             poly release defect, not a user-fixable error"
+        )
+    });
+    let mut rules: RuleMap = HashMap::new();
+    for yaml in PACK_RULES {
+        if !check(yaml) {
+            continue;
+        }
+        let parsed: Vec<RuleConfig<TslpLanguage>> = from_yaml_string(yaml, &globals).unwrap_or_else(|error| {
+            panic!(
+                "poly's built-in ast-grep pack failed to parse ({error:#}); this is a poly \
+                 release defect, not a user-fixable error — the pack is compiled into the \
+                 binary and validated by `poly rules test` in CI"
+            )
+        });
+        for rule in parsed {
+            rules.entry(rule.language.name().to_string()).or_default().push(rule);
+        }
+    }
+    Built {
+        rules,
+        missing,
+        retryable,
+    }
 }
 
 #[cfg(test)]
@@ -183,6 +285,87 @@ mod tests {
                 "expected at least one built-in rule for {lang}"
             );
         }
+    }
+
+    fn unavailable(language: &str) -> impl Fn(&str) -> Result<(), GrammarError> + '_ {
+        move |name| {
+            if name == language {
+                Err(GrammarError::Unavailable {
+                    name: name.to_owned(),
+                    reason: "HTTP 503".to_owned(),
+                })
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn missing_rust_grammar_drops_only_rust_rules() {
+        let built = build(&unavailable("rust"));
+        assert!(!built.rules.contains_key("rust"));
+        for lang in ["csharp", "elixir", "go", "java", "kotlin", "python", "ruby", "swift"] {
+            assert!(built.rules.contains_key(lang), "{lang} rules must still load");
+        }
+        assert!(built.missing["rust"].contains("HTTP 503"), "{:?}", built.missing);
+        assert_eq!(built.missing.len(), 1);
+    }
+
+    #[test]
+    fn only_download_failures_are_retryable() {
+        assert!(build(&unavailable("rust")).retryable);
+        let offline = build(&|name| {
+            if name == "go" {
+                Err(GrammarError::NotCached(name.to_owned()))
+            } else {
+                Ok(())
+            }
+        });
+        assert!(!offline.retryable);
+        assert!(offline.missing["go"].contains("offline"), "{:?}", offline.missing);
+        assert!(!build(&|_| Ok(())).retryable);
+    }
+
+    #[test]
+    fn a_complete_pack_is_served_without_the_mutex() {
+        let first = builtin_pack();
+        if unavailable_reason("rust").is_some() {
+            return;
+        }
+        let settled = SETTLED_PACK.get().expect("a complete build is published lock-free");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            // Dropped on unwind too, so a failure panics instead of hanging the join.
+            let _held = BUILTIN_PACK.lock().unwrap();
+            scope.spawn(|| tx.send(std::ptr::from_ref(builtin_pack()).addr()).unwrap());
+            let got = rx
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("the settled pack must not wait on the build mutex");
+            assert_eq!(got, std::ptr::from_ref(first).addr());
+            assert!(std::ptr::eq(&settled.rules, first));
+        });
+    }
+
+    #[test]
+    fn missing_go_grammar_keeps_rust_utils_working() {
+        let built = build(&unavailable("go"));
+        assert!(!built.rules.contains_key("go"));
+        assert!(built.rules.get("rust").is_some_and(|rules| rules.len() == 9));
+    }
+
+    #[test]
+    fn fully_available_build_has_nothing_missing() {
+        let built = build(&|_| Ok(()));
+        assert!(built.missing.is_empty());
+        assert_eq!(built.rules.values().map(Vec::len).sum::<usize>(), 26);
+    }
+
+    #[test]
+    fn utils_split_into_one_chunk_per_entry() {
+        let chunks = split_utils(PACK_UTILS);
+        assert_eq!(chunks.len(), 5);
+        assert_eq!(declared_language(&chunks[4]), Some("go"));
+        assert_eq!(declared_language(&chunks[0]), Some("rust"));
     }
 
     #[test]

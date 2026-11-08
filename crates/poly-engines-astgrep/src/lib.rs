@@ -203,6 +203,11 @@ impl Engine for AstGrepEngine {
         let lang_name = grammar_for_language_id(src.language.id());
         let (rule_refs, selection) = resolve_rules(lang_name, user_rule_map.as_deref(), cfg);
         let Some(first_rule) = rule_refs.first() else {
+            if builtin_pack_enabled(cfg)
+                && let Some(reason) = pack::unavailable_reason(lang_name)
+            {
+                anyhow::bail!("built-in ast-grep rules for '{lang_name}' not run: {reason}");
+            }
             return Ok(Vec::new());
         };
 
