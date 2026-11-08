@@ -412,8 +412,13 @@ pub fn workspace_lint(
 mod tests {
     use super::*;
 
+    /// Config loading installs the repository's `poly.lock` into process-global state, so the tests
+    /// that load a config run one at a time.
+    static CONFIG_LOADING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn cache_stats_reports_namespaces() {
+        let _serial = CONFIG_LOADING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let report = cache_stats().unwrap();
         // The stats always carry the current format version.
         assert!(!report.format_version.is_empty(), "format version is populated");
@@ -421,6 +426,7 @@ mod tests {
 
     #[test]
     fn loading_a_config_installs_the_repositorys_tool_lock() {
+        let _serial = CONFIG_LOADING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let repo = tempfile::tempdir().unwrap();
         std::fs::create_dir(repo.path().join(".git")).unwrap();
         let config = repo.path().join("poly.toml");
@@ -440,6 +446,7 @@ mod tests {
 
     #[test]
     fn resolve_poly_config_is_reachable() {
+        let _serial = CONFIG_LOADING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         // A missing explicit config is an error, exercising the PolyConfig path.
         let err = resolve_poly_config(Some(Path::new("/nonexistent/poly.toml")));
         assert!(err.is_err(), "missing explicit config should error");
