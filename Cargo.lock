@@ -3620,6 +3620,7 @@ name = "poly-grammar"
 version = "0.34.0"
 dependencies = [
  "poly-config",
+ "thiserror 2.0.21",
  "tree-sitter-language-pack",
 ]
 

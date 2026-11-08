@@ -17,6 +17,7 @@ path = "src/lib.rs"
 
 [dependencies]
 poly-config.workspace = true
+thiserror.workspace = true
 tree-sitter-language-pack.workspace = true
 
 [lints.rust]
