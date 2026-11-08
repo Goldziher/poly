@@ -209,3 +209,72 @@ fn an_online_ensure_repairs_a_damaged_copy_and_says_so() {
         assert_eq!(f.host(true).ensure_frontend(ID, true), Availability::Present, "{what}");
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_copy_is_an_error_not_corruption() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let f = Fixture::new();
+    let host = f.installed();
+    let object = f.object(&host);
+    let before = std::fs::metadata(&object).unwrap().permissions();
+    std::fs::set_permissions(&object, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let readable = std::fs::read_dir(&object).is_ok();
+    let offline = f.host(true);
+    let result = offline.check_cache(ID);
+    std::fs::set_permissions(&object, before).unwrap();
+    if readable {
+        return; // running as root: permissions do not apply
+    }
+    let error = result.expect_err("an I/O failure must not read as damage");
+    assert!(format!("{error:#}").contains("cached copy"), "{error:#}");
+    assert_eq!(
+        offline.check_cache(ID).unwrap(),
+        CacheCheck::Intact,
+        "nothing was removed"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_library_is_an_error_not_corruption() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let f = Fixture::new();
+    let host = f.installed();
+    let library = f.object(&host).join("libdemo.so");
+    std::fs::set_permissions(&library, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let root = std::fs::read(&library).is_ok();
+    let result = f.host(true).check_cache(ID);
+    std::fs::set_permissions(&library, std::fs::Permissions::from_mode(0o644)).unwrap();
+    if root {
+        return; // running as root: permissions do not apply
+    }
+    let error = result.expect_err("an I/O failure must not read as damage");
+    assert!(
+        format!("{error:#}").contains("could not read the cached copy"),
+        "{error:#}"
+    );
+    assert_eq!(
+        f.host(true).check_cache(ID).unwrap(),
+        CacheCheck::Intact,
+        "nothing was removed"
+    );
+}
+
+#[test]
+fn a_check_that_lands_mid_repair_waits_and_sees_the_repaired_copy() {
+    let f = Fixture::new();
+    let host = f.installed();
+    let library = f.object(&host).join("libdemo.so");
+    let saved = std::fs::read(&library).unwrap();
+    std::fs::remove_file(&library).unwrap();
+    let restore = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(40));
+        std::fs::write(&library, saved).unwrap();
+    });
+    let check = f.host(true).check_cache(ID).unwrap();
+    restore.join().unwrap();
+    assert_eq!(check, CacheCheck::Intact);
+}
