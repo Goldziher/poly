@@ -102,3 +102,25 @@ fn check_is_removed_with_a_hint() {
     assert!(stderr(&output).contains("drop --check"), "{}", stderr(&output));
     assert!(!rewritten(dir.path()));
 }
+
+#[test]
+fn an_empty_file_stays_empty() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("empty.rs"), "").expect("write");
+    let run = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_poly"))
+            .args(args)
+            .current_dir(dir.path())
+            .output()
+            .expect("run poly")
+    };
+    let check = run(&["fmt", "empty.rs"]);
+    assert_eq!(
+        check.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&check.stdout)
+    );
+    run(&["fmt", "--fix", "empty.rs"]);
+    assert_eq!(std::fs::read(dir.path().join("empty.rs")).expect("read"), b"");
+}

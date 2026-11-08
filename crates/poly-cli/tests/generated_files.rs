@@ -128,6 +128,10 @@ fn a_hash_stamped_file_is_reported_but_never_rewritten() {
         text.contains("not fixed") && text.contains("--fix-generated"),
         "the withheld fix must be visible and name the way in, got:\n{text}"
     );
+    assert!(
+        text.contains("1 file not fixed because it is generated") && !text.contains("fixable with"),
+        "a withheld fix is neither offered as fixable nor worded in the plural, got:\n{text}"
+    );
 
     let output = poly(dir.path(), &["fmt", "--fix", "--no-cache", "stamped.py"]);
     let text = combined(&output);

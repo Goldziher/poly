@@ -182,3 +182,40 @@ fn skipping_only_some_engines_of_a_component_still_needs_it() {
     assert_eq!(output.status.code(), Some(2), "{text}");
     assert!(text.contains("incompatible: web"), "{text}");
 }
+
+fn summary(output: &Output) -> serde_json::Value {
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|error| panic!("stdout is not JSON ({error}): {}", combined(output)));
+    document
+}
+
+/// An explicit path the selection leaves without an engine is one skipped file, not one per code path
+/// that notices it.
+#[test]
+fn an_explicit_path_left_unselected_is_skipped_once() {
+    let dir = repo();
+    let output = poly(dir.path(), &["lint", "--only", "ruff", "--format", "json", "main.rs"]);
+    let document = summary(&output);
+    assert_eq!(document["summary"]["skipped"], 1, "{document}");
+    assert_eq!(document["skipped"].as_array().map(Vec::len), Some(1), "{document}");
+
+    std::fs::write(dir.path().join("README.md"), "# hi\n").expect("write");
+    let output = poly(
+        dir.path(),
+        &["lint", "--only", "ruff", "--format", "json", "main.rs", "README.md"],
+    );
+    let document = summary(&output);
+    assert_eq!(document["summary"]["skipped"], 2, "{document}");
+}
+
+/// A file the selected engine ran on is not also reported as skipped.
+#[test]
+fn a_file_the_selected_engine_ran_on_is_counted_as_checked() {
+    let dir = repo();
+    std::fs::write(dir.path().join("poly.toml"), "[lint.uncomment]\nenabled = true\n").expect("write");
+    std::fs::write(dir.path().join("b.py"), "# a comment\nx = 1\n").expect("write");
+    let output = poly(dir.path(), &["lint", "--only", "uncomment", "--format", "json", "b.py"]);
+    let document = summary(&output);
+    assert_eq!(document["summary"]["checked"], 1, "{document}");
+    assert_eq!(document["summary"]["skipped"], 0, "{document}");
+}

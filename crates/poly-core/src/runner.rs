@@ -35,7 +35,7 @@ mod skips;
 mod types;
 mod write;
 
-use crate::fingerprint::{ConfigFingerprint, fingerprints};
+use crate::fingerprint::run_fingerprints as config_fingerprints;
 use batch::{BatchPrefill, LintPrefill, PendingLint, prefill, prefill_lint};
 use edits::apply_edits;
 use engine_clock::{EngineClock, note_slow_engine};
@@ -272,28 +272,35 @@ pub fn lint_run(
     // A fully fixed file has no diagnostics left, but dropping it here is
     // what made `--fix` silent about the files it rewrote: keep it so the
     // summary — and the JSON payload — can report the fixes.
+    let (config_fingerprints, config_index) = config_fingerprints(&configs, opts);
     let results: Vec<LintResult> = linted
         .into_iter()
         .filter(|r| !r.diagnostics.is_empty() || r.fixed > 0)
+        .map(|mut r| {
+            r.config = config_index[r.config];
+            r
+        })
         .collect();
     let mut errors: Vec<LintError> = errs.into_iter().map(Result::unwrap_err).collect();
     errors.extend(project_errors);
     errors.sort_by(|a, b| a.path.cmp(&b.path));
     for error in &errors {
-        tracing::warn!(path = %error.path.display(), "lint failed: {}", error.message);
+        tracing::debug!(path = %error.path.display(), "lint failed: {}", error.message);
     }
     skipped.extend(project_skips);
-    skipped.extend(unmatched_explicit_paths(
+    let unmatched = unmatched_explicit_paths(
         paths,
         &files,
         &plan,
         &configs,
         &opts.exclude,
         opts.force_exclude,
-    ));
+        &skipped,
+    );
+    skipped.extend(unmatched);
     Ok(LintRun {
         results,
-        configs: config_fingerprints(&configs, opts),
+        configs: config_fingerprints,
         errors,
         checked: checked.into_inner(),
         skipped,
@@ -306,17 +313,6 @@ pub fn lint_run(
 /// Build the run's [`ConfigSet`]: a single explicit config (`--config`) bypasses
 /// hierarchical resolution; otherwise `config` is the root and the walked paths
 /// are scanned for nested `poly.toml` files (ADR 0018).
-/// Fingerprint every config this run resolved, using the caller's `extends`
-/// resolver when it supplied one and the network-free local resolver otherwise
-/// — the same resolver the configs themselves were built with, so the hash
-/// describes what actually governed the run.
-fn config_fingerprints(configs: &ConfigSet, opts: &RunOptions) -> Vec<ConfigFingerprint> {
-    match &opts.config_resolver {
-        Some(resolver) => fingerprints(configs, resolver.as_ref()),
-        None => fingerprints(configs, &poly_config::LocalPathResolver),
-    }
-}
-
 fn build_config_set(paths: &[PathBuf], config: &Config, opts: &RunOptions) -> anyhow::Result<ConfigSet> {
     if opts.explicit_config {
         Ok(ConfigSet::single(config.clone()))
@@ -423,7 +419,7 @@ pub fn format_run(
     results.sort_by(|a, b| a.path.cmp(&b.path));
     errors.sort_by(|a, b| a.path.cmp(&b.path));
     for error in &errors {
-        tracing::warn!(path = %error.path.display(), "format failed: {}", error.message);
+        tracing::debug!(path = %error.path.display(), "format failed: {}", error.message);
     }
     // Declined files first (they are already sorted by path), then the paths the
     // caller named that no engine covers — one list, so a strict-mode check and
@@ -437,21 +433,27 @@ pub fn format_run(
             })
         })
         .collect();
-    skipped.extend(unmatched_explicit_paths(
+    let unmatched = unmatched_explicit_paths(
         paths,
         &files,
         &plan,
         &configs,
         &opts.exclude,
         opts.force_exclude,
-    ));
+        &skipped,
+    );
+    skipped.extend(unmatched);
     // Mirrors the lint side: a file every backend declined was read, not
     // inspected, so it is not part of what the run claims to have formatted.
     let checked = results.iter().filter(|result| result.skipped.is_none()).count();
+    let (config_fingerprints, config_index) = config_fingerprints(&configs, opts);
+    for result in &mut results {
+        result.config = config_index[result.config];
+    }
     Ok(FormatRun {
         results,
         checked,
-        configs: config_fingerprints(&configs, opts),
+        configs: config_fingerprints,
         errors,
         skipped,
         discovery,
@@ -730,6 +732,11 @@ fn format_one(
         }
     };
     if is_format_ignored(&original, &f.language) {
+        return Ok(format_skip_result(f, None));
+    }
+    // An empty file is already as formatted as it can be. Formatters differ on it (the TOML and JSON ones
+    // answer with a lone newline), and `--fix` must not write that into a file that had no content.
+    if original.is_empty() {
         return Ok(format_skip_result(f, None));
     }
     // A caller instruction that withdrew every formatter for this language is

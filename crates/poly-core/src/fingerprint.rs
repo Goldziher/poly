@@ -27,8 +27,8 @@ const FINGERPRINT_VERSION: &str = "1";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ConfigFingerprint {
-    /// Directory the config resolved from, relative to the run's root, or
-    /// `null` when the caller passed an explicit `--config` (which bypasses the
+    /// Directory the config resolved from, relative to the run's root; omitted
+    /// at the root itself and under an explicit `--config` (which bypasses the
     /// directory cascade and governs every file).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub root: Option<String>,
@@ -65,11 +65,52 @@ pub(crate) fn fingerprints(
                 },
             );
             ConfigFingerprint {
-                root: dir.map(|dir| relative_to_run(dir, configs)),
+                // The run's own root is reported by omission, as the documented shape has it.
+                root: dir
+                    .map(|dir| relative_to_run(dir, configs))
+                    .filter(|root| !root.is_empty()),
                 hash,
             }
         })
         .collect()
+}
+
+/// Fingerprint every config a run resolved, using the caller's `extends` resolver when it supplied one and
+/// the network-free local resolver otherwise: the same resolver the configs were built with, so the hash
+/// describes what actually governed the run.
+///
+/// Returns the distinct fingerprints and, per config id, the index into them that a result's `config` field
+/// must carry.
+pub(crate) fn run_fingerprints(
+    configs: &ConfigSet,
+    opts: &crate::runner::RunOptions,
+) -> (Vec<ConfigFingerprint>, Vec<usize>) {
+    let all = match &opts.config_resolver {
+        Some(resolver) => fingerprints(configs, resolver.as_ref()),
+        None => fingerprints(configs, &poly_config::LocalPathResolver),
+    };
+    dedupe(all)
+}
+
+/// Collapse identical fingerprints into one entry.
+///
+/// `ConfigSet` keeps the caller's root config at slot 0 and registers the same directory's resolved config
+/// again when a `poly.toml` sits there, so two slots can describe one configuration. Returns the distinct
+/// list and, per original slot, the index of its entry, which a result's `config` field is remapped through.
+pub(crate) fn dedupe(fingerprints: Vec<ConfigFingerprint>) -> (Vec<ConfigFingerprint>, Vec<usize>) {
+    let mut distinct: Vec<ConfigFingerprint> = Vec::with_capacity(fingerprints.len());
+    let mut remap = Vec::with_capacity(fingerprints.len());
+    for fingerprint in fingerprints {
+        let index = distinct
+            .iter()
+            .position(|seen| *seen == fingerprint)
+            .unwrap_or_else(|| {
+                distinct.push(fingerprint);
+                distinct.len() - 1
+            });
+        remap.push(index);
+    }
+    (distinct, remap)
 }
 
 /// Digest one merged config table.

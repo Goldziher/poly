@@ -256,6 +256,7 @@ pub(super) fn unmatched_explicit_paths(
     configs: &ConfigSet,
     exclude: &[String],
     force_exclude: bool,
+    already_skipped: &[SkippedFile],
 ) -> Vec<SkippedFile> {
     // The overwhelmingly common invocation is `poly lint .` — no file arguments
     // at all, so nothing to reconcile at all. One `is_file` stat per argument,
@@ -272,6 +273,11 @@ pub(super) fn unmatched_explicit_paths(
         .then(|| files.iter().map(|f| (f.path.as_path(), f)).collect());
     let mut unmatched = Vec::new();
     for path in explicit {
+        // The per-file pass already reports a routed file it declined (for example under
+        // `--only`), so naming it again here would count one file twice.
+        if already_skipped.iter().any(|skipped| skipped.path == **path) {
+            continue;
+        }
         let discovered = match &index {
             Some(index) => index.get(path.as_path()).copied(),
             None => files.iter().find(|file| file.path == **path),
