@@ -10,7 +10,6 @@ use anyhow::{Context, bail};
 use poly_component_host::loaded_components;
 use poly_component_index::{Component, ComponentIndex};
 use poly_config::v2::ComponentInstallPolicy;
-use poly_core::components::component_is_linked;
 use poly_frontend_api::dto::{ComponentAction, ComponentActions, ComponentRow, ComponentSummary, ComponentsStatus};
 use poly_frontend_api::wire::{
     ComponentsInstallRequest, ComponentsStatusRequest, ComponentsUninstallRequest, InstallMode,
@@ -39,7 +38,7 @@ fn with_env<R>(offline: bool, f: impl FnOnce(&Env<'_>, Option<String>) -> R) -> 
         host: host.as_ref(),
         no_host,
         lock_json: lock_json.as_deref(),
-        linked: &component_is_linked,
+        linked: &super::is_linked,
         offline: crate::offline(),
         cache_root: cache_root_of(host.as_ref()),
     };

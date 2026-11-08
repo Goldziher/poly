@@ -641,29 +641,77 @@ jobs:
       - name: Build binary (musl, Alpine container)
         if: ${{ matrix.alpine }}
         run: |
-          # Build host-native inside rust:alpine (the image's host target already
-          # IS x86_64-unknown-linux-musl). NOT `--target`: with an explicit target
-          # Cargo applies RUSTFLAGS only to the target, leaving build scripts
-          # static-musl — and ruby-prism-sys's bindgen build script must be
-          # dynamically linked (-crt-static off) to dlopen libclang. Building
-          # host-native applies the flag everywhere. Then place the binary at the
-          # triple path the shared packaging step expects. The musl build is the poly-bundled crate
-          # of the components/ workspace (every engine statically linked, including the git-pinned
-          # oxc, biome and rubyfmt ones) and is given no POLY_COMPONENT_LOCK_FILE, so it embeds no
-          # lock and downloads nothing. CARGO_TARGET_DIR puts its output at target/release/poly.
+          # Build host-native inside rust:alpine (the image's host target IS x86_64-unknown-linux-musl),
+          # dynamically linked against musl (-crt-static off). It must stay dynamic: tree-sitter grammars
+          # are downloaded on demand and dlopen'd, and a static musl executable cannot dlopen, so a
+          # crt-static build errors on every file whose grammar is not compiled in.
+          #
+          # A dynamic musl build links std's unwinder as `-lgcc_s`, a runtime dependency on
+          # libgcc_s.so.1 that stock Alpine does not ship (#142: `_Unwind_Backtrace: symbol not
+          # found`). A `libgcc_s.a` on the search path that is the static LLVM libunwind rustup ships for
+          # this target (the unwinder a crt-static build links) satisfies that `-lgcc_s` at link time,
+          # so the binary needs nothing but musl's libc and loader, which every Alpine has. Then place
+          # the binary at the triple path the shared packaging step expects. The musl build is the
+          # poly-bundled crate of the components/ workspace (every engine statically linked, including
+          # the git-pinned oxc, biome and rubyfmt ones) and is given no POLY_COMPONENT_LOCK_FILE, so it
+          # embeds no lock and downloads no component. CARGO_TARGET_DIR puts its output at
+          # target/release/poly.
           docker run --rm -v "$PWD":/work -w /work \
             -e CARGO_TARGET_DIR=/work/target \
-            -e LIBCLANG_PATH=/usr/lib \
             -e POLY_BUILD_ID="$POLY_BUILD_ID" \
-            -e RUSTFLAGS="-C target-feature=-crt-static" \
             rust:alpine sh -c '
               set -e
-              apk add --no-cache build-base musl-dev clang clang-dev llvm-dev pkgconf git perl
+              apk add --no-cache build-base musl-dev pkgconf git perl
+              unwind="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n "s/^host: //p")/lib/self-contained/libunwind.a"
+              test -f "$unwind"
+              mkdir -p /tmp/static-unwind
+              ln -sf "$unwind" /tmp/static-unwind/libgcc_s.a
+              export RUSTFLAGS="-C target-feature=-crt-static -L native=/tmp/static-unwind"
               cargo build --release --locked --manifest-path components/Cargo.toml -p poly-bundled
               mkdir -p "target/${{ matrix.triple }}/release"
               cp target/release/poly "target/${{ matrix.triple }}/release/poly"
               strip "target/${{ matrix.triple }}/release/poly"
             '
+        shell: bash
+
+      - name: Smoke-test the musl binary on stock Alpine
+        # The archive's promise is a binary that runs on a bare musl system. Its only shared library
+        # must be musl's libc, so a dependency such as libgcc_s fails here, not on a user's machine.
+        # Then run it in plain alpine:3.20 with nothing installed: `--version`, and a lint and format
+        # of one file per engine family it links. The lint also fetches and dlopens tree-sitter
+        # grammars (the built-in ast-grep rules), which a static build cannot do.
+        if: ${{ matrix.alpine }}
+        run: |
+          set -euo pipefail
+          bin="target/${{ matrix.triple }}/release/poly"
+          needed="$(readelf -dW "$bin" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p' | tr '\n' ' ')"
+          echo "NEEDED: $needed"
+          [ "$needed" = "libc.musl-x86_64.so.1 " ] || { echo "::error::the musl binary needs more than musl libc: $needed"; exit 1; }
+          readelf -lW "$bin" | grep -q 'interpreter: /lib/ld-musl-x86_64.so.1' \
+            || { echo "::error::the musl binary does not use the musl loader"; readelf -lW "$bin" | grep -i interp; exit 1; }
+          fixture="$RUNNER_TEMP/smoke-musl"
+          mkdir -p "$fixture"
+          printf 'import os\n' > "$fixture/a.py"
+          printf 'const a = 1;\n' > "$fixture/a.ts"
+          printf 'puts 1\n' > "$fixture/a.rb"
+          printf 'a { color: red; }\n' > "$fixture/a.css"
+          printf '[a]\nk = 1\n' > "$fixture/a.ini"
+          files="$(find "$fixture" -type f | wc -l | tr -d ' ')"
+          cp "$bin" "$RUNNER_TEMP/poly-musl"
+          docker run --rm --platform linux/amd64 -v "$RUNNER_TEMP":/t -w /t/smoke-musl alpine:3.20 sh -c '
+            set -e
+            /t/poly-musl --version
+            set +e
+            /t/poly-musl lint --workspace never --no-cache --format json . > /t/musl-lint.json; echo "$?" > /t/musl-lint.rc
+            /t/poly-musl fmt --no-cache --format json . > /t/musl-fmt.json; echo "$?" > /t/musl-fmt.rc
+          '
+          for mode in lint fmt; do
+            code="$(cat "$RUNNER_TEMP/musl-$mode.rc")"
+            [ "$code" -le 1 ] || { cat "$RUNNER_TEMP/musl-$mode.json"; echo "::error::poly $mode exited $code on stock Alpine"; exit 1; }
+            jq -e --argjson n "$files" '.summary.errored == 0 and (.errors | length) == 0 and .summary.checked == $n' \
+              "$RUNNER_TEMP/musl-$mode.json" > /dev/null || { cat "$RUNNER_TEMP/musl-$mode.json"; echo "::error::poly $mode did not check all $files files on stock Alpine"; exit 1; }
+            echo "poly $mode on alpine:3.20: $(jq -c .summary "$RUNNER_TEMP/musl-$mode.json")"
+          done
         shell: bash
 
       - name: Strip binary

@@ -631,3 +631,26 @@ fn a_file_held_open_on_windows_is_skipped() {
     let later = ops::prune(&fixture.env(), false, false, 30).unwrap();
     assert_eq!(row_names(&later, "removed"), [ORPHAN_SHA]);
 }
+
+#[test]
+fn the_mcp_front_end_is_linked_exactly_when_the_server_is_compiled_in() {
+    let mcp = poly_component_index::index()
+        .component("mcp")
+        .expect("the index has mcp");
+    assert_eq!(super::is_linked(mcp), cfg!(feature = "bundled-mcp"));
+}
+
+#[test]
+fn a_linked_sidecar_says_it_runs_the_host_tool() {
+    let mut fixture = Fixture::new(true);
+    fixture.index.components = vec![Component {
+        kind: poly_component_index::ComponentKind::Sidecar,
+        ..component("baked")
+    }];
+    let listing = ops::list(&fixture.env());
+    let row = &listing.components[0];
+    assert_eq!(row.state, State::Bundled);
+    let detail = row.detail.as_deref().expect("a linked sidecar carries a note");
+    assert!(detail.contains("host `"), "{detail}");
+    assert!(detail.contains("tree-sitter tier"), "{detail}");
+}

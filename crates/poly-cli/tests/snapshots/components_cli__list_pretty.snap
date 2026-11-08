@@ -18,5 +18,5 @@ typos      bundled      -  typos  (opt-in)
 astgrep    bundled      -  astgrep
 uncomment  bundled      -  uncomment  (opt-in)
 misc       bundled      -  dockerfile, dotenv, graphql, hcl, ini
-sh         bundled      -  shfmt
-mcp        unavailable  -    [this build embeds no component lock]
+sh         bundled      -  shfmt  [not the sidecar: this build runs the host `shfmt` when it is on PATH, else the tree-sitter tier]
+mcp        bundled      -

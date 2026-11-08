@@ -141,15 +141,15 @@ expression: json
       "opt_in": false,
       "engines": [
         "shfmt"
-      ]
+      ],
+      "detail": "not the sidecar: this build runs the host `shfmt` when it is on PATH, else the tree-sitter tier"
     },
     {
       "name": "mcp",
       "kind": "frontend",
-      "state": "unavailable",
+      "state": "bundled",
       "opt_in": false,
-      "engines": [],
-      "detail": "this build embeds no component lock"
+      "engines": []
     }
   ]
 }

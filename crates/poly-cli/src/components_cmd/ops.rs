@@ -240,7 +240,7 @@ fn engine_names(component: &Component) -> Vec<String> {
 
 pub(super) fn state_of(env: &Env<'_>, component: &Component) -> (State, Option<String>) {
     if (env.linked)(component) {
-        return (State::Bundled, None);
+        return (State::Bundled, host_tool_note(component));
     }
     let Some(host) = env.host else {
         return (State::Unavailable, env.no_host.clone());
@@ -258,6 +258,18 @@ pub(super) fn state_of(env: &Env<'_>, component: &Component) -> (State, Option<S
         Ok(ComponentStatus::Unsupported { reason }) => (State::Unavailable, Some(reason)),
         Err(error) => (State::Unavailable, Some(format!("{error:#}"))),
     }
+}
+
+/// What a linked sidecar component stands for. A build cannot link a sidecar's executable, so "linked" means
+/// it keeps the engine's host tool (ADR 0045): that formats only when it is on `PATH`, and the language
+/// otherwise falls through to the tree-sitter tier. Without the note `bundled` would promise the sidecar.
+fn host_tool_note(component: &Component) -> Option<String> {
+    (component.kind == ComponentKind::Sidecar).then(|| {
+        format!(
+            "not the sidecar: this build runs the host `{}` when it is on PATH, else the tree-sitter tier",
+            engine_names(component).join("`, `")
+        )
+    })
 }
 
 fn row(env: &Env<'_>, component: &Component, cached: &[alef_component_runtime::CachedObject]) -> ComponentRow {
@@ -392,7 +404,7 @@ pub fn install(env: &Env<'_>, components: &[&Component]) -> anyhow::Result<Actio
     let mut actions = Actions::new("install", env);
     for component in components {
         if (env.linked)(component) {
-            actions.push(&component.name, "bundled", None);
+            actions.push(&component.name, "bundled", host_tool_note(component));
             continue;
         }
         let host = env.host()?;
@@ -438,7 +450,7 @@ pub fn uninstall(env: &Env<'_>, components: &[&Component]) -> anyhow::Result<Act
     let mut freed = 0;
     for component in components {
         if (env.linked)(component) {
-            actions.push(&component.name, "bundled", None);
+            actions.push(&component.name, "bundled", host_tool_note(component));
             continue;
         }
         let report = env.host()?.manager().remove(&component.name)?;

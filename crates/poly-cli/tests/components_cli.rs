@@ -121,3 +121,27 @@ fn doctor_json_has_a_components_section() {
     assert_eq!(value["components"]["flavor"], "partial");
     assert_eq!(value["components"]["needed_missing"], serde_json::json!([]));
 }
+
+/// `pyrefly` is never linked and a lockless build cannot download it: selecting it fails the run with the
+/// way out, not only the missing lock.
+#[test]
+fn selecting_pyrefly_without_a_lock_names_the_way_out() {
+    let sandbox = Sandbox::new();
+    std::fs::write(
+        sandbox.repo.path().join("poly.toml"),
+        "[engines.python-types]\nbackend = \"pyrefly\"\n",
+    )
+    .expect("write poly.toml");
+    let output = sandbox.run(&["lint", "--no-cache", "--workspace", "never", "."]);
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.status.code(), Some(2), "{text}");
+    assert!(text.contains("`pyrefly` is not available in this build"), "{text}");
+    assert!(
+        text.contains("set `backend` in `[engines.python-types]` to another value"),
+        "{text}"
+    );
+}

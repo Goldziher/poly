@@ -58,6 +58,13 @@ fn list_reports_every_family_as_bundled() {
     assert_ne!(download_only[0]["state"], "bundled", "{value}");
     assert!(!linkable.is_empty());
     assert!(linkable.iter().all(|c| c["state"] == "bundled"), "{value}");
+    // The MCP server is compiled in (`bundled-mcp`), so its front end is bundled too, not unavailable.
+    let mcp = components.iter().find(|c| c["name"] == "mcp").expect("mcp row");
+    assert_eq!(mcp["state"], "bundled", "{value}");
+    // No build links the `sh` sidecar's Go executable: the row says the host `shfmt` stands in for it.
+    let sh = components.iter().find(|c| c["name"] == "sh").expect("sh row");
+    let detail = sh["detail"].as_str().unwrap_or_default();
+    assert!(detail.contains("host `shfmt`"), "{value}");
 }
 
 #[test]

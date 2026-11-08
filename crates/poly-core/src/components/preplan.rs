@@ -114,6 +114,41 @@ fn open_host(injected: Option<&ComponentInjection>, index: &ComponentIndex) -> H
     }
 }
 
+/// Why `component` is unusable when no host could be built: `detail` says why, except for a
+/// `download_only` component, whose cause and way out are known.
+fn no_host(component: &Component, detail: &str) -> Unavailable {
+    Unavailable {
+        kind: UnavailableKind::Incompatible,
+        detail: if component.download_only {
+            not_in_this_build(component)
+        } else {
+            detail.to_owned()
+        },
+    }
+}
+
+/// Why a `download_only` component cannot run in a build with no lock: no build links it, and this one
+/// cannot download it. The fix is the user's, so it is named: another value of the key that selected it,
+/// or a build that downloads components.
+fn not_in_this_build(component: &Component) -> String {
+    let name = &component.name;
+    let alternative = component
+        .engines
+        .iter()
+        .find_map(|desc| desc.selection.as_ref())
+        .map(|selection| {
+            format!(
+                "set `{}` in `[engines.{}]` to another value, or ",
+                selection.key, selection.table
+            )
+        })
+        .unwrap_or_default();
+    format!(
+        "`{name}` is not available in this build: it is never linked into a bundled binary, and this build embeds no \
+         component lock to download it; {alternative}use a release build that downloads components"
+    )
+}
+
 /// What the index says a component's `describe()` must answer. The index carries no component
 /// version, so the slot compares only the protocol and the engines.
 pub(super) fn expected_describe(component: &Component) -> Describe {
@@ -193,10 +228,7 @@ pub(crate) fn resolve(
         let name = component.name.as_str();
         let availability = match &hosted {
             Hosted::Host(host, _) => host.ensure(name, allow_install),
-            Hosted::Unavailable(detail) => Availability::Unavailable(Unavailable {
-                kind: UnavailableKind::Incompatible,
-                detail: detail.clone(),
-            }),
+            Hosted::Unavailable(detail) => Availability::Unavailable(no_host(component, detail)),
         };
         let sha = match &hosted {
             Hosted::Host(host, _) => host.lock_sha256(name),

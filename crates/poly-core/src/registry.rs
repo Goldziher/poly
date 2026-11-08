@@ -500,6 +500,22 @@ pub(crate) mod tests {
     /// `polyconfig`'s `version()` tracks poly's own config-key schema instead.
     const POLY_OWNED_ENGINES: &[&str] = &["polyconfig"];
 
+    /// A component engine names its languages by `Language::id()` on the wire, and the host reads them back
+    /// with `Language::from_catalog_name`. An id that comes back as `Language::Other` matches no discovered
+    /// file, so the component engine silently serves nothing: `ini` did that, and a core build reported
+    /// "no lint rules for Ini" while the bundled build linted the same file.
+    #[test]
+    fn every_language_id_reads_back_as_the_same_language() {
+        for language in all_languages() {
+            assert_eq!(
+                Language::from_catalog_name(language.id()),
+                language,
+                "`{}` does not read back as itself",
+                language.id()
+            );
+        }
+    }
+
     /// `Config::engine_config` resolves a cross-cutting engine's global
     /// `enabled` by reading `[<kind>.<engine>]` out of the same table that holds
     /// the per-language subtables keyed by `Language::id()`. That is only
