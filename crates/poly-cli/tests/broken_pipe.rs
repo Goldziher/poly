@@ -20,7 +20,7 @@ fn a_closed_stdout_ends_the_run_without_a_panic_message() {
     let output = child.wait_with_output().expect("wait for poly");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !stderr.contains("panicked") && !stderr.contains("Broken pipe"),
+        !stderr.contains("panicked") && !stderr.contains("Broken pipe") && !stderr.contains("pipe has been ended"),
         "stderr was: {stderr}"
     );
 }

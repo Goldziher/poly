@@ -81,6 +81,10 @@ struct McpArgs {}
 /// Exit status of a process whose reader went away, as a shell reports death by SIGPIPE.
 const EXIT_BROKEN_PIPE: i32 = 141;
 
+/// How std's `failed printing to stdout` panic names a reader that went away: the Unix text, and the
+/// Windows codes `ERROR_BROKEN_PIPE` (109, "The pipe has been ended") and `ERROR_NO_DATA` (232).
+const BROKEN_PIPE_MARKERS: &[&str] = &["Broken pipe", "(os error 109)", "(os error 232)"];
+
 /// Make a closed stdout (`poly config schema | head`) end the run quietly.
 ///
 /// `println!` panics when its reader is gone, and the default hook prints a backtrace-style message for
@@ -95,7 +99,7 @@ fn exit_quietly_on_broken_pipe() {
             .map(String::as_str)
             .or_else(|| payload.downcast_ref::<&str>().copied())
             .unwrap_or_default();
-        if message.contains("failed printing to std") && message.contains("Broken pipe") {
+        if message.contains("failed printing to std") && BROKEN_PIPE_MARKERS.iter().any(|m| message.contains(m)) {
             std::process::exit(EXIT_BROKEN_PIPE);
         }
         default_hook(info);
