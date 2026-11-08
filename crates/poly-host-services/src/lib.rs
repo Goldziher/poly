@@ -14,3 +14,8 @@ mod services;
 
 pub use poly_frontend_api::ServiceCaller;
 pub use services::{ComponentsProvider, Services};
+
+/// Loading a config installs the repository's `poly.lock` into process-global state, so the
+/// tests that load a config run one at a time.
+#[cfg(test)]
+static CONFIG_LOADING: std::sync::Mutex<()> = std::sync::Mutex::new(());

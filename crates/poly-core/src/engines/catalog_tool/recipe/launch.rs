@@ -568,7 +568,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let resolver = Resolver::for_test(&server.base, dir.path().to_path_buf(), false);
         let error = pinned_release(&resolver, tool, &recipe, &auto(Some(&seeded))).expect_err("unresolvable");
-        assert!(error.contains("has no download for") && error.contains("set `bin`"), "{error}");
+        assert!(
+            error.contains("has no download for") && error.contains("set `bin`"),
+            "{error}"
+        );
     }
 
     #[test]
