@@ -2,6 +2,8 @@
 //! happens when one is unavailable.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use poly_component_index::{ComponentIndex, index};
 use schemars::JsonSchema;
@@ -104,43 +106,88 @@ pub struct ComponentsConfig {
     pub on_missing: OnMissing,
 }
 
+/// Set once by commands that must keep working on a config this check rejects (`poly config
+/// show`, `poly components status`): they exist to inspect and repair that very state.
+static SKIP_CHECK: AtomicBool = AtomicBool::new(false);
+
+/// Warnings already printed this run; the same inherited table is seen by every nested config.
+static WARNED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// Stop [`validate_components`] from failing or warning for the rest of the process.
+pub fn skip_components_check() {
+    SKIP_CHECK.store(true, Ordering::Relaxed);
+}
+
+/// Print `message` to stderr as a warning, once per run.
+fn warn_once(message: &str) {
+    let first = WARNED.lock().map_or(true, |mut seen| seen.insert(message.to_owned()));
+    if first {
+        eprintln!("warning: {message}");
+    }
+}
+
 /// Check a loaded config's `[components]` against the component index.
 ///
-/// A name in `enable` or `disable` must be a component or a preset, a name may not sit in both
-/// lists, and no engine of a disabled component may be configured (`[engines.<id>]`,
-/// `[lint.<lang>.<id>]`, `[fmt.<lang>.<id>]` or a cross-cutting `[lint.<id>]`), unless that table
-/// only sets `enabled = false`. `poly config validate` reports the same classes of problem; this
-/// is the check every lint, format and component run applies as the config loads.
+/// Errors (the load fails): a name in `enable` that is neither a component nor a preset, and a
+/// name in both `enable` and `disable`. Warnings (printed once per run to stderr, still an error
+/// in `poly config validate`): an unknown name in `disable`, and an engine configured under a
+/// disabled component (`[engines.<id>]`, `[lint.<lang>.<id>]`, `[fmt.<lang>.<id>]` or a
+/// cross-cutting `[lint.<id>]`) unless that table, or its language table, sets `enabled = false`.
+/// The warnings are not errors because an `extends` base or a parent monorepo config may
+/// configure an engine a child config or `poly.local.toml` disables; that has always worked.
 ///
 /// # Errors
 ///
-/// The first problem found, as a message naming the offending key.
+/// The first error-class problem, as a message naming the offending key.
 pub(crate) fn validate_components(
     components: &ComponentsConfig,
     lint: &toml::Table,
     fmt: &toml::Table,
     engines: &BTreeMap<String, EngineTable>,
 ) -> Result<(), String> {
+    if SKIP_CHECK.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+    let (error, warnings) = check_components(components, lint, fmt, engines);
+    if let Some(message) = error {
+        return Err(message);
+    }
+    for message in &warnings {
+        warn_once(message);
+    }
+    Ok(())
+}
+
+pub(crate) fn check_components(
+    components: &ComponentsConfig,
+    lint: &toml::Table,
+    fmt: &toml::Table,
+    engines: &BTreeMap<String, EngineTable>,
+) -> (Option<String>, Vec<String>) {
     let index = index();
     let enabled: &[String] = match &components.enable {
         Enable::Auto => &[],
         Enable::List(list) => list,
     };
-    for (key, names) in [("enable", enabled), ("disable", components.disable.as_slice())] {
-        for name in names {
-            if index.expand_preset(name).is_none() {
-                return Err(format!(
-                    "`[components] {key}` names `{name}`, which is neither a component nor a preset (known: {})",
-                    known_names(index)
-                ));
-            }
-        }
+    let unknown = |key: &str, name: &str| {
+        format!(
+            "`[components] {key}` names `{name}`, which is neither a component nor a preset (known: {})",
+            known_names(index)
+        )
+    };
+    if let Some(name) = enabled.iter().find(|name| index.expand_preset(name).is_none()) {
+        return (Some(unknown("enable", name)), Vec::new());
     }
     if let Some(name) = components.disable.iter().find(|name| enabled.contains(name)) {
-        return Err(format!(
-            "`{name}` is in both `[components] enable` and `[components] disable`"
-        ));
+        let message = format!("`{name}` is in both `[components] enable` and `[components] disable`");
+        return (Some(message), Vec::new());
     }
+    let mut warnings: Vec<String> = components
+        .disable
+        .iter()
+        .filter(|name| index.expand_preset(name).is_none())
+        .map(|name| unknown("disable", name))
+        .collect();
     let disabled: BTreeSet<&str> = components
         .disable
         .iter()
@@ -149,7 +196,7 @@ pub(crate) fn validate_components(
         .map(|component| component.name.as_str())
         .collect();
     if disabled.is_empty() {
-        return Ok(());
+        return (None, warnings);
     }
     let configured = engines
         .iter()
@@ -162,13 +209,14 @@ pub(crate) fn validate_components(
             .component_for_engine(id)
             .filter(|c| disabled.contains(c.name.as_str()))
         {
-            return Err(format!(
-                "{table} configures engine `{id}`, but its component `{}` is disabled by `[components] disable`",
+            warnings.push(format!(
+                "{table} configures engine `{id}`, but its component `{}` is disabled by `[components] disable`; \
+                 the table is ignored (set `enabled = false` in it to silence this)",
                 component.name
             ));
         }
     }
-    Ok(())
+    (None, warnings)
 }
 
 fn known_names(index: &ComponentIndex) -> String {
@@ -201,7 +249,7 @@ fn v1_engine_tables<'a>(
             let nested = table
                 .iter()
                 .filter_map(|(engine, value)| Some((engine, value.as_table()?)))
-                .filter(|(_, inner)| switched_on(inner))
+                .filter(|(_, inner)| switched_on(table) && switched_on(inner))
                 .map(move |(engine, _)| (format!("[{name}.{key}.{engine}]"), engine.as_str()));
             top.into_iter().chain(nested)
         })

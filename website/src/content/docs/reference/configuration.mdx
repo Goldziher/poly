@@ -84,7 +84,7 @@ Selection and policy for downloadable engine components. See
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `enable` | `"auto"` or array | `"auto"` | `"auto"` derives components from the discovered files and configured engines; an array names components or presets. |
-| `disable` | array | `[]` | Components never to use. Configuring an engine of a disabled component is a config error. |
+| `disable` | array | `[]` | Components never to use. An unknown name, or an engine table of a disabled component, is a warning (set `enabled = false` in the table to silence it); an unknown `enable` name, or a name in both lists, is a config error. |
 | `install` | `"auto"` \| `"never"` | `"auto"` | Whether a run may download a missing component. |
 | `on_missing` | `"fail"` \| `"skip"` | `"fail"` | Exit `2`, or skip the files and charge them to the skip budget, when a needed component is unavailable. `--on-missing` overrides it. |
 

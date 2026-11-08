@@ -172,6 +172,8 @@ fn run(args: ComponentsArgs) -> anyhow::Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         ComponentsCommand::Status { paths, verify } => {
+            // Status is how a damaged or misconfigured setup gets inspected, so it must not refuse it.
+            poly_config::v2::skip_components_check();
             let listing = ops::status(&env, &needed(&paths)?, verify);
             render::emit(format, &listing, render::print_listing)?;
             Ok(if listing.ok() {

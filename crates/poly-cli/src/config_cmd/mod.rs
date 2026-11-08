@@ -94,6 +94,8 @@ pub fn run_config(args: ConfigArgs) -> ExitCode {
 }
 
 fn show(explicit: Option<&Path>, format: ConfigFormat) -> Result<ExitCode> {
+    // `show` is how a bad `[components]` section gets diagnosed, so it must load that config.
+    poly_config::v2::skip_components_check();
     let root = config_sources::repo_root()?;
     let resolver = RemoteExtendsResolver::new(&root)?;
     let document = EffectiveConfig::resolve(explicit, &resolver)?;

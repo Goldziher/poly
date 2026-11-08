@@ -393,7 +393,7 @@ with no path, the nearest one) without loading or downloading any engine compone
 come from the component index compiled into poly. A key that an engine recognises only by probing
 its own option type is checked in-process when that engine is linked into the binary. Otherwise
 it is accepted, and the engine's component is listed as `partially validated`. Configuring an
-engine whose component is in `[components] disable` is an error. Exit `0` means valid; `2` means
+engine whose component is in `[components] disable` is an error here, though only a warning when a run loads the config. Exit `0` means valid; `2` means
 a problem was found or a file could not be read. `extends` bases are not resolved.
 
 `poly config schema` prints the JSON Schema for `poly.toml` — derived from the same config types

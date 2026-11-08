@@ -1461,20 +1461,38 @@ fn components_error(source: &str) -> String {
     )
 }
 
+fn findings(source: &str) -> (Option<String>, Vec<String>) {
+    let config = load_components_lenient(source);
+    crate::v2::check_components(&config.components, &config.lint, &config.fmt, &config.engines)
+}
+
+fn load_components_lenient(source: &str) -> PolyConfig {
+    let table: toml::Table = toml::from_str(source).unwrap();
+    let raw: crate::RawPolyConfig = table.try_into().unwrap();
+    raw.into()
+}
+
 #[test]
-fn an_unknown_name_in_components_enable_or_disable_is_a_load_error() {
-    for (key, source) in [
-        ("enable", "[components]\nenable = [\"bogus\"]\n"),
-        // poly: allow[typo] a deliberate misspelling of a component name
-        ("disable", "[components]\ndisable = [\"pyhton\"]\n"),
-    ] {
-        let message = components_error(source);
-        assert!(
-            message.contains("invalid [components] config") && message.contains(&format!("[components] {key}")),
-            "{message}"
-        );
-        assert!(message.contains("known:") && message.contains("python"), "{message}");
-    }
+fn an_unknown_name_in_components_enable_is_a_load_error() {
+    let message = components_error("[components]\nenable = [\"bogus\"]\n");
+    assert!(
+        message.contains("invalid [components] config") && message.contains("[components] enable"),
+        "{message}"
+    );
+    assert!(message.contains("known:") && message.contains("python"), "{message}");
+}
+
+#[test]
+fn an_unknown_name_in_components_disable_is_only_a_warning() {
+    // poly: allow[typo] a deliberate misspelling of a component name
+    let source = "[components]\ndisable = [\"pyhton\"]\n";
+    load_components(source).expect("loads");
+    let (error, warnings) = findings(source);
+    assert!(error.is_none());
+    assert!(
+        warnings.len() == 1 && warnings[0].contains("[components] disable"),
+        "{warnings:?}"
+    );
 }
 
 #[test]
@@ -1490,24 +1508,53 @@ fn known_names_presets_and_an_enable_all_with_a_disable_are_accepted() {
 }
 
 #[test]
-fn configuring_an_engine_of_a_disabled_component_is_a_load_error() {
+fn configuring_an_engine_of_a_disabled_component_is_a_warning_not_an_error() {
     for source in [
         "[components]\ndisable = [\"python\"]\n[lint.python.ruff]\nselect = [\"E\"]\n",
         "[components]\ndisable = [\"python\"]\n[fmt.python.ruff]\nline_length = 100\n",
         "[components]\ndisable = [\"python\"]\n[engines.ruff]\nenabled = true\n",
         "[components]\ndisable = [\"python\"]\n[engines.ruff.lint]\nselect = [\"E\"]\n",
     ] {
-        let message = components_error(source);
+        load_components(source).expect("loads");
+        let (error, warnings) = findings(source);
+        assert!(error.is_none(), "{source}");
         assert!(
-            message.contains("engine `ruff`") && message.contains("component `python` is disabled"),
-            "{source}: {message}"
+            warnings.len() == 1
+                && warnings[0].contains("engine `ruff`")
+                && warnings[0].contains("component `python` is disabled"),
+            "{source}: {warnings:?}"
         );
     }
 }
 
 #[test]
-fn switching_off_an_engine_of_a_disabled_component_is_not_an_error() {
-    load_components("[components]\ndisable = [\"python\"]\n[engines.ruff]\nenabled = false\n").expect("v2");
-    load_components("[components]\ndisable = [\"python\"]\n[lint.python.ruff]\nenabled = false\n").expect("v1");
-    load_components("[components]\ndisable = [\"ruby\"]\n[engines.ruff]\nenabled = true\n").expect("another component");
+fn switching_off_an_engine_of_a_disabled_component_is_silent() {
+    for source in [
+        "[components]\ndisable = [\"python\"]\n[engines.ruff]\nenabled = false\n",
+        "[components]\ndisable = [\"python\"]\n[lint.python.ruff]\nenabled = false\n",
+        "[components]\ndisable = [\"python\"]\n[lint.python]\nenabled = false\n[lint.python.ruff]\nselect = [\"E\"]\n",
+        "[components]\ndisable = [\"python\"]\n[fmt.python]\nenabled = false\n[fmt.python.ruff]\nline_length = 100\n",
+        "[components]\ndisable = [\"ruby\"]\n[engines.ruff]\nenabled = true\n",
+    ] {
+        let (error, warnings) = findings(source);
+        assert!(
+            error.is_none() && warnings.is_empty(),
+            "{source}: {error:?} {warnings:?}"
+        );
+    }
+}
+
+#[test]
+fn an_extends_base_engine_table_with_a_child_disable_loads_with_a_warning() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("base.toml"), "[engines.ruff]\nenabled = true\n").unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(
+        &path,
+        "extends = [\"base.toml\"]\n[components]\ndisable = [\"python\"]\n",
+    )
+    .unwrap();
+    let config = PolyConfig::load_file(&path).expect("a child disable over an inherited engine table loads");
+    let (error, warnings) = crate::v2::check_components(&config.components, &config.lint, &config.fmt, &config.engines);
+    assert!(error.is_none() && warnings.len() == 1, "{error:?} {warnings:?}");
 }
