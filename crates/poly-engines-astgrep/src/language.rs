@@ -92,8 +92,14 @@ impl TslpLanguage {
     /// Construct a `TslpLanguage` from a grammar name, returning `None` if TSLP
     /// does not recognise the name.
     pub fn new(name: &str) -> Option<Self> {
+        Self::try_new(name).ok()
+    }
+
+    /// Like [`TslpLanguage::new`], but says why a grammar is missing: unknown
+    /// to TSLP, or known and failing to download.
+    pub fn try_new(name: &str) -> Result<Self, poly_grammar::GrammarError> {
         let lowered = name.to_lowercase();
-        poly_grammar::language(&lowered).map(|_| TslpLanguage { name: lowered })
+        poly_grammar::try_language(&lowered).map(|_| TslpLanguage { name: lowered })
     }
 
     /// Grammar name (lowercase, as TSLP expects it).
@@ -105,11 +111,11 @@ impl TslpLanguage {
 impl<'de> Deserialize<'de> for TslpLanguage {
     fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         let raw = String::deserialize(de)?;
-        TslpLanguage::new(&raw).ok_or_else(|| {
-            serde::de::Error::custom(format!(
-                "unknown language '{}': not found in tree-sitter-language-pack",
-                raw
-            ))
+        TslpLanguage::try_new(&raw).map_err(|error| match error {
+            poly_grammar::GrammarError::Unknown(_) => serde::de::Error::custom(format!(
+                "unknown language '{raw}': not found in tree-sitter-language-pack"
+            )),
+            unavailable => serde::de::Error::custom(unavailable),
         })
     }
 }
