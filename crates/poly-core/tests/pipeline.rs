@@ -501,3 +501,39 @@ fn lint_names_unmatched_explicit_paths_alongside_a_directory() {
     expected.sort();
     assert_eq!(skipped_for(&mixed), expected);
 }
+
+#[test]
+fn lint_orders_a_files_diagnostics_identically_on_every_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let body: String = (0..12).map(|i| format!("// poly: allow[X{i}]\n")).collect();
+    write(dir.path(), "a.go", &format!("package main\n\n{body}func main() {{}}\n"));
+    let cfg = Config::default();
+    let opts = RunOptions {
+        no_cache: true,
+        jobs: Some(4),
+        explicit_config: true,
+        ..RunOptions::default()
+    };
+    let run = || {
+        let results = poly_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
+        results
+            .iter()
+            .flat_map(|r| &r.diagnostics)
+            .map(|d| {
+                (
+                    d.span.as_ref().map(|s| (s.start_line, s.start_col)),
+                    d.code.clone(),
+                    d.title.clone(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let first = run();
+    assert!(first.len() > 6, "the fixture must produce findings, got {first:?}");
+    let mut sorted = first.clone();
+    sorted.sort();
+    assert_eq!(first, sorted, "findings must come out ordered by location");
+    for _ in 0..5 {
+        assert_eq!(run(), first);
+    }
+}

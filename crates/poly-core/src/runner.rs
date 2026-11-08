@@ -247,6 +247,9 @@ pub fn lint_run(
         fix_mode,
     );
     linted.sort_by(|a, b| a.path.cmp(&b.path));
+    for result in &mut linted {
+        crate::filter::sort_diagnostics(&mut result.diagnostics);
+    }
     // Taken before the filter below, which keeps only files with something to
     // report: a skipped file has nothing to report and would be dropped, which
     // is how it became invisible in the first place.

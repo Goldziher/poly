@@ -82,7 +82,7 @@ impl Engine for GraphQlEngine {
     }
 
     fn version(&self) -> &str {
-        "pretty_graphql-0.2.3+config2"
+        "pretty_graphql-0.2.3+config3"
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -91,6 +91,12 @@ impl Engine for GraphQlEngine {
         }
         if parse_query::<&str>(&src.content).is_ok() {
             return Ok(Vec::new());
+        }
+
+        match crate::graphql_mixed::check(&src.content) {
+            Some(Ok(())) => return Ok(Vec::new()),
+            Some(Err(message)) => return Ok(vec![syntax_diagnostic(message)]),
+            None => {}
         }
 
         let err_msg = if looks_like_schema(&src.content) {
@@ -105,24 +111,7 @@ impl Engine for GraphQlEngine {
             }
         };
 
-        let span = extract_location(&err_msg).map(|(line, col)| Span {
-            start_line: line,
-            start_col: col,
-            end_line: line,
-            end_col: col.saturating_add(1),
-        });
-
-        Ok(vec![Diagnostic {
-            engine: "graphql".to_string(),
-            code: Some("syntax".to_string()),
-            severity: Severity::Error,
-            title: err_msg,
-            description: None,
-            span,
-            url: None,
-            fix: vec![],
-            metadata: Default::default(),
-        }])
+        Ok(vec![syntax_diagnostic(err_msg)])
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
@@ -138,6 +127,26 @@ impl Engine for GraphQlEngine {
         } else {
             Ok(FormatOutput::Formatted(formatted))
         }
+    }
+}
+
+fn syntax_diagnostic(err_msg: String) -> Diagnostic {
+    let span = extract_location(&err_msg).map(|(line, col)| Span {
+        start_line: line,
+        start_col: col,
+        end_line: line,
+        end_col: col.saturating_add(1),
+    });
+    Diagnostic {
+        engine: "graphql".to_string(),
+        code: Some("syntax".to_string()),
+        severity: Severity::Error,
+        title: err_msg,
+        description: None,
+        span,
+        url: None,
+        fix: vec![],
+        metadata: Default::default(),
     }
 }
 

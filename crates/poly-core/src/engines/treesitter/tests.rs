@@ -254,34 +254,34 @@ fn rust_multiline_call_args_get_continuation_indent() {
     assert_eq!(text, expected, "Rust multi-line call args at +1 continuation depth");
 }
 
-/// `java` is deliberately excluded from `BRACE_FAMILY` (see its module doc):
-/// `tree-sitter-language-pack`'s pre-built per-platform grammar binaries are
-/// not guaranteed byte-identical across releases, so poly must not derive
-/// indentation from the java CST at all — only whitespace normalization,
-/// which has no grammar dependency and is deterministic across platforms.
-/// This locks in that a badly-indented java file is left with its original
-/// (bad) indentation rather than being bracket-reindented.
+/// Java is in `BRACE_FAMILY`: a badly indented class is reindented by bracket
+/// depth when `google-java-format` is absent.
 #[test]
-fn java_source_is_only_whitespace_normalized_never_bracket_reindented() {
+fn java_source_is_bracket_reindented() {
     let engine = TreeSitterEngine;
     let input = concat!(
         "class Foo {\n",
         "void method() {\n",
         "String result = SomeClass.longMethodName(\n",
         "arg1,\n",
-        "arg2,\n",
-        "arg3\n",
+        "arg2\n",
         ");\n",
         "}\n",
         "}\n",
     );
+    let expected = concat!(
+        "class Foo {\n",
+        "    void method() {\n",
+        "        String result = SomeClass.longMethodName(\n",
+        "            arg1,\n",
+        "            arg2\n",
+        "        );\n",
+        "    }\n",
+        "}\n",
+    );
     let s = src("Test.java", Language::Other("java".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
-    assert_eq!(
-        text, input,
-        "java must never be bracket-reindented; input already has no trailing whitespace or \
-         line-ending issues, so whitespace normalization must return it byte-identical"
-    );
+    assert_eq!(text, expected);
 }
 
 /// `csharp` is deliberately excluded from `BRACE_FAMILY` for the same reason
@@ -1261,4 +1261,26 @@ fn layout_significant_grammars_still_get_whitespace_normalization() {
     );
     let out = engine.format(&s, &cfg(2)).unwrap();
     assert_eq!(formatted_text(out, &s.content), "def f():\n    return 1\n");
+}
+
+/// Code a canonical formatter already accepts must come through the fallback untouched: method
+/// chains and let-chains sit deeper than bracket depth, and a fallback that flattens them turns a
+/// clean tree into a diff. The fixtures are verbatim rustfmt / gofmt output.
+#[test]
+fn rustfmt_clean_source_is_left_byte_identical() {
+    let input = include_str!("testdata/rustfmt_clean.rs.txt");
+    let s = src("api.rs", Language::Other("rust".into()), input);
+    let text = formatted_text(TreeSitterEngine.format(&s, &cfg(4)).unwrap(), input);
+    assert!(text == input, "fallback rewrote rustfmt-clean source");
+}
+
+#[test]
+fn gofmt_clean_source_is_left_byte_identical() {
+    let input = include_str!("testdata/gofmt_clean.go.txt");
+    let s = src("merge.go", Language::Other("go".into()), input);
+    let text = formatted_text(TreeSitterEngine.format(&s, &cfg(4)).unwrap(), input);
+    assert!(
+        text == input,
+        "fallback rewrote gofmt-clean source (case labels align with switch)"
+    );
 }

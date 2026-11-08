@@ -44,7 +44,7 @@ use poly_engine_api::rule_config::RuleSelection;
 /// Cache-key version: `dotenv-analyzer` + `dotenv-core` crate versions, plus a
 /// marker for this backend's own line-entry construction / rendering logic.
 /// Bump whenever either crate is updated OR the mapping logic changes.
-const DOTENV_VERSION: &str = "dotenv-analyzer-0.1.1+core-0.1.1+map1";
+const DOTENV_VERSION: &str = "dotenv-analyzer-0.1.1+core-0.1.1+map2";
 
 /// Every [`LintKind`] variant, used to translate a `select`/`ignore` rule
 /// selection (an inclusion/exclusion vocabulary) into the crate's own
@@ -265,7 +265,7 @@ fn warning_to_diagnostic(entries: &[LineEntry], selection: &RuleSelection, warni
         engine: "dotenv".to_owned(),
         code: Some(code),
         severity,
-        title: warning.message().to_owned(),
+        title: tidy_message(warning.message()),
         description: None,
         span: Some(Span {
             start_line: line,
@@ -277,6 +277,12 @@ fn warning_to_diagnostic(entries: &[LineEntry], selection: &RuleSelection, warni
         fix: Vec::new(),
         metadata: std::collections::BTreeMap::new(),
     }
+}
+
+/// Collapse runs of whitespace: a key written `B = 4` is reported as `B ` (trailing space kept), which
+/// leaves a double space in messages such as "The B  key should go before the a key".
+fn tidy_message(message: &str) -> String {
+    message.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
@@ -331,6 +337,20 @@ mod tests {
         let content = "FOO=BAR\nBAZ=QUX";
         let entries = build_line_entries(content);
         assert_eq!(render_line_entries(&entries), content);
+    }
+
+    #[test]
+    fn messages_do_not_carry_the_whitespace_of_a_spaced_key() {
+        let diags = DotenvEngine.lint(&make_src("a=1\nB = 4\n"), &engine_cfg()).unwrap();
+        let unordered: Vec<_> = diags
+            .iter()
+            .filter(|d| d.code.as_deref() == Some("UnorderedKey"))
+            .collect();
+        assert!(
+            !unordered.is_empty(),
+            "the fixture must trigger UnorderedKey: {diags:?}"
+        );
+        assert!(unordered.iter().all(|d| !d.title.contains("  ")), "{unordered:?}");
     }
 
     #[test]

@@ -63,25 +63,17 @@ static LANGUAGES: &[Language] = &[];
 /// languages. Everything else falls back to whitespace normalization, so a
 /// layout-significant language (YAML, Python-likes) is never reflowed.
 ///
-/// `java` and `csharp` are deliberately excluded: `csharp`'s tree-sitter
-/// external scanner (`scanner.c`) classifies characters via libc wide-ctype
-/// functions (`iswalpha`/`iswalnum`/`iswspace` from `<wctype.h>`) to skip
-/// whitespace and scan identifiers around verbatim/raw/interpolated string
-/// literals. macOS libc and glibc disagree on these functions for non-ASCII
-/// codepoints under the same locale (e.g. U+00A0 NBSP is whitespace under
-/// macOS's `iswspace` but not glibc's), so the *same source bytes* tokenize
-/// differently per platform, producing a different CST and therefore a
-/// different bracket-depth reindent from the below (itself a pure,
-/// deterministic Vec-based computation with no HashMap/HashSet involved —
-/// the divergence is upstream of it, in the compiled grammar). `java`'s
-/// grammar has no external scanner and no libc dependency, so poly cannot
-/// point to the same mechanism there; `tree-sitter-language-pack` gives no
-/// guarantee that its pre-built per-platform grammar binaries are otherwise
-/// byte-identical across releases, so both are routed to whitespace
-/// normalization, which has no grammar or libc dependency at all and is
-/// deterministic across platforms by construction.
+/// `csharp` is deliberately excluded: its tree-sitter external scanner
+/// (`scanner.c`) classifies characters via libc wide-ctype functions
+/// (`iswalpha`/`iswalnum`/`iswspace`) around verbatim/raw/interpolated string
+/// literals. macOS libc and glibc disagree on these for non-ASCII codepoints
+/// (e.g. U+00A0), so the same bytes tokenize differently per platform and the
+/// bracket-depth reindent would diverge. It is routed to whitespace
+/// normalization, which has no grammar or libc dependency. `java`'s grammar
+/// has no external scanner, so it is in the family.
 const BRACE_FAMILY: &[&str] = &[
-    "go", "c", "cpp", "kotlin", "rust", "scala", "swift", "php", "objc", "proto", "dart", "glsl", "hlsl", "cuda", "zig",
+    "go", "c", "cpp", "java", "kotlin", "rust", "scala", "swift", "php", "objc", "proto", "dart", "glsl", "hlsl",
+    "cuda", "zig",
 ];
 
 /// Grammar names for which **both `lint` and `format` are unconditional
@@ -173,7 +165,7 @@ impl Engine for TreeSitterEngine {
     }
 
     fn version(&self) -> &str {
-        "10+tslp1.24.0"
+        "11+tslp1.24.0"
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
@@ -373,6 +365,7 @@ fn collect_case_adjustments(
             case_body_extra,
         ),
         "csharp" => collect_switch_case_bodies(root, "switch_section", "switch_section", case_body_extra),
+        "go" => collect_go_case_adjustments(root, case_body_extra, case_label_dedent),
         _ => {}
     }
 }
@@ -404,6 +397,47 @@ fn collect_swift_case_adjustments(
     if cursor.goto_first_child() {
         loop {
             collect_swift_case_adjustments(&cursor.node(), case_body_extra, case_label_dedent);
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+    }
+}
+
+/// Go: gofmt aligns `case` / `default` labels with their `switch` / `select` keyword and indents
+/// the body one level deeper, so a label is pulled out of the enclosing braces' level while the
+/// statements after its `:` are put back.
+fn collect_go_case_adjustments(
+    root: &Node,
+    case_body_extra: &mut Vec<(usize, usize)>,
+    case_label_dedent: &mut Vec<(usize, usize)>,
+) {
+    if matches!(
+        root.kind().as_ref(),
+        "expression_case" | "default_case" | "type_case" | "communication_case"
+    ) {
+        case_label_dedent.push((root.start_byte(), root.end_byte()));
+        let mut after_colon = false;
+        let mut cursor = root.walk();
+        if cursor.goto_first_child() {
+            loop {
+                let child = cursor.node();
+                if after_colon {
+                    case_body_extra.push((child.start_byte(), child.end_byte()));
+                }
+                if child.kind() == ":" {
+                    after_colon = true;
+                }
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
+    }
+    let mut cursor = root.walk();
+    if cursor.goto_first_child() {
+        loop {
+            collect_go_case_adjustments(&cursor.node(), case_body_extra, case_label_dedent);
             if !cursor.goto_next_sibling() {
                 break;
             }
@@ -492,6 +526,19 @@ fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConf
             }
             first = false;
             out.push_str(line);
+            let d_line_start = d_cursor;
+            while d_cursor < delimiters.len() && delimiters[d_cursor].byte < line_end {
+                d_cursor += 1;
+            }
+            // A verbatim line (the tail of a raw string or block comment) can still close
+            // brackets opened before it, e.g. `` `}) ``; skipping them would leave the depth
+            // one level too deep for every line after it.
+            track_delimiters(
+                &delimiters[d_line_start..d_cursor],
+                line_idx,
+                &mut raw_stack,
+                &mut active_levels,
+            );
             byte += raw.len() + 1;
             continue;
         }
@@ -512,7 +559,8 @@ fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConf
         }
 
         let base = active_levels.len() as i32;
-        let structural_level = (base + facts.case_adjustment(line_start)).max(0) as usize;
+        let structural_level =
+            (base + facts.case_adjustment(line_start + (line.len() - line.trim_start().len()))).max(0) as usize;
         let level = if grammar_name == "kotlin" {
             structural_level.max(existing_indent_level(line, &unit))
         } else {
@@ -524,7 +572,14 @@ fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConf
         }
         first = false;
         let trimmed = line.trim();
-        if !trimmed.is_empty() {
+        let existing = &line[..line.len() - line.trim_start_matches([' ', '\t']).len()];
+        if !trimmed.is_empty() && existing.len() > level * unit.len() {
+            // Never dedent: the bracket model cannot see continuation lines (method chains,
+            // let-chains, wrapped expressions), which a canonical formatter indents deeper
+            // than bracket depth. Under-indented lines are still raised.
+            out.push_str(existing);
+            out.push_str(trimmed);
+        } else if !trimmed.is_empty() {
             let indent_bytes = level * unit.len();
             if indent_bytes <= max_indent.len() {
                 out.push_str(&max_indent[..indent_bytes]);
@@ -536,25 +591,30 @@ fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConf
             out.push_str(trimmed);
         }
 
-        for d in &line_delims[leading..] {
-            if d.open {
-                raw_stack.push(line_idx);
-            } else if let Some(open_line) = raw_stack.pop()
-                && let Some(pos) = active_levels.iter().position(|&x| x == open_line)
-            {
-                active_levels.remove(pos);
-            }
-        }
-
-        if raw_stack.contains(&line_idx) && !active_levels.contains(&line_idx) {
-            active_levels.push(line_idx);
-        }
+        track_delimiters(&line_delims[leading..], line_idx, &mut raw_stack, &mut active_levels);
 
         byte += raw.len() + 1;
     }
 
     apply_trailing_newline(&mut out, source, line_ending, cfg.globals.final_newline);
     out
+}
+
+/// Fold one line's delimiters into the open-bracket stack and the set of lines whose
+/// brackets are still open (one indent level each).
+fn track_delimiters(delims: &[Delimiter], line_idx: usize, raw_stack: &mut Vec<usize>, active_levels: &mut Vec<usize>) {
+    for d in delims {
+        if d.open {
+            raw_stack.push(line_idx);
+        } else if let Some(open_line) = raw_stack.pop()
+            && let Some(pos) = active_levels.iter().position(|&x| x == open_line)
+        {
+            active_levels.remove(pos);
+        }
+    }
+    if raw_stack.contains(&line_idx) && !active_levels.contains(&line_idx) {
+        active_levels.push(line_idx);
+    }
 }
 
 fn existing_indent_level(line: &str, unit: &str) -> usize {

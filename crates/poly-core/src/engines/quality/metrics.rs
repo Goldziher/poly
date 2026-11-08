@@ -9,9 +9,28 @@ use super::settings::Settings;
 use crate::engine::{Diagnostic, SourceFile};
 use crate::language::Language;
 
-/// `file-too-long`: a pure line count, so it applies to every language
+/// Whether a file's length is a code-quality signal. Prose and data formats grow by design (a
+/// changelog, a lock-like YAML, a JSON fixture) and are not split the way code is.
+pub fn file_length_applies(language: &Language) -> bool {
+    !matches!(
+        language,
+        Language::Markdown
+            | Language::Mdx
+            | Language::Yaml
+            | Language::Toml
+            | Language::Json
+            | Language::Jsonc
+            | Language::Dotenv
+            | Language::Ini
+    ) && !matches!(language, Language::Other(name) if matches!(name.as_str(), "text" | "csv" | "tsv" | "vimdoc" | "po" | "diff" | "properties"))
+}
+
+/// `file-too-long`: a pure line count, so it applies to every code language
 /// regardless of parse support (never deferred — see `family` module docs).
 pub fn check_file_too_long(src: &SourceFile, threshold: i64, out: &mut Vec<Diagnostic>) {
+    if !file_length_applies(&src.language) {
+        return;
+    }
     let lines = count_lines(&src.content);
     if (lines as i64) <= threshold {
         return;
