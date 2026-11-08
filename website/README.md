@@ -1,6 +1,6 @@
 # poly documentation site
 
-The [poly](https://github.com/Goldziher/poly) documentation, built with
+The [poly](https://github.com/Goldziher/polylint) documentation, built with
 [Astro](https://astro.build) and [Starlight](https://starlight.astro.build) and deployed to GitHub
 Pages at <https://goldziher.github.io/poly/>.
 

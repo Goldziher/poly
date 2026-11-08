@@ -65,7 +65,7 @@ and per-language CI jobs, and wants one gate instead.
 
    ```yaml title=".github/workflows/ci.yaml"
    - uses: actions/checkout@v4
-   - uses: Goldziher/poly@v0
+   - uses: Goldziher/polylint@v0
      with:
        version: from-config   # the release required_version in poly.toml allows
        components: auto       # pre-install and cache what this repository needs

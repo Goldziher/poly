@@ -1,16 +1,16 @@
 ---
-description: Use poly as the single lint/format gate instead of invoking ruff/oxlint/rustfmt directly — one poly.toml, poly hooks install, poly migrate, CI via the Goldziher/poly setup Action
+description: Use poly as the single lint/format gate instead of invoking ruff/oxlint/rustfmt directly — one poly.toml, poly hooks install, poly migrate, CI via the Goldziher/polylint setup Action
 name: poly-orchestrator
 license: MIT
 metadata:
     author: Goldziher
-    repository: https://github.com/Goldziher/poly
+    repository: https://github.com/Goldziher/polylint
 ---
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:a397e480d18dad14dc69c7d63f97ac72fcd8e9f1020c6308276d4ae7e6b11f2b
-Source-Hash: blake3:d423fda6aef47ec0661e9460a04f849c62839d8306d1a6e168cc1314db55f78b
+Content-Hash: blake3:66a8de93b3efbc9d03861d3d69c900fca23461aa4f64903b12670e459b16366a
+Source-Hash: blake3:ee175a52020d3c2a496fce6cf939500b91010d08bc917cda7ccb6774a6ec727d
 Schema-Version: v1
 -->
 
@@ -65,13 +65,13 @@ ast-grep rule pack, behind one binary, one config, and one report.
 
 ## CI
 
-`Goldziher/poly@v0` is a **setup** action: it installs the `poly` binary (with optional
+`Goldziher/polylint@v0` is a **setup** action: it installs the `poly` binary (with optional
 caching) and puts it on `PATH`. It does not run poly for you — invoke the commands yourself
 in following steps.
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: Goldziher/poly@v0        # inputs: version (latest, or from-config), config-file, components, cache, github-token
+- uses: Goldziher/polylint@v0        # inputs: version (latest, or from-config), config-file, components, cache, github-token
 - run: poly fmt .
 - run: poly lint --deny-skips .
 ```

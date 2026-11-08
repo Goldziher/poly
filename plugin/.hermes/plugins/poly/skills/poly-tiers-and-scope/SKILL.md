@@ -4,13 +4,13 @@ name: poly-tiers-and-scope
 license: MIT
 metadata:
     author: Goldziher
-    repository: https://github.com/Goldziher/poly
+    repository: https://github.com/Goldziher/polylint
 ---
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:2c681d000481edd63e0749daee13c03d18f147c3525386319b5ed99ac68ded23
-Source-Hash: blake3:d423fda6aef47ec0661e9460a04f849c62839d8306d1a6e168cc1314db55f78b
+Content-Hash: blake3:3669be5f247562d07d95b3f30d4d283f3c5e1ea6bdd363e664e2c450245ef8eb
+Source-Hash: blake3:ee175a52020d3c2a496fce6cf939500b91010d08bc917cda7ccb6774a6ec727d
 Schema-Version: v1
 -->
 

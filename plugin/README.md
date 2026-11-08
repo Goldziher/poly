@@ -5,8 +5,8 @@ five public skills and two prompts. Contributor rules and maintainer agents stay
 repository root and are excluded from this package. Install `poly` on PATH first: these
 bundles register `poly mcp` or teach CLI workflows; they do not install the executable.
 
-Claude Code installs the repository marketplace with `/plugin marketplace add Goldziher/poly`
-and `/plugin install poly@poly`. Codex uses `codex plugin marketplace add Goldziher/poly`
+Claude Code installs the repository marketplace with `/plugin marketplace add Goldziher/polylint`
+and `/plugin install poly@poly`. Codex uses `codex plugin marketplace add Goldziher/polylint`
 then `codex plugin add poly@poly`. Both marketplace indexes point to this directory.
 
 For local testing, clone the repository and use the generated files below:
@@ -31,7 +31,7 @@ publishing:
 - **`@goldziher/opencode-poly`** on npm — the OpenCode adapter plus the Pi skills and prompts.
   For OpenCode, `opencode plugin add @goldziher/opencode-poly`; for Pi,
   `pi install npm:@goldziher/opencode-poly`. Pi can also install from the Git repository with
-  `pi install git:github.com/Goldziher/poly`; the private root package manifest points to this
+  `pi install git:github.com/Goldziher/polylint`; the private root package manifest points to this
   directory's skills and prompts. Pi uses its bash tool to call the installed CLI; it does not
   register MCP.
 - **`poly-hermes-plugin`** on PyPI — the Hermes package.
@@ -49,7 +49,7 @@ all fourteen native MCP tools. Choose `list_tools` to inspect their request sche
 mutating tools (`lint_fix`, `format_write`, `cache_clean`, `components_install`,
 `components_uninstall`, `workspace_lint_fix`) modify files or caches and should only be used when the current task authorizes those changes.
 
-Public skills install independently with `npx skills add Goldziher/poly --skill poly-mcp`.
+Public skills install independently with `npx skills add Goldziher/polylint --skill poly-mcp`.
 Their source is `plugin/.ai-rulez/skills`; `mise run plugin:sync-skills --check` verifies the
 repository's `skills/` mirror, including resource bytes, namespaces and ownership.
 

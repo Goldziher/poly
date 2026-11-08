@@ -8,8 +8,8 @@
     "email": "nhirschfeld@gmail.com",
     "url": "https://github.com/Goldziher"
   },
-  "homepage": "https://github.com/Goldziher/poly",
-  "repository": "https://github.com/Goldziher/poly",
+  "homepage": "https://github.com/Goldziher/polylint",
+  "repository": "https://github.com/Goldziher/polylint",
   "license": "MIT",
   "keywords": [
     "linter",
@@ -37,7 +37,7 @@
         "displayName": "polylint",
         "longDescription": "polylint (the poly command) lints and formats a whole repository from one poly.toml. Its engines (ruff, oxc, biome, mago, sqruff, …) ship as signed components a core build downloads on first use; host tools such as rustfmt, gofmt and shellcheck run when installed; ecosystem tools run as opt-in recipes; a tree-sitter tier covers the rest. Its MCP server exposes lint/format/cache tools with structured JSON output.",
         "shortDescription": "One linter and formatter for every language, over MCP",
-        "websiteURL": "https://github.com/Goldziher/poly"
+        "websiteURL": "https://github.com/Goldziher/polylint"
       }
     }
   }

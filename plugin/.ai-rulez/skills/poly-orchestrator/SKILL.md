@@ -1,7 +1,7 @@
 ---
 type: Playbook
 title: Poly Orchestrator
-description: Use poly as the single lint/format gate instead of invoking ruff/oxlint/rustfmt directly — one poly.toml, poly hooks install, poly migrate, CI via the Goldziher/poly setup Action
+description: Use poly as the single lint/format gate instead of invoking ruff/oxlint/rustfmt directly — one poly.toml, poly hooks install, poly migrate, CI via the Goldziher/polylint setup Action
 x-ai-rulez:
   kind: skill
   id: poly-orchestrator
@@ -10,7 +10,7 @@ x-ai-rulez:
     license: MIT
     metadata:
       author: Goldziher
-      repository: https://github.com/Goldziher/poly
+      repository: https://github.com/Goldziher/polylint
 ---
 
 # poly as the Orchestrator
@@ -64,13 +64,13 @@ ast-grep rule pack, behind one binary, one config, and one report.
 
 ## CI
 
-`Goldziher/poly@v0` is a **setup** action: it installs the `poly` binary (with optional
+`Goldziher/polylint@v0` is a **setup** action: it installs the `poly` binary (with optional
 caching) and puts it on `PATH`. It does not run poly for you — invoke the commands yourself
 in following steps.
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: Goldziher/poly@v0        # inputs: version (latest, or from-config), config-file, components, cache, github-token
+- uses: Goldziher/polylint@v0        # inputs: version (latest, or from-config), config-file, components, cache, github-token
 - run: poly fmt .
 - run: poly lint --deny-skips .
 ```

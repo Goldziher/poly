@@ -4,13 +4,13 @@ name: poly-mcp
 license: MIT
 metadata:
     author: Goldziher
-    repository: https://github.com/Goldziher/poly
+    repository: https://github.com/Goldziher/polylint
 ---
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:6c31e1f5ea74423cf0f61265220d539d6333c0b6967a8baa23f3e94d799a91bc
-Source-Hash: blake3:d423fda6aef47ec0661e9460a04f849c62839d8306d1a6e168cc1314db55f78b
+Content-Hash: blake3:422fb9318db7715d1c421a5d935a7a0cdce9918dd0c8c78983801b3a3e2ff3b8
+Source-Hash: blake3:ee175a52020d3c2a496fce6cf939500b91010d08bc917cda7ccb6774a6ec727d
 Schema-Version: v1
 -->
 

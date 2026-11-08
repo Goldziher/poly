@@ -16,7 +16,7 @@ code and one cache.
 40+ languages and file formats with a dedicated tool · tree-sitter formatting for 300+ more · git hooks and
 commit linting · monorepo-aware config · MCP server and agent plugins
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/poly/ci.yaml?style=flat-square&cacheSeconds=300)](https://github.com/Goldziher/polylint/actions/workflows/ci.yaml)
+[![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/polylint/ci.yaml?style=flat-square&cacheSeconds=300)](https://github.com/Goldziher/polylint/actions/workflows/ci.yaml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-goldziher.github.io%2Fpolylint-blue?style=flat-square)](https://goldziher.github.io/polylint/)
 
@@ -61,7 +61,7 @@ affects. `--debug` prints per-file engine timing and cache hits.
 ## Quick start
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Goldziher/polylint/main/install.sh | sh
 poly lint            # lint everything; the first run fetches the engines this repository needs
 poly fmt --fix       # format everything
 poly hooks install   # run both on every commit, without pre-commit or lefthook
@@ -185,15 +185,15 @@ mirror the CLI.
 ## Installation
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh   # macOS, Linux
+curl -fsSL https://raw.githubusercontent.com/Goldziher/polylint/main/install.sh | sh   # macOS, Linux
 brew install Goldziher/tap/poly
 pnpm add --global @goldziher/polylint
 pip install polylint
-cargo binstall --git https://github.com/Goldziher/poly poly-cli
+cargo binstall --git https://github.com/Goldziher/polylint poly-cli
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/Goldziher/poly/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Goldziher/polylint/main/install.ps1 | iex
 scoop bucket add goldziher https://github.com/Goldziher/scoop-bucket
 scoop install poly
 ```
@@ -231,7 +231,7 @@ poly --offline lint .              # forbid every download (also POLY_OFFLINE=1)
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: Goldziher/poly@v0
+- uses: Goldziher/polylint@v0
   with:
     version: from-config # the release that `required_version` in poly.toml allows
     components: auto     # pre-install and cache the components this repository needs
@@ -291,7 +291,7 @@ commit = { stages = ["commit-msg"] }
 checked, skipped and errored files, so an agent can gate on what was actually verified.
 
 ```text
-/plugin marketplace add Goldziher/poly
+/plugin marketplace add Goldziher/polylint
 /plugin install poly@poly
 ```
 
