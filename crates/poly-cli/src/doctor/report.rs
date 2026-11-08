@@ -190,7 +190,12 @@ pub fn collect(explicit_config: Option<&Path>) -> DoctorReport {
     let loaded = load_config(explicit_config, &cwd);
     let hooks_findings = hooks_findings(&loaded, &cwd);
     let config = build_config_report(explicit_config, &cwd, &loaded);
-    let cache = build_cache_report();
+    let mut cache = build_cache_report();
+    // The cache root is resolved through the config, so a config that fails to load fails it too. Repeating
+    // that parse error here, and again in two findings, printed it four times.
+    if config.error.is_some() && cache.error.is_some() {
+        cache.error = Some("not resolved because the config failed to load".to_string());
+    }
     // The exclude scan needs the config that actually loaded, and the directory
     // that config's globs are anchored to — the config file's own directory, not
     // the working directory, so running `poly doctor` from a subdirectory still
@@ -339,7 +344,7 @@ fn diagnose(
     diagnose_path(resolution, path, &mut findings);
     diagnose_config(config, &mut findings);
     excludes::diagnose(excludes, &mut findings);
-    if let Some(error) = &cache.error {
+    if let Some(error) = cache.error.as_ref().filter(|_| config.error.is_none()) {
         findings.push(Finding {
             severity: Severity::Warning,
             summary: format!("the cache directory could not be resolved: {error}"),
@@ -435,9 +440,9 @@ fn shadowed_remedy(resolution: &Resolution, hidden: &PathEntry) -> String {
 
 /// Findings about the config in effect.
 fn diagnose_config(config: &ConfigReport, findings: &mut Vec<Finding>) {
-    if let Some(error) = &config.error {
+    if config.error.is_some() {
         findings.push(Finding::error(
-            format!("the config in effect could not be loaded: {error}"),
+            "the config in effect could not be loaded (the error is under `config`)".to_string(),
             "fix the reported file, or pass --config to point at a different one",
         ));
     }

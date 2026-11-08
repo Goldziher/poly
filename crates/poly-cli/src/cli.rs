@@ -43,8 +43,8 @@ enum Command {
     /// whole-project tools (cargo clippy and friends) against the live worktree
     /// even without --fix. poly asks them for check mode, but their own side
     /// effects — a refreshed lock file, a populated build or type-checker cache —
-    /// are not poly's to control. Pass --workspace never, or set `[lint] workspace =
-    /// false`, for a run that leaves the tree untouched.
+    /// are not poly's to control. Pass --workspace never, or set `[workspace] run =
+    /// "never"`, for a run that leaves the tree untouched.
     Lint(LintArgs),
     /// Format files (dry-run by default; use --fix to write in place).
     Fmt(FmtArgs),
@@ -78,10 +78,39 @@ enum Command {
 #[derive(clap::Args)]
 struct McpArgs {}
 
+/// Exit status of a process whose reader went away, as a shell reports death by SIGPIPE.
+const EXIT_BROKEN_PIPE: i32 = 141;
+
+/// How std's `failed printing to stdout` panic names a reader that went away: the Unix text, and the
+/// Windows codes `ERROR_BROKEN_PIPE` (109, "The pipe has been ended") and `ERROR_NO_DATA` (232).
+const BROKEN_PIPE_MARKERS: &[&str] = &["Broken pipe", "(os error 109)", "(os error 232)"];
+
+/// Make a closed stdout (`poly config schema | head`) end the run quietly.
+///
+/// `println!` panics when its reader is gone, and the default hook prints a backtrace-style message for
+/// what is the normal way a pager or `head` stops reading. Every command that prints shares this path, so
+/// one hook covers them all.
+fn exit_quietly_on_broken_pipe() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = info.payload();
+        let message = payload
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| payload.downcast_ref::<&str>().copied())
+            .unwrap_or_default();
+        if message.contains("failed printing to std") && BROKEN_PIPE_MARKERS.iter().any(|m| message.contains(m)) {
+            std::process::exit(EXIT_BROKEN_PIPE);
+        }
+        default_hook(info);
+    }));
+}
+
 /// Parses the process arguments and runs the requested `poly` subcommand.
 ///
 /// Call after any `poly_core::register_engine_provider` registration.
 pub fn main() -> ExitCode {
+    exit_quietly_on_broken_pipe();
     let arguments: Vec<OsString> = std::env::args_os().collect();
     // Emitted before clap parses, so `poly --version` — the command that
     // started two false bug reports against already-fixed code — is covered

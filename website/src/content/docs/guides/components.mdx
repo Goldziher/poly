@@ -229,8 +229,8 @@ a second run downloads nothing:
 
 Set `required_version` in `poly.toml` (for example `">=0.34, <0.35"`) to fix the poly version the
 Action installs, and with it every component: components are versioned in lock-step with poly, so
-there is no separate component lock to commit. The `poly` binary itself does not check
-`required_version`.
+there is no separate component lock to commit. `poly` itself refuses to load a config whose
+`required_version` the running binary does not satisfy.
 See [`ACTION_USAGE.md`](https://github.com/Goldziher/polylint/blob/main/ACTION_USAGE.md) for the inputs.
 
 <Aside type="note" title="MCP in a core build">

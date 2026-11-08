@@ -414,3 +414,36 @@ fn custom_pattern_notice_names_the_commit_rules_table() {
     assert_eq!(code(&clean), Some(0), "{}", stderr(&clean));
     assert!(clean.stderr.is_empty());
 }
+
+#[test]
+fn a_header_without_type_and_subject_says_what_shape_it_needs() {
+    let dir = tempdir().unwrap();
+    for message in ["added stuff", "feat:no space"] {
+        let output = poly_commit(dir.path(), &["--message", message]);
+        assert_eq!(output.status.code(), Some(1), "{message}");
+        let text = stderr(&output);
+        assert!(
+            text.contains("hint: the header must be `type(scope): subject`") && text.contains("space after the colon"),
+            "{message}: {text}"
+        );
+    }
+}
+
+#[test]
+fn a_plain_ai_banner_in_the_body_fails_like_the_trailer_form() {
+    let dir = tempdir().unwrap();
+    let output = poly_commit(
+        dir.path(),
+        &["--message", "feat: add login\n\nGenerated with Claude Code"],
+    );
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let opted_out = poly_commit(
+        dir.path(),
+        &[
+            "--no-ai-cleanup",
+            "--message",
+            "feat: add login\n\nGenerated with Claude Code",
+        ],
+    );
+    assert_eq!(opted_out.status.code(), Some(0), "{}", stderr(&opted_out));
+}

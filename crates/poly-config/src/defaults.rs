@@ -45,6 +45,14 @@ impl Default for GlobalDefaults {
     }
 }
 
+/// The keys `[defaults]` accepts, for reporting a misspelled one.
+pub const DEFAULTS_KEYS: &[&str] = &[
+    "line_length",
+    "line_ending",
+    "final_newline",
+    "trim_trailing_whitespace",
+];
+
 /// On-disk representation of `[defaults]`. `line_ending` is a string so the TOML
 /// stays human-friendly; it is normalized into [`LineEnding`] on load.
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]

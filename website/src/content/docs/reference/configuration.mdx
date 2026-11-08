@@ -73,7 +73,7 @@ key no engine reads. The v2 schema is committed as `schemas/poly-v2.schema.json`
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `required_version` | string | — | The poly versions this repository expects (`">=0.34, <0.35"`). Components version in lock-step with poly, so it selects them too. Read by the GitHub Action's `version: from-config`, which installs the newest release in the range, and written by `poly migrate --to-v2`; the `poly` binary does not check it. |
+| `required_version` | string | — | The poly versions this repository expects (`">=0.34, <0.35"`). Components version in lock-step with poly, so it selects them too. Read by the GitHub Action's `version: from-config`, which installs the newest release in the range, and written by `poly migrate --to-v2`. `poly` refuses to load a config the running version does not satisfy. |
 | `root` | boolean | `false` | Stop the upward config cascade here (a `.git` directory is an implicit boundary). Replaces v1's `[workspace] root`. |
 
 ## `[components]`
@@ -326,7 +326,7 @@ Reserved keys:
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `stages` | array | Default stages for builtin hooks that do not set their own. |
+| `stages` | array | Default stages for builtin hooks that do not set their own. `commit-msg` and `prepare-commit-msg` apply only to `commit`; a file-checking builtin runs there only when it lists the stage itself. |
 | `env` | table | Environment merged into every job. |
 | `sources` | array of tables | `[[hooks.sources]]` producer catalogs: `{ id, path \| git, revision, hooks }`. |
 | `snapshot_include` | string or array | Untracked paths pulled into the staged snapshot (ADR 0019). |

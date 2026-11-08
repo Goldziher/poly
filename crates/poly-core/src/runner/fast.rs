@@ -349,6 +349,11 @@ pub(super) fn lint_skip_reason(plan: &RunPlan, f: &DiscoveredFile, externally_li
     if let Some(Withdrawal::ComponentMissing(reason)) = plan.withdrawal(f.config_id, &f.language) {
         return Some(reason.clone());
     }
+    // Whatever the selection kept did run over the file and may have reported on it, so calling
+    // the file skipped would contradict its own findings: the caller asked for exactly those engines.
+    if matches!(plan.withdrawal(f.config_id, &f.language), Some(Withdrawal::Selection)) && !engine_plans.is_empty() {
+        return None;
+    }
     (!provides_language_lint(engine_plans) && !externally_linted.contains(&f.language)).then(|| {
         match plan.withdrawal(f.config_id, &f.language) {
             Some(withdrawal) => withdrawal.reason(),

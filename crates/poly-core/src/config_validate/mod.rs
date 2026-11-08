@@ -22,6 +22,8 @@ use crate::registry::{all_languages, engines_for};
 pub struct ConfigProblem {
     /// Dotted path of the offending table or key, e.g. `engines.mago.lint`; empty for the document.
     pub path: String,
+    /// The offending key inside `path`, when the problem is about one key.
+    pub key: Option<String>,
     /// What is wrong, with a suggestion when one is known.
     pub message: String,
 }
@@ -79,6 +81,7 @@ pub fn validate_source(source: &str) -> ValidationReport {
         }
         return report;
     }
+    check_defaults(&table, &mut report);
     let config: PolyConfigV2 = match toml::from_str(source) {
         Ok(config) => config,
         Err(error) => {
@@ -104,7 +107,39 @@ pub fn validate_source(source: &str) -> ValidationReport {
 fn problem(path: &str, message: String) -> ConfigProblem {
     ConfigProblem {
         path: path.to_string(),
+        key: None,
         message,
+    }
+}
+
+fn key_problem(path: &str, key: &str, message: String) -> ConfigProblem {
+    ConfigProblem {
+        key: Some(key.to_string()),
+        ..problem(path, message)
+    }
+}
+
+/// Report keys of `[defaults]` that the schema does not have.
+fn check_defaults(table: &toml::Table, report: &mut ValidationReport) {
+    let Some(defaults) = table.get("defaults").and_then(toml::Value::as_table) else {
+        return;
+    };
+    for key in defaults.keys() {
+        if poly_config::DEFAULTS_KEYS.contains(&key.as_str()) {
+            continue;
+        }
+        let known: Vec<String> = poly_config::DEFAULTS_KEYS.iter().map(|k| (*k).to_string()).collect();
+        let hint = near_miss_key(key, &known)
+            .map(|suggestion| format!(" Did you mean `{suggestion}`?"))
+            .unwrap_or_default();
+        report.problems.push(key_problem(
+            "defaults",
+            key,
+            format!(
+                "unknown option `{key}` in `[defaults]`: poly does not read it.{hint} Keys read: {}.",
+                known.join(", ")
+            ),
+        ));
     }
 }
 
@@ -301,8 +336,9 @@ impl Checker<'_> {
             if let Some(expected) = keys.iter().find_map(|k| k.expected_type(key, universal)) {
                 let expected = expected.describe();
                 let found = OptionType::describe_value(value);
-                self.report.problems.push(problem(
+                self.report.problems.push(key_problem(
                     path,
+                    key,
                     format!("invalid value for `{key}` in `[{path}]`: expected {expected}, found {found}"),
                 ));
                 continue;
@@ -330,8 +366,9 @@ impl Checker<'_> {
                 .find_map(|k| k.note())
                 .map(|note| format!(" {note}"))
                 .unwrap_or_default();
-            self.report.problems.push(problem(
+            self.report.problems.push(key_problem(
                 path,
+                key,
                 format!(
                     "unknown option `{key}` in `[{path}]`: the {} engine does not read it.{hint} Keys read: {}.{note}",
                     self.id,

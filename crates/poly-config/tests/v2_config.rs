@@ -8,7 +8,7 @@ use poly_config::v2::{
 };
 
 const EPIC_EXAMPLE: &str = r#"
-required_version = ">=2.0, <3"
+required_version = ">=0.1, <3"
 root = true
 
 [components]
@@ -51,7 +51,7 @@ fn table(text: &str) -> toml::Table {
 fn should_parse_the_epic_example() {
     let config: PolyConfigV2 = toml::from_str(EPIC_EXAMPLE).expect("the epic example is valid v2");
 
-    assert_eq!(config.required_version.as_deref(), Some(">=2.0, <3"));
+    assert_eq!(config.required_version.as_deref(), Some(">=0.1, <3"));
     assert!(config.root);
     assert_eq!(
         config.components.enable,

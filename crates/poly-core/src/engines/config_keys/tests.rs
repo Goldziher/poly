@@ -893,3 +893,34 @@ fn the_check_is_wired_into_the_registry_for_toml() {
         "the poly.toml schema backend is not registered for TOML"
     );
 }
+
+#[test]
+fn lint_reports_misspelled_v2_engine_keys_and_defaults_keys_with_a_span() {
+    let source = "[defaults]\nline_lenght = 100\n\n[engines.ruff]\nselct = [\"E\"]\n\n[engines.typos]\nzz = 1\n";
+    let diagnostics = check_source(source);
+    let at = |needle: &str| {
+        diagnostics
+            .iter()
+            .find(|d| d.title.contains(needle))
+            .unwrap_or_else(|| panic!("no finding for {needle}: {diagnostics:#?}"))
+    };
+    assert_eq!(at("selct").code.as_deref(), Some("unknown-config-key"));
+    assert_eq!(at("selct").span.map(|s| s.start_line), Some(5));
+    assert_eq!(at("zz").span.map(|s| s.start_line), Some(8));
+    assert_eq!(at("line_lenght").span.map(|s| s.start_line), Some(2));
+    assert!(diagnostics.iter().all(|d| d.severity == Severity::Warning));
+}
+
+#[test]
+fn lint_reports_a_misspelled_defaults_key_in_a_v1_document() {
+    let diagnostics = check_source("[defaults]\nline_lenght = 100\n\n[lint.python.ruff]\nselect = [\"E\"]\n");
+    assert!(
+        diagnostics.iter().any(|d| d.title.contains("line_lenght")),
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
+fn a_correct_v2_document_has_no_findings() {
+    assert!(check_source("[defaults]\nline_length = 100\n\n[engines.ruff]\nselect = [\"E\"]\n").is_empty());
+}

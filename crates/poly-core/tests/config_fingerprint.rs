@@ -130,3 +130,15 @@ fn a_monorepo_run_fingerprints_each_config_and_names_its_root() {
         assert!(result.config < run.configs.len(), "result names a real config");
     }
 }
+
+/// A repo with one root `poly.toml` reports one config, with no `root` (the run's own directory is
+/// reported by omission), and every result points at it.
+#[test]
+fn a_single_root_config_is_reported_once_and_without_a_root() {
+    let dir = repo("[defaults]\nline_length = 120\n");
+    write(&dir.path().join("notes.txt"), "this is a tpyo in a sentense\n");
+    let run = run(dir.path());
+    assert_eq!(run.configs.len(), 1, "{:?}", run.configs);
+    assert_eq!(run.configs[0].root, None, "the root config carries no root");
+    assert!(run.results.iter().all(|result| result.config == 0), "{:?}", run.results);
+}

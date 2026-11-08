@@ -357,3 +357,19 @@ fn the_warning_can_be_silenced() {
         .expect("run poly");
     assert_eq!(stderr(&output), "", "POLY_NO_SHADOW_WARN silences the warning");
 }
+
+#[test]
+fn a_broken_config_error_is_printed_once() {
+    let repo = tempfile::tempdir().expect("tempdir");
+    std::fs::write(repo.path().join("poly.toml"), "x = = broken\n").unwrap();
+    let output = Command::new(POLY)
+        .current_dir(repo.path())
+        .env(PROBE_TIMEOUT_ENV.0, PROBE_TIMEOUT_ENV.1)
+        .env("POLY_NO_SHADOW_WARN", "1")
+        .args(["doctor", "--color", "never"])
+        .output()
+        .expect("run poly");
+    assert_eq!(output.status.code(), Some(1), "a broken config is an error finding");
+    let text = stdout(&output);
+    assert_eq!(text.matches("extra `=`, expected nothing").count(), 1, "{text}");
+}

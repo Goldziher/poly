@@ -63,7 +63,8 @@ fn render_lint_core(
         let _ = writeln!(out, "{}", theme.heading(r.path.display()));
         for d in &r.diagnostics {
             total += 1;
-            if !d.fix.is_empty() {
+            // `--fix` leaves a generated file alone, so its fixes are not on offer.
+            if !d.fix.is_empty() && !r.fix_withheld_generated {
                 fixable += 1;
             }
             let mut segments: Vec<String> = Vec::with_capacity(5);
@@ -120,8 +121,10 @@ fn render_lint_core(
             out,
             "{}",
             theme.skipped(format!(
-                "  {} not fixed because they are generated (pass `--fix-generated` to include them)",
-                files(withheld)
+                "  {} not fixed because {} generated (pass `--fix-generated` to include {})",
+                files(withheld),
+                if withheld == 1 { "it is" } else { "they are" },
+                if withheld == 1 { "it" } else { "them" }
             ))
         );
     }

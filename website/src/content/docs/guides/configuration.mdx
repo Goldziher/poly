@@ -29,8 +29,8 @@ workspace root down.
 
 ```toml title="poly.toml"
 # The poly version this repository expects (and with it every engine component).
-# The GitHub Action's `version: from-config` installs a release in this range;
-# the poly binary itself does not check it.
+# poly refuses to load the config when it is outside this range, and the GitHub
+# Action's `version: from-config` installs a release in it.
 required_version = ">=0.34, <0.35"
 
 [defaults]
