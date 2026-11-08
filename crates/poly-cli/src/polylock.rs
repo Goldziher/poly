@@ -1,5 +1,5 @@
-//! `poly.lock` — the single lock file for remote `extends` bases and Git hook
-//! sources (ADR 0038). It replaces `poly-config.lock` and `poly-hooks.lock`.
+//! `poly.lock` — the single lock file for remote `extends` bases, Git hook
+//! sources and downloadable tool releases (ADR 0038, ADR 0046). It replaces `poly-config.lock` and `poly-hooks.lock`.
 //!
 //! Entries are kept in a deterministic order so a re-lock of unchanged inputs
 //! rewrites the file byte for byte.
@@ -8,6 +8,8 @@ use std::path::Path;
 
 use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
+
+pub use poly_config::tool_lock::{LockedAsset, LockedTool};
 
 /// Repo-root lock file name.
 pub const LOCK_FILE_NAME: &str = "poly.lock";
@@ -63,6 +65,9 @@ pub struct PolyLock {
     /// Locked Git hook sources.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hook_sources: Vec<LockedHookSource>,
+    /// Downloadable `[tools]` pinned to a release, with every platform's SHA-256.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<LockedTool>,
 }
 
 impl Default for PolyLock {
@@ -71,6 +76,7 @@ impl Default for PolyLock {
             version: LOCK_VERSION,
             extends: Vec::new(),
             hook_sources: Vec::new(),
+            tools: Vec::new(),
         }
     }
 }
@@ -78,7 +84,7 @@ impl Default for PolyLock {
 impl PolyLock {
     /// Whether the lock records nothing (such a lock is never written to disk).
     pub fn is_empty(&self) -> bool {
-        self.extends.is_empty() && self.hook_sources.is_empty()
+        self.extends.is_empty() && self.hook_sources.is_empty() && self.tools.is_empty()
     }
 
     /// The locked object ID for an `(git, file, revision)` key, if recorded.
@@ -102,6 +108,15 @@ impl PolyLock {
             .sort_by(|a, b| (&a.git, &a.file, &a.revision, &a.locked).cmp(&(&b.git, &b.file, &b.revision, &b.locked)));
         self.hook_sources
             .sort_by(|a, b| (&a.id, &a.source, &a.revision).cmp(&(&b.id, &b.source, &b.revision)));
+        self.tools.sort_by(|a, b| a.name.cmp(&b.name));
+        for tool in &mut self.tools {
+            tool.assets.sort_by(|a, b| a.platform.cmp(&b.platform));
+        }
+    }
+
+    /// The locked entry for the tool called `name`, if recorded.
+    pub fn tool(&self, name: &str) -> Option<&LockedTool> {
+        self.tools.iter().find(|entry| entry.name == name)
     }
 
     /// Render the canonical file text (normalized order, generated header).
@@ -190,6 +205,22 @@ mod tests {
         }
     }
 
+    fn tool(name: &str) -> LockedTool {
+        LockedTool {
+            name: name.to_string(),
+            version: "1.2.3".to_string(),
+            assets: ["linux-x86_64", "darwin-aarch64"]
+                .iter()
+                .map(|platform| LockedAsset {
+                    platform: (*platform).to_string(),
+                    url: format!("https://example.invalid/{name}-{platform}"),
+                    sha256: "d".repeat(64),
+                    member: None,
+                })
+                .collect(),
+        }
+    }
+
     #[test]
     fn round_trips_and_orders_deterministically() {
         let dir = tempfile::tempdir().unwrap();
@@ -200,12 +231,14 @@ mod tests {
                 extends("https://a.invalid/a.git", "main"),
             ],
             hook_sources: vec![hook("zeta"), hook("alpha")],
+            tools: vec![tool("zig"), tool("actionlint")],
         };
         write(dir.path(), &lock).unwrap();
         let text = std::fs::read_to_string(dir.path().join(LOCK_FILE_NAME)).unwrap();
         assert!(text.starts_with(HEADER));
         assert!(text.find("a.invalid").unwrap() < text.find("z.invalid").unwrap());
         assert!(text.find("alpha").unwrap() < text.find("zeta").unwrap());
+        assert!(text.find("actionlint").unwrap() < text.find("\"zig\"").unwrap());
 
         let read_back = read(dir.path()).unwrap().unwrap();
         let mut expected = lock.clone();
