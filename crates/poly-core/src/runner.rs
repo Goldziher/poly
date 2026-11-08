@@ -29,7 +29,7 @@ mod generated;
 mod lint_pass;
 mod plan;
 mod project;
-pub(crate) use project::without_owning;
+pub(crate) use project::ancestor_pairs;
 pub(crate) mod selection;
 mod skips;
 mod types;

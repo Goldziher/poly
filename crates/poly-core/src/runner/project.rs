@@ -173,12 +173,35 @@ pub(super) fn ancestor_configs(configs: &ConfigSet, paths: &[PathBuf]) -> Vec<us
         .collect()
 }
 
-/// `ids` without the configs that own a file of the run. A config that owns files is planned for its own
-/// languages, so only a config owning none counts as an ancestor; the component pre-plan and the project
-/// planner both draw that line here.
-pub(crate) fn without_owning(ids: Vec<usize>, files: &[DiscoveredFile]) -> Vec<usize> {
-    let owning: FxHashSet<usize> = files.iter().map(|file| file.config_id).collect();
-    ids.into_iter().filter(|id| !owning.contains(id)).collect()
+/// The `(config, language)` pairs a whole-tree engine is additionally planned for: every config at or above
+/// a named path, over each language of the run it does not already own.
+///
+/// A config that owns files is planned for its own languages, yet a mixed run (`poly lint README.md
+/// packages/a/x.ts`) must still judge the TypeScript the nested config owns from that config's outer
+/// scope, as `poly lint .` does. An owner reaches only the languages that a file under another config has,
+/// since there is nothing else for it to supersede; a config owning no file of the run reaches every
+/// language, as it has no files of its own. The component pre-plan and the project planner both draw the
+/// pairs here.
+pub(crate) fn ancestor_pairs(
+    ancestors: &[usize],
+    files: &[DiscoveredFile],
+    owned: &FxHashSet<(usize, Language)>,
+) -> Vec<(usize, Language)> {
+    let owning: FxHashSet<usize> = owned.iter().map(|(id, _)| *id).collect();
+    let languages: FxHashSet<&Language> = files.iter().map(|file| &file.language).collect();
+    let mut pairs = Vec::new();
+    for &id in ancestors {
+        for &language in &languages {
+            let reached = !owning.contains(&id)
+                || files
+                    .iter()
+                    .any(|file| file.config_id != id && &file.language == language);
+            if reached && !owned.contains(&(id, language.clone())) {
+                pairs.push((id, language.clone()));
+            }
+        }
+    }
+    pairs
 }
 
 /// The project engines that apply to this run: those that declare the capability, are not
@@ -197,17 +220,9 @@ fn plan_project_engines(
     paths: &[PathBuf],
     index: &ComponentIndex,
 ) -> (Vec<ProjectPlan>, Vec<LintError>, Vec<SkippedFile>) {
-    let mut scopes: Vec<(usize, Language)> = files
-        .iter()
-        .map(|f| (f.config_id, f.language.clone()))
-        .collect::<FxHashSet<_>>()
-        .into_iter()
-        .collect();
-    let owning: FxHashSet<usize> = scopes.iter().map(|(id, _)| *id).collect();
-    let languages: FxHashSet<Language> = scopes.iter().map(|(_, language)| language.clone()).collect();
-    for id in without_owning(ancestor_configs(configs, paths), files) {
-        scopes.extend(languages.iter().map(|language| (id, language.clone())));
-    }
+    let owned: FxHashSet<(usize, Language)> = files.iter().map(|f| (f.config_id, f.language.clone())).collect();
+    let mut scopes: Vec<(usize, Language)> = owned.iter().cloned().collect();
+    scopes.extend(ancestor_pairs(&ancestor_configs(configs, paths), files, &owned));
     scopes.sort_by(|a, b| (a.0, a.1.id()).cmp(&(b.0, b.1.id())));
     let extras: Vec<Arc<dyn Engine>> = EXTRA_ENGINES.lock().unwrap_or_else(PoisonError::into_inner).clone();
     let mut seen: FxHashSet<(usize, &'static str)> = FxHashSet::default();
@@ -217,7 +232,7 @@ fn plan_project_engines(
     let mut errored: FxHashSet<(usize, String)> = FxHashSet::default();
     let mut checked_tables: FxHashSet<(usize, String)> = FxHashSet::default();
     for (config_id, language) in &scopes {
-        let ancestor = !owning.contains(config_id);
+        let ancestor = !owned.contains(&(*config_id, language.clone()));
         let registered = engines_for(language)
             .into_iter()
             .filter(|engine| engine.capabilities().project)
