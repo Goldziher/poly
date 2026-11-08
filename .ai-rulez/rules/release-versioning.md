@@ -17,7 +17,7 @@ installer**. The channels are the `curl | sh` / PowerShell installer (`install.s
 same `install.sh`), Homebrew (`brew install Goldziher/tap/poly`), Scoop
 (`Goldziher/scoop-bucket`, `scoop install poly`), **npm (`@goldziher/polylint`)** and **PyPI
 (`polylint`)**. The release artifacts are named `poly-<version>-<triple>.tar.gz` (`.zip` on
-Windows), six targets, plus a `sha256sums.txt`; every other channel serves those same archives.
+Windows), five targets, plus a `sha256sums.txt`; every other channel serves those same archives.
 We do **NOT publish to crates.io** — our crates depend on pinned git dependencies (**oxc, biome,
 rubyfmt** — see the `allow-git` lists in `deny.toml` and `components/deny.toml`), which crates.io forbids in published crates, and we
 have no need for a source-distribution channel. Ruff is **not** a git pin: since 2026-08-29 the
@@ -39,7 +39,7 @@ crates inherit it via `version.workspace = true`. `plugin/.ai-rulez/config.plugi
 `plugin/.codex-plugin/plugin.json` move with it. The root marketplace resolves that member
 bundle. The plugin (ADR 0022) is one more
 lock-step surface, not a separately tracked version. So do the wrapper packages:
-`npm-package/package.json` **and each of its six exact `optionalDependencies` pins**, the six
+`npm-package/package.json` **and each of its five exact `optionalDependencies` pins**, the five
 `npm-package/platforms/*/package.json` files, `pip-package/pyproject.toml`, and
 `pip-package/polylint/__init__.py`.
 
@@ -48,14 +48,14 @@ lock-step surface, not a separately tracked version. So do the wrapper packages:
 - Tags MUST be `v<version>` (e.g. `v0.1.0`); `.github/workflows/publish.yaml` triggers on
   `v[0-9]+.*` and builds from the tagged commit, failing the run if the tag and the
   `Cargo.toml` version disagree.
-- The release workflow cross-compiles the six platform archives (linux gnu/musl x86_64,
-  linux gnu aarch64, macOS x86_64/aarch64, windows-msvc x86_64), verifies all six are present,
+- The release workflow cross-compiles the five platform archives (linux gnu/musl x86_64,
+  linux gnu aarch64, macOS aarch64, windows-msvc x86_64; Intel macOS is not shipped, ADR 0046), verifies all five are present,
   then uploads `sha256sums.txt` and un-drafts the release. The installers and the GitHub Action
   fetch the archive matching the host.
 - **Homebrew installs the prebuilt archives, like every other channel.**
   `mise run release:homebrew-formula` emits a **binary** formula — `version` plus
-  `on_macos`/`on_linux` x `on_arm`/`on_intel` blocks naming the four archives Homebrew can use
-  (macOS and Linux, arm64 and x86_64), then `bin.install "poly"` and the `polylint` symlink. The
+  `on_macos`/`on_linux` blocks naming the three archives Homebrew can use
+  (macOS arm64, Linux arm64 and x86_64; the `on_macos` block adds `depends_on arch: :arm64`), then `bin.install "poly"` and the `polylint` symlink. The
   hashes are read from the release's own `sha256sums.txt` and never recomputed, for the same
   reason the Scoop manifest does it. There is no `depends_on "rust"` and no `bottle do` block;
   the tap's `auto-bottle.yml` skips any formula declaring neither `system "cargo"` nor
@@ -63,12 +63,12 @@ lock-step surface, not a separately tracked version. So do the wrapper packages:
 
   This replaced a source-build formula, and the reasons are worth keeping: a source build meant a
   full cargo compile of ruff + oxc + biome + mago + tree-sitter for every user the tap's bottler
-  did not cover, and its runner matrix has **no Intel macOS**, so those users compiled on every
-  install. Even where bottles did land they arrived ~25 minutes after the formula, leaving a
+  did not cover, and its runner matrix had no Intel macOS, so those users compiled on every
+  install (Intel macOS is no longer shipped at all, ADR 0046). Even where bottles did land they arrived ~25 minutes after the formula, leaving a
   window in which `brew install` built from source anyway. Download and extract measures **2.2 s**
   against that. Six of the ten formulae in `Goldziher/homebrew-tap` already worked this way, so
   poly was the outlier, not the pattern.
-- **The wrapper packages ship the release's own binaries, never a rebuild.** pnpm publishes six
+- **The wrapper packages ship the release's own binaries, never a rebuild.** pnpm publishes five
   per-platform packages (`os`/`cpu`/`libc`-gated, pulled in through `optionalDependencies` —
   no `postinstall` download) and PyPI publishes per-platform wheels carrying the binary as
   package data, plus a `py3-none-any` fallback whose only job is to explain itself on an

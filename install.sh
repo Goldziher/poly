@@ -68,7 +68,10 @@ esac
 
 ext="tar.gz"
 case "$uname_s" in
-Darwin) target="${arch}-apple-darwin" ;;
+Darwin)
+  [ "$arch" = "aarch64" ] || die "no prebuilt binary for Intel macOS (x86_64); build from source: https://github.com/${REPO}#installation"
+  target="${arch}-apple-darwin"
+  ;;
 Linux)
   if (ldd --version 2>&1 | grep -qi musl) || [ -e /lib/ld-musl-"${uname_m}".so.1 ]; then
     target="${arch}-unknown-linux-musl"

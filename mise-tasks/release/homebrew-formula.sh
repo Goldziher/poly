@@ -8,16 +8,16 @@ set -euo pipefail
 # mise run release:homebrew-formula <version> <sha256sums-file> [release-repo]  ~keep
 #
 # Emits a *prebuilt-binary* Homebrew formula for poly to stdout, pointing at the
-# four release archives Homebrew can use (macOS and Linux, arm64 and x86_64).
+# three release archives Homebrew can use (macOS arm64, Linux arm64 and x86_64). Intel macOS has
+# no archive (ADR 0046), so the formula declares macOS arm64 only.
 # The musl and Windows archives the release also carries are irrelevant here.
 #
-# Why binary rather than a source build. The release already publishes six
+# Why binary rather than a source build. The release already publishes five
 # checksummed archives that the installer, the GitHub Action, Scoop, npm and
 # PyPI all serve; Homebrew was the only channel that ignored them and
 # recompiled. That cost users a full cargo build of ruff + oxc + biome + mago +
 # tree-sitter behind depends_on "rust"/"llvm", and the tap's bottle pipeline did
-# not cover it: its runner matrix has no Intel macOS, so those users compiled
-# every time, and each release left a ~25 minute window in which no bottle
+# not cover it: each release left a ~25 minute window in which no bottle
 # existed at all. Six of the ten formulae in Goldziher/homebrew-tap already
 # install prebuilt binaries this way; poly now matches them.
 #
@@ -67,12 +67,10 @@ hash_for() {
 }
 
 MACOS_ARM_ASSET="poly-${VERSION}-aarch64-apple-darwin.tar.gz"
-MACOS_INTEL_ASSET="poly-${VERSION}-x86_64-apple-darwin.tar.gz"
 LINUX_ARM_ASSET="poly-${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
 LINUX_INTEL_ASSET="poly-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
 
 MACOS_ARM_SHA="$(hash_for "$MACOS_ARM_ASSET")"
-MACOS_INTEL_SHA="$(hash_for "$MACOS_INTEL_ASSET")"
 LINUX_ARM_SHA="$(hash_for "$LINUX_ARM_ASSET")"
 LINUX_INTEL_SHA="$(hash_for "$LINUX_INTEL_ASSET")"
 
@@ -99,10 +97,9 @@ class Poly < Formula
       url "@@BASE_URL@@/@@MACOS_ARM_ASSET@@"
       sha256 "@@MACOS_ARM_SHA@@"
     end
-    on_intel do
-      url "@@BASE_URL@@/@@MACOS_INTEL_ASSET@@"
-      sha256 "@@MACOS_INTEL_SHA@@"
-    end
+    # No Intel macOS archive is published; fail with a stated reason instead of an
+    # opaque missing-url error.
+    depends_on arch: :arm64
   end
 
   on_linux do
@@ -147,11 +144,9 @@ FORMULA="$(render | sed \
   -e "s|@@VERSION@@|${VERSION}|g" \
   -e "s|@@BASE_URL@@|${BASE_URL}|g" \
   -e "s|@@MACOS_ARM_ASSET@@|${MACOS_ARM_ASSET}|g" \
-  -e "s|@@MACOS_INTEL_ASSET@@|${MACOS_INTEL_ASSET}|g" \
   -e "s|@@LINUX_ARM_ASSET@@|${LINUX_ARM_ASSET}|g" \
   -e "s|@@LINUX_INTEL_ASSET@@|${LINUX_INTEL_ASSET}|g" \
   -e "s|@@MACOS_ARM_SHA@@|${MACOS_ARM_SHA}|g" \
-  -e "s|@@MACOS_INTEL_SHA@@|${MACOS_INTEL_SHA}|g" \
   -e "s|@@LINUX_ARM_SHA@@|${LINUX_ARM_SHA}|g" \
   -e "s|@@LINUX_INTEL_SHA@@|${LINUX_INTEL_SHA}|g")"
 
@@ -165,7 +160,7 @@ if printf '%s' "$FORMULA" | grep -q '@@'; then
   exit 1
 fi
 
-for expected in "$VERSION" "$MACOS_ARM_SHA" "$MACOS_INTEL_SHA" "$LINUX_ARM_SHA" "$LINUX_INTEL_SHA"; do
+for expected in "$VERSION" "$MACOS_ARM_SHA" "$LINUX_ARM_SHA" "$LINUX_INTEL_SHA"; do
   printf '%s' "$FORMULA" | grep -qF "$expected" || {
     echo "error: '${expected}' is missing from the generated formula" >&2
     exit 1

@@ -297,8 +297,6 @@ jobs:
           - triple: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             image: quay.io/pypa/manylinux_2_28_aarch64:2026.11.01-2@sha256:54b271d9562a3686298880df05367909e949ed317e7b1b79b59c696d75f78676
-          - triple: x86_64-apple-darwin
-            os: macos-26-intel
           - triple: aarch64-apple-darwin
             os: macos-26
           - triple: x86_64-pc-windows-msvc
@@ -582,8 +580,6 @@ jobs:
           - triple: x86_64-unknown-linux-musl
             os: ubuntu-latest
             alpine: true
-          - triple: x86_64-apple-darwin
-            os: macos-26-intel
           - triple: aarch64-apple-darwin
             os: macos-26
           - triple: x86_64-pc-windows-msvc
@@ -886,12 +882,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Expected archives for the 6 build targets
+          # Expected archives for the 5 build targets
           expected=(
             "poly-${{ needs.meta.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz"
             "poly-${{ needs.meta.outputs.version }}-x86_64-unknown-linux-musl.tar.gz"
             "poly-${{ needs.meta.outputs.version }}-aarch64-unknown-linux-gnu.tar.gz"
-            "poly-${{ needs.meta.outputs.version }}-x86_64-apple-darwin.tar.gz"
             "poly-${{ needs.meta.outputs.version }}-aarch64-apple-darwin.tar.gz"
             "poly-${{ needs.meta.outputs.version }}-x86_64-pc-windows-msvc.zip"
           )
@@ -905,11 +900,11 @@ jobs:
           done
 
           if [ $missing_count -gt 0 ]; then
-            echo "::error::Release is incomplete: $missing_count of 6 platform archives missing. The release must have all 6 binaries before checksums can be generated."
+            echo "::error::Release is incomplete: $missing_count of 5 platform archives missing. The release must have all 5 binaries before checksums can be generated."
             exit 1
           fi
 
-          echo "✓ All 6 expected archives present"
+          echo "✓ All 5 expected archives present"
 
       - name: Verify every component asset is present
         env:
@@ -1007,7 +1002,6 @@ jobs:
             "poly-${version}-x86_64-unknown-linux-gnu.tar.gz"
             "poly-${version}-x86_64-unknown-linux-musl.tar.gz"
             "poly-${version}-aarch64-unknown-linux-gnu.tar.gz"
-            "poly-${version}-x86_64-apple-darwin.tar.gz"
             "poly-${version}-aarch64-apple-darwin.tar.gz"
             "poly-${version}-x86_64-pc-windows-msvc.zip"
             "poly-components.lock.json"

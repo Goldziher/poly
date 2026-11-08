@@ -7,6 +7,12 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Removed
+
+- **Intel macOS.** The `x86_64-apple-darwin` archive, `@goldziher/polylint-darwin-x64`, the `macosx_10_12_x86_64` wheel, the
+  Homebrew Intel block and its component builds are gone; releases carry five platform archives. Intel Mac users build
+  from source. See [ADR 0046](adrs/0046-drop-intel-macos.md).
+
 ## [0.34.0] - 2026-11-08
 
 ### Added

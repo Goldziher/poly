@@ -35,7 +35,6 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 
 # The earliest macOS each Rust target supports. Rust's own defaults, and what
 # maturin stamps: bumping these lies to pip about what the binary will run on.
-MACOS_X86_64_MIN = "10_12"
 MACOS_ARM64_MIN = "11_0"
 
 # musl 1.2 is what the rust:alpine image the musl archive is built in ships, and
@@ -62,7 +61,6 @@ class Target:
 
 TARGETS = (
     Target("aarch64-apple-darwin", "tar.gz", "poly"),
-    Target("x86_64-apple-darwin", "tar.gz", "poly"),
     Target("aarch64-unknown-linux-gnu", "tar.gz", "poly"),
     Target("x86_64-unknown-linux-gnu", "tar.gz", "poly"),
     Target("x86_64-unknown-linux-musl", "tar.gz", "poly"),
@@ -119,8 +117,6 @@ def platform_tag(target: Target, binary: Path, component_minors: list[int] | Non
     On glibc Linux the minor version is the maximum over the core binary and every component
     built for the target (``component_minors``).
     """
-    if target.triple == "x86_64-apple-darwin":
-        return f"macosx_{MACOS_X86_64_MIN}_x86_64"
     if target.triple == "aarch64-apple-darwin":
         return f"macosx_{MACOS_ARM64_MIN}_arm64"
     if target.triple == "x86_64-pc-windows-msvc":
@@ -239,7 +235,10 @@ def host_target() -> Target:
     machine = platform.machine()
     system = platform.system()
     if system == "Darwin":
-        triple = "aarch64-apple-darwin" if machine == "arm64" else "x86_64-apple-darwin"
+        if machine != "arm64":
+            message = f"--local has no target mapping for {system}/{machine}"
+            raise SystemExit(message)
+        triple = "aarch64-apple-darwin"
     elif system == "Linux":
         triple = "aarch64-unknown-linux-gnu" if machine == "aarch64" else "x86_64-unknown-linux-gnu"
     else:

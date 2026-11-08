@@ -25,7 +25,6 @@ SRC="${ROOT_DIR}/components/sidecars/${NAME}"
 case "${TRIPLE}" in
 x86_64-unknown-linux-gnu) goos=linux goarch=amd64 ;;
 aarch64-unknown-linux-gnu) goos=linux goarch=arm64 ;;
-x86_64-apple-darwin) goos=darwin goarch=amd64 ;;
 aarch64-apple-darwin) goos=darwin goarch=arm64 ;;
 x86_64-pc-windows-msvc) goos=windows goarch=amd64 ;;
 *)
