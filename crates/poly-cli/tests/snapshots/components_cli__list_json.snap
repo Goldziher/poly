@@ -141,7 +141,8 @@ expression: json
       "opt_in": false,
       "engines": [
         "shfmt"
-      ]
+      ],
+      "detail": "not the sidecar: this build runs the host `shfmt` when it is on PATH, else the tree-sitter tier"
     },
     {
       "name": "mcp",
