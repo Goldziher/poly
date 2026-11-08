@@ -101,14 +101,14 @@ function unsupportedPlatformMessage() {
   return expected.length === 0
     ? `poly: no prebuilt binary is published for ${host}.\n\n` +
         `Supported platforms:\n${supported}\n\n` +
-        `Build from source instead: https://github.com/Goldziher/poly#installation`
+        `Build from source instead: https://github.com/Goldziher/polylint#installation`
     : `poly: the platform package for ${host} is not installed.\n\n` +
         `Expected one of: ${expected.join(", ")}\n\n` +
         `This usually means the install ran with optional dependencies disabled\n` +
         `(pnpm install --no-optional, or an offline cache that\n` +
         `predates this version). Reinstall with optional dependencies enabled:\n\n` +
         `  pnpm add @goldziher/polylint\n\n` +
-        `Or install poly directly: https://github.com/Goldziher/poly#installation`;
+        `Or install poly directly: https://github.com/Goldziher/polylint#installation`;
 }
 
 module.exports = { resolveBinaryPath, unsupportedPlatformMessage, PLATFORM_PACKAGES };

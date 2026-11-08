@@ -9,7 +9,7 @@ repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 publish = false
-description = "Core engine for the poly universal, zero-dependency linter & formatter"
+description = "Core engine of polylint, the universal polyglot linter and formatter"
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

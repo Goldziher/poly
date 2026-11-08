@@ -7,7 +7,7 @@
     "email": "nhirschfeld@gmail.com",
     "url": "https://github.com/Goldziher"
   },
-  "homepage": "https://github.com/Goldziher/poly",
+  "homepage": "https://github.com/Goldziher/polylint",
   "license": "MIT",
   "keywords": [
     "linter",
@@ -41,7 +41,7 @@
       "Apply poly's lint and format autofixes, then report what remains.",
       "Show poly's effective configuration for this repo."
     ],
-    "websiteURL": "https://github.com/Goldziher/poly",
+    "websiteURL": "https://github.com/Goldziher/polylint",
     "brandColor": "#F97316"
   }
 }

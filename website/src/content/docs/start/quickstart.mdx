@@ -145,7 +145,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Goldziher/poly@v0
+      - uses: Goldziher/polylint@v0
         with:
           components: auto   # pre-install and cache the components this repository needs
       - run: poly fmt .

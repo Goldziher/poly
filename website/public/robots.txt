@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://goldziher.github.io/poly/sitemap-index.xml
+Sitemap: https://goldziher.github.io/polylint/sitemap-index.xml

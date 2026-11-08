@@ -4,13 +4,13 @@ name: poly-overview
 license: MIT
 metadata:
     author: Goldziher
-    repository: https://github.com/Goldziher/poly
+    repository: https://github.com/Goldziher/polylint
 ---
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:9e5a0f18ed2071c6e6607090deb76281b8ce63da183ab45a7030ff788a8f2f07
-Source-Hash: blake3:d423fda6aef47ec0661e9460a04f849c62839d8306d1a6e168cc1314db55f78b
+Content-Hash: blake3:06c6c5ee1b63cdeca58dd7321947ba41b8b9668a10fc30e8e5277acaa67e743c
+Source-Hash: blake3:ee175a52020d3c2a496fce6cf939500b91010d08bc917cda7ccb6774a6ec727d
 Schema-Version: v1
 -->
 

@@ -4,7 +4,7 @@ import starlight from "@astrojs/starlight";
 import starlightLlmsTxt from "starlight-llms-txt";
 
 const SITE = "https://goldziher.github.io";
-const BASE = "/poly";
+const BASE = "/polylint";
 
 export default defineConfig({
   site: SITE,
@@ -21,9 +21,9 @@ export default defineConfig({
       },
       favicon: "/favicon.svg",
       customCss: ["./src/styles/custom.css"],
-      social: [{ icon: "github", label: "GitHub", href: "https://github.com/Goldziher/poly" }],
+      social: [{ icon: "github", label: "GitHub", href: "https://github.com/Goldziher/polylint" }],
       editLink: {
-        baseUrl: "https://github.com/Goldziher/poly/edit/main/website/",
+        baseUrl: "https://github.com/Goldziher/polylint/edit/main/website/",
       },
       head: [
         {

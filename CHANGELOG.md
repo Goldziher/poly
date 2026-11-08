@@ -7,6 +7,19 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Renamed the project to polylint.** The GitHub repository moves from `Goldziher/poly` to `Goldziher/polylint`, and
+  the documentation site from `goldziher.github.io/poly` to `goldziher.github.io/polylint`. The command is still
+  `poly` (with `polylint` as its alias), the config file is still `poly.toml`, and cache directories and internal
+  crate names are unchanged. The installers, release scripts, package manifests, plugin manifests and component
+  download template now name `Goldziher/polylint`. Homebrew publishes `Formula/polylint.rb`, Scoop publishes
+  `bucket/polylint.json`.
+- **Kept working after the rename.** `brew install Goldziher/tap/poly` (an alias plus a `formula_renames.json` entry),
+  `scoop install poly` (`bucket/poly.json` is still updated), `uses: Goldziher/poly@v0` and release downloads from
+  older binaries (GitHub redirects the old repository URL). The old documentation site path is not redirected:
+  `#:schema` URLs under `goldziher.github.io/poly/` need updating to `goldziher.github.io/polylint/`.
+
 ### Removed
 
 - **Intel macOS.** The `x86_64-apple-darwin` archive, `@goldziher/polylint-darwin-x64`, the `macosx_10_12_x86_64` wheel, the

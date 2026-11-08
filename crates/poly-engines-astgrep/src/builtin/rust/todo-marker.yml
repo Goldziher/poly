@@ -17,7 +17,7 @@ note: |
   Idea origin: the "warning comment" check that most linters offer in some
   form; the matching and the interaction note with `[lint.uncomment]` are
   poly's own.
-url: https://github.com/Goldziher/poly
+url: https://github.com/Goldziher/polylint
 rule:
   any:
     - kind: line_comment

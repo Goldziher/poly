@@ -25,10 +25,10 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/Goldziher/poly"
-Repository = "https://github.com/Goldziher/poly"
-Changelog = "https://github.com/Goldziher/poly/blob/main/CHANGELOG.md"
-Issues = "https://github.com/Goldziher/poly/issues"
+Homepage = "https://github.com/Goldziher/polylint"
+Repository = "https://github.com/Goldziher/polylint"
+Changelog = "https://github.com/Goldziher/polylint/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Goldziher/polylint/issues"
 
 # `poly` is the canonical command; `polylint` is an alias onto the same callable,
 # so someone who installed the distribution by its PyPI name gets a working

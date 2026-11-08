@@ -46,10 +46,10 @@ component. See [Components and offline use](/poly/guides/components/).
 
 <Tabs syncKey="installer">
     <TabItem label="Shell">
-        <Code code={`curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh`} lang="sh" />
+        <Code code={`curl -fsSL https://raw.githubusercontent.com/Goldziher/polylint/main/install.sh | sh`} lang="sh" />
     </TabItem>
     <TabItem label="PowerShell">
-        <Code code={`irm https://raw.githubusercontent.com/Goldziher/poly/main/install.ps1 | iex`} lang="powershell" />
+        <Code code={`irm https://raw.githubusercontent.com/Goldziher/polylint/main/install.ps1 | iex`} lang="powershell" />
     </TabItem>
 </Tabs>
 
@@ -57,13 +57,13 @@ Both detect the platform, download the matching release archive, and verify it a
 release's `sha256sums.txt`. Set `POLY_VERSION` to pin an exact release:
 
 ```sh
-POLY_VERSION=0.34.0 curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh
+POLY_VERSION=0.34.0 curl -fsSL https://raw.githubusercontent.com/Goldziher/polylint/main/install.sh | sh
 ```
 
 ## GitHub Actions
 
 ```yaml title=".github/workflows/ci.yaml"
-- uses: Goldziher/poly@v0
+- uses: Goldziher/polylint@v0
   with:
     version: v0.34.0 # omit for the latest release
 
@@ -140,7 +140,7 @@ satisfies the requirement".
 ## cargo binstall
 
 ```sh
-cargo binstall --git https://github.com/Goldziher/poly poly-cli
+cargo binstall --git https://github.com/Goldziher/polylint poly-cli
 ```
 
 This resolves the same GitHub release archives — it does not build from source.
@@ -157,11 +157,11 @@ poly ships its own Claude/Codex plugin, registering `poly mcp` as a stdio server
 2 slash commands (`/poly-check`, `/poly-fix`):
 
 ```text
-/plugin marketplace add Goldziher/poly
+/plugin marketplace add Goldziher/polylint
 /plugin install poly@poly
 ```
 
-For Codex, `codex plugin marketplace add Goldziher/poly` then `codex plugin add poly@poly`. OpenCode
+For Codex, `codex plugin marketplace add Goldziher/polylint` then `codex plugin add poly@poly`. OpenCode
 and Pi install `@goldziher/opencode-poly` from npm (`opencode plugin add @goldziher/opencode-poly`,
 `pi install npm:@goldziher/opencode-poly`), and Hermes installs `poly-hermes-plugin` from PyPI.
 

@@ -9,7 +9,7 @@ repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 publish = false
-description = "Universal, zero-dependency linter & formatter: a single `poly` CLI (poly lint / poly fmt) that handles every language in-process, no per-language toolchains required."
+description = "polylint: a universal polyglot linter and formatter (`poly lint`, `poly fmt`) with engines downloaded on demand."
 keywords = ["linter", "formatter", "polyglot", "universal", "lint"]
 categories = ["development-tools", "command-line-utilities"]
 

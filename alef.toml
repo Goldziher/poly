@@ -161,7 +161,7 @@ executable = { build = "../../../mise-tasks/sidecar/build.sh sh {target} {out}",
 # (publish.yaml); this is its public half, the only key the embedded lock trusts.
 # `components:dev` passes its own file:// URL template and --unsigned, so it is unaffected.
 [crates.component_distribution]
-url_template = "https://github.com/Goldziher/poly/releases/download/v{version}/{artifact}"
+url_template = "https://github.com/Goldziher/polylint/releases/download/v{version}/{artifact}"
 artifact_name_template = "poly-component-{component}-{version}-{target}-{fh16}-{ch16}.tar.gz"
 
 [crates.component_distribution.public_keys]

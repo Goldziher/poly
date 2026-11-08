@@ -1143,18 +1143,31 @@ jobs:
           # that declare no source build, so this needs nothing on the tap side.
           GH_TOKEN="$GITHUB_TOKEN" gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
             --pattern 'sha256sums.txt' --dir sums --clobber
-          mise run release:homebrew-formula "$version" sums/sha256sums.txt "$GITHUB_REPOSITORY" > poly.rb
+          mise run release:homebrew-formula "$version" sums/sha256sums.txt "$GITHUB_REPOSITORY" > polylint.rb
 
           git clone --depth 1 "https://x-access-token:${HOMEBREW_TOKEN}@github.com/Goldziher/homebrew-tap.git" tap
-          cp poly.rb tap/Formula/poly.rb
           cd tap
+          # The formula is polylint after the repository rename. The old poly
+          # formula goes away and `brew install Goldziher/tap/poly` keeps working
+          # through an alias; formula_renames.json carries machines that already
+          # have the poly formula installed over to polylint on `brew upgrade`.
+          cp ../polylint.rb Formula/polylint.rb
+          git rm --quiet --ignore-unmatch Formula/poly.rb
+          mkdir -p Aliases
+          ln -sfn ../Formula/polylint.rb Aliases/poly
+          if [ -f formula_renames.json ]; then
+            jq -S '. + {"poly": "polylint"}' formula_renames.json > formula_renames.json.new
+          else
+            printf '{"poly": "polylint"}\n' | jq -S . > formula_renames.json.new
+          fi
+          mv formula_renames.json.new formula_renames.json
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/poly.rb
+          git add Formula/polylint.rb Aliases/poly formula_renames.json
           if git diff --cached --quiet; then
             echo "Formula already up to date."
           else
-            git commit -m "poly ${version}"
+            git commit -m "polylint ${version}"
             git push
           fi
 
@@ -1210,17 +1223,24 @@ jobs:
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern 'sha256sums.txt' --dir sums --clobber
 
           git clone --depth 1 "https://x-access-token:${HOMEBREW_TOKEN}@github.com/Goldziher/scoop-bucket.git" bucket
+          # polylint.json is the canonical manifest; poly.json is kept (same
+          # archive) so `scoop install poly` and existing installs keep updating.
+          # The first release after the rename seeds polylint.json from poly.json.
+          base=bucket/bucket/polylint.json
+          [ -f "$base" ] || base=bucket/bucket/poly.json
+          mise run release:scoop-manifest "$version" sums/sha256sums.txt "$base" "$GITHUB_REPOSITORY" > polylint.json
           mise run release:scoop-manifest "$version" sums/sha256sums.txt bucket/bucket/poly.json "$GITHUB_REPOSITORY" > poly.json
+          cp polylint.json bucket/bucket/polylint.json
           cp poly.json bucket/bucket/poly.json
 
           cd bucket
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add bucket/poly.json
+          git add bucket/polylint.json bucket/poly.json
           if git diff --cached --quiet; then
             echo "Manifest already up to date."
           else
-            git commit -m "poly ${version}"
+            git commit -m "polylint ${version}"
             git push
           fi
 

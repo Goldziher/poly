@@ -31,7 +31,7 @@ the CLI — with structured output an agent can consume directly instead of pars
 ## The plugin
 
 ```text
-/plugin marketplace add Goldziher/poly
+/plugin marketplace add Goldziher/polylint
 /plugin install poly@poly
 ```
 
@@ -42,7 +42,7 @@ lint versus format versus hooks.
 For Codex, the same repository is the marketplace:
 
 ```sh
-codex plugin marketplace add Goldziher/poly
+codex plugin marketplace add Goldziher/polylint
 codex plugin add poly@poly
 ```
 
@@ -60,7 +60,7 @@ pi install npm:@goldziher/opencode-poly
 
 The package contains 5 skills and the `/poly-check` and `/poly-fix` prompts. Pi runs `poly`
 through its shell tool; it does not register an MCP server. Pi can also install straight from
-Git — `pi install git:github.com/Goldziher/poly`, or `pi install -l …` to save it in the current
+Git — `pi install git:github.com/Goldziher/polylint`, or `pi install -l …` to save it in the current
 project's configuration.
 
 ### Hermes
@@ -80,7 +80,7 @@ schemas), and the skills load by namespace, e.g. `poly:poly-mcp`.
 Cursor, Gemini, Kimi, Factory and Copilot bundles are generated alongside these and attached to
 every GitHub release as `poly-plugins-v<version>.tar.gz`; the
 [plugin README](https://github.com/Goldziher/polylint/blob/main/plugin/README.md) lists each entry
-point. The skills alone also install with `npx skills add Goldziher/poly --skill <name>`.
+point. The skills alone also install with `npx skills add Goldziher/polylint --skill <name>`.
 
 ## As a plain MCP server
 
