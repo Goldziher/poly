@@ -203,7 +203,7 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
     let stage = resolve_run_stage(args.stage.as_deref(), &config.hooks)?;
 
     let message_file = resolve_message_file(stage, args.message_file)?;
-    let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
+    let root = repository_root()?;
     let sources = super::sources::provision(&root, &config.hooks, false).context("provisioning hook sources")?;
     let files = candidate_files(&root, stage, args.all_files, None, None)?;
     let cache = open_result_cache(&config, &root, args.no_cache)?;
@@ -287,7 +287,7 @@ fn resolve_run_stage(requested: Option<&str>, hooks: &poly_config::HooksConfig) 
 }
 
 fn install(args: InstallArgs) -> Result<ExitCode> {
-    let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
+    let root = repository_root()?;
     let config = load_config(None)?;
     super::sources::provision(&root, &config.hooks, true).context("provisioning hook sources")?;
     let hooks_dir = poly_hooks::git::get_git_hooks_dir().context("failed to resolve the git hooks directory")?;
@@ -531,7 +531,7 @@ fn provision_for_hook(
 }
 
 fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
-    let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
+    let root = repository_root()?;
     let explicit_config = crate::global().config.as_deref();
     let config = load_config(explicit_config)?;
     let sources = provision_for_hook(args.hook_type, &root, &config.hooks)?;
@@ -764,6 +764,17 @@ fn run_and_report(request: poly_hooks::HookRunRequest) -> Result<ExitCode> {
         return Ok(ExitCode::from(EXIT_VALIDATED_NOTHING));
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// The git repository root, or a one-line explanation when the working directory is not inside one (git's own
+/// failure, rendered with the hook runner's command report, buried that under escape codes).
+fn repository_root() -> Result<PathBuf> {
+    poly_hooks::git::get_root().map_err(|error| match error {
+        poly_hooks::git::Error::Command(_) => anyhow::anyhow!(
+            "not inside a git repository: `poly hooks` needs one (run it from a checkout, or `git init` first)"
+        ),
+        other => anyhow::Error::new(other).context("failed to resolve the git repository root"),
+    })
 }
 
 pub(crate) fn load_config(explicit: Option<&Path>) -> Result<PolyConfig> {

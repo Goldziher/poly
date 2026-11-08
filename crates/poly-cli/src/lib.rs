@@ -242,7 +242,7 @@ fn emit_structured(rendered: Result<String, report::RenderError>) -> Result<(), 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum WorkspaceMode {
     /// Run it for a whole-repository run, skip it for a path-scoped one, and
-    /// follow `[lint] workspace`.
+    /// follow `[workspace] run`.
     #[default]
     Auto,
     /// Run it even though explicit paths were given.

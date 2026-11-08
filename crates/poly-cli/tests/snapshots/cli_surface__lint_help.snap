@@ -7,7 +7,7 @@ Lint files (poly applies no fixes without --fix).
 Not read-only, though: the whole-project phase executes the configured whole-project tools (cargo
 clippy and friends) against the live worktree even without --fix. poly asks them for check mode, but
 their own side effects — a refreshed lock file, a populated build or type-checker cache — are not
-poly's to control. Pass --workspace never, or set `[lint] workspace = false`, for a run that leaves
+poly's to control. Pass --workspace never, or set `[workspace] run = "never"`, for a run that leaves
 the tree untouched.
 
 Usage: poly lint [OPTIONS] [PATHS]...
@@ -38,7 +38,7 @@ Options:
 
           Possible values:
           - auto:   Run it for a whole-repository run, skip it for a path-scoped one, and follow
-            `[lint] workspace`
+            `[workspace] run`
           - always: Run it even though explicit paths were given
           - never:  Skip it: only the per-file tier runs
           

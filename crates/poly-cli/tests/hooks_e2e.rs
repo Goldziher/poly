@@ -771,3 +771,23 @@ show_output = true
 
     assert!(String::from_utf8_lossy(&output.stdout).contains("suppress=1"));
 }
+
+#[test]
+fn hooks_outside_a_git_repository_explain_themselves_in_one_line() {
+    let dir = TempDir::new().expect("tempdir");
+    for args in [&["hooks", "install"][..], &["hooks", "run", "pre-commit"][..]] {
+        let output = Command::new(POLY)
+            .args(args)
+            .current_dir(dir.path())
+            .env("GIT_CEILING_DIRECTORIES", dir.path().parent().unwrap())
+            .output()
+            .expect("run poly");
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("not inside a git repository"), "{args:?}: {stderr}");
+        assert!(
+            !stderr.contains('\u{1b}') && !stderr.contains("get git root"),
+            "{stderr}"
+        );
+    }
+}
