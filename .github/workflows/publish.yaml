@@ -1560,10 +1560,13 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+          # GITHUB_TOKEN cannot move a ref across commits that change .github/workflows (it lacks the
+          # `workflows` permission), so the push uses a token that has it when one is configured.
+          token: ${{ secrets.RELEASE_TAG_TOKEN || github.token }}
 
       - name: Move major tag to this release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HAS_RELEASE_TAG_TOKEN: ${{ secrets.RELEASE_TAG_TOKEN != '' }}
         run: |
           set -euo pipefail
           version="${{ needs.meta.outputs.version }}"
@@ -1573,7 +1576,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -f "$major" "$sha"
-          git push -f origin "refs/tags/${major}"
+          if ! git push -f origin "refs/tags/${major}"; then
+            if [ "$HAS_RELEASE_TAG_TOKEN" != "true" ]; then
+              echo "::error::Moving ${major} needs a token with contents and workflows write access when the release changes .github/workflows. Add it as the RELEASE_TAG_TOKEN repository secret."
+            fi
+            exit 1
+          fi
           echo "Moved ${major} → ${tag} (${sha})"
 
   plugin_release_report:
