@@ -5268,6 +5268,7 @@ dependencies = [
  "anyhow",
  "json5",
  "poly-catalog",
+ "poly-component-index",
  "schemars 1.2.3",
  "serde",
  "serde_json",
