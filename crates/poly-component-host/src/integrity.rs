@@ -41,6 +41,11 @@ pub(crate) fn verifier(lock: &ComponentLock, root: std::path::PathBuf) -> Artifa
 /// replaced directory (typically a missing library) that is healthy a moment later.
 const REPAIR_SETTLE: Duration = Duration::from_millis(150);
 
+/// How many times a failed verification is retried, [`REPAIR_SETTLE`] apart, before it is
+/// believed. A single retry lost the race on a loaded CI runner, where a repair can take longer
+/// than one settle interval to land.
+const REPAIR_RETRIES: usize = 4;
+
 /// Whether `error` means the cached object itself is wrong, as opposed to the check not being
 /// able to run (descriptor limits, permissions, a failing disk). Only the former may lead to the
 /// object being deleted and downloaded again.
@@ -96,8 +101,8 @@ impl ComponentHost {
     /// Re-verify the cached copy of `component_id` against the lock. Never downloads and never
     /// repairs.
     ///
-    /// A failed verification is repeated once after a short wait, so a repair running in another
-    /// process does not read as damage.
+    /// A failed verification is repeated a few times after a short wait, so a repair running in
+    /// another process does not read as damage.
     ///
     /// # Errors
     ///
@@ -105,12 +110,15 @@ impl ComponentHost {
     /// run (an I/O error other than a missing file): the copy is then of unknown state and must
     /// not be replaced.
     pub fn check_cache(&self, component_id: &str) -> anyhow::Result<CacheCheck> {
-        let first = self.check_cache_once(component_id)?;
-        if matches!(first, CacheCheck::Corrupt(_)) {
+        let mut check = self.check_cache_once(component_id)?;
+        for _ in 0..REPAIR_RETRIES {
+            if !matches!(check, CacheCheck::Corrupt(_)) {
+                break;
+            }
             std::thread::sleep(REPAIR_SETTLE);
-            return self.check_cache_once(component_id);
+            check = self.check_cache_once(component_id)?;
         }
-        Ok(first)
+        Ok(check)
     }
 
     fn check_cache_once(&self, component_id: &str) -> anyhow::Result<CacheCheck> {

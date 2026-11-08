@@ -272,7 +272,10 @@ fn a_check_that_lands_mid_repair_waits_and_sees_the_repaired_copy() {
     std::fs::remove_file(&library).unwrap();
     let restore = std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(40));
-        std::fs::write(&library, saved).unwrap();
+        // Land the file whole, as alef's repair does, so no check can see it half written.
+        let staged = library.with_extension("so.partial");
+        std::fs::write(&staged, saved).unwrap();
+        std::fs::rename(&staged, &library).unwrap();
     });
     let check = f.host(true).check_cache(ID).unwrap();
     restore.join().unwrap();
