@@ -214,15 +214,15 @@
     <path transform="translate(195.8 0)" d="M5.12 0.88A3 3 0 0 0 0 3V7A3 3 0 0 0 6 7V5.4H3.4" />
     <path transform="translate(205 0)" d="M5 0H0V10H5M0 5H4" />
   </g>
-  <rect x="320.63" y="466" width="558.74" height="54" fill="#070a13" fill-opacity=".78" />
+  <rect x="323.6" y="466" width="552.8" height="54" fill="#070a13" fill-opacity=".78" />
   <path
     fill="none"
     stroke="#b48a3a"
     stroke-width="1"
-    d="M320.63 471L325.63 471L325.63 466L874.37 466L874.37 471L879.37 471L879.37 515L874.37 515L874.37 520L325.63 520L325.63 515L320.63 515Z"
+    d="M323.6 471L328.6 471L328.6 466L871.4 466L871.4 471L876.4 471L876.4 515L871.4 515L871.4 520L328.6 520L328.6 515L323.6 515Z"
   />
   <g
-    transform="translate(350.63 487.5) scale(1.1)"
+    transform="translate(353.6 487.5) scale(1.1)"
     fill="none"
     stroke="#e0bb5e"
     stroke-width="1.18"
@@ -241,51 +241,46 @@
     <path transform="translate(83.3 0)" d="M0 10L3 0L6 10M1.3 6.4H4.7" />
     <path transform="translate(92.5 0)" d="M0 0H6M3 0V10" />
     <path fill="#e0bb5e" stroke="none" d="M107 3.6L108.2 5L107 6.4L105.8 5Z" />
+    <path transform="translate(115.5 0)" d="M0 3A3 3 0 0 1 6 3V7A3 3 0 0 1 0 7Z" />
+    <path transform="translate(124.7 0)" d="M0 10V0L6 10V0" />
+    <path transform="translate(133.9 0)" d="M5 0H0V10H5M0 5H4" />
+    <path transform="translate(146.6 0)" d="M0 5H3A2.5 2.5 0 0 0 3 0H0V10H3.5A2.5 2.5 0 0 0 3.5 5" />
+    <path transform="translate(155.8 0)" d="M0 0V10" />
+    <path transform="translate(159 0)" d="M0 10V0L6 10V0" />
+    <path transform="translate(168.2 0)" d="M0 10L3 0L6 10M1.3 6.4H4.7" />
+    <path transform="translate(177.4 0)" d="M0 10V0H3A2.5 2.5 0 0 1 3 5H0M3 5L5.5 10" />
+    <path transform="translate(186.1 0)" d="M0 0L3 5L6 0M3 5V10" />
+    <path fill="#e0bb5e" stroke="none" d="M200.6 3.6L201.8 5L200.6 6.4L199.4 5Z" />
+    <path transform="translate(209.1 0)" d="M5 0H0V10H5M0 5H4" />
+    <path transform="translate(217.3 0)" d="M0 10V0L6 10V0" />
+    <path transform="translate(226.5 0)" d="M5.12 0.88A3 3 0 0 0 0 3V7A3 3 0 0 0 6 7V5.4H3.4" />
+    <path transform="translate(235.7 0)" d="M0 0V10" />
+    <path transform="translate(238.9 0)" d="M0 10V0L6 10V0" />
+    <path transform="translate(248.1 0)" d="M5 0H0V10H5M0 5H4" />
     <path
-      transform="translate(115.5 0)"
+      transform="translate(256.3 0)"
       d="M5.5 2.5A2.75 2.5 0 0 0 2.75 0A2.75 2.5 0 0 0 2.75 5A2.75 2.5 0 0 1 2.75 10A2.75 2.5 0 0 1 0 7.5"
     />
-    <path transform="translate(124.2 0)" d="M0 0V10" />
-    <path transform="translate(127.4 0)" d="M0 10V0L6 10V0" />
-    <path transform="translate(136.6 0)" d="M5.12 0.88A3 3 0 0 0 0 3V7A3 3 0 0 0 6 7V5.4H3.4" />
-    <path transform="translate(145.8 0)" d="M0 0V10H5" />
-    <path transform="translate(154 0)" d="M5 0H0V10H5M0 5H4" />
-    <path transform="translate(166.7 0)" d="M0 5H3A2.5 2.5 0 0 0 3 0H0V10H3.5A2.5 2.5 0 0 0 3.5 5" />
-    <path transform="translate(175.9 0)" d="M0 0V10" />
-    <path transform="translate(179.1 0)" d="M0 10V0L6 10V0" />
-    <path transform="translate(188.3 0)" d="M0 10L3 0L6 10M1.3 6.4H4.7" />
-    <path transform="translate(197.5 0)" d="M0 10V0H3A2.5 2.5 0 0 1 3 5H0M3 5L5.5 10" />
-    <path transform="translate(206.2 0)" d="M0 0L3 5L6 0M3 5V10" />
-    <path fill="#e0bb5e" stroke="none" d="M220.7 3.6L221.9 5L220.7 6.4L219.5 5Z" />
-    <path transform="translate(229.2 0)" d="M5 0H0V10H5M0 5H4" />
-    <path transform="translate(237.4 0)" d="M0 10V0L6 10V0" />
-    <path transform="translate(246.6 0)" d="M5.12 0.88A3 3 0 0 0 0 3V7A3 3 0 0 0 6 7V5.4H3.4" />
-    <path transform="translate(255.8 0)" d="M0 0V10" />
-    <path transform="translate(259 0)" d="M0 10V0L6 10V0" />
-    <path transform="translate(268.2 0)" d="M5 0H0V10H5M0 5H4" />
+    <path transform="translate(269.5 0)" d="M0 3A3 3 0 0 1 6 3V7A3 3 0 0 1 0 7Z" />
+    <path transform="translate(278.7 0)" d="M0 10V0L6 10V0" />
+    <path transform="translate(292.4 0)" d="M0 0V10H3A3 3 0 0 0 6 7V3A3 3 0 0 0 3 0Z" />
+    <path transform="translate(301.6 0)" d="M5 0H0V10H5M0 5H4" />
+    <path transform="translate(309.8 0)" d="M0 10V0L3.5 7.5L7 0V10" />
+    <path transform="translate(320 0)" d="M0 10L3 0L6 10M1.3 6.4H4.7" />
+    <path transform="translate(329.2 0)" d="M0 10V0L6 10V0" />
+    <path transform="translate(338.4 0)" d="M0 0V10H3A3 3 0 0 0 6 7V3A3 3 0 0 0 3 0Z" />
+    <path fill="#e0bb5e" stroke="none" d="M352.9 3.6L354.1 5L352.9 6.4L351.7 5Z" />
+    <path transform="translate(361.4 0)" d="M0 0V10M6 0V10M0 5H6" />
+    <path transform="translate(370.6 0)" d="M0 3A3 3 0 0 1 6 3V7A3 3 0 0 1 0 7Z" />
+    <path transform="translate(379.8 0)" d="M0 3A3 3 0 0 1 6 3V7A3 3 0 0 1 0 7Z" />
+    <path transform="translate(389 0)" d="M0 0V10M5.4 0L0 6.2M1.9 4.1L5.6 10" />
     <path
-      transform="translate(276.4 0)"
+      transform="translate(397.8 0)"
       d="M5.5 2.5A2.75 2.5 0 0 0 2.75 0A2.75 2.5 0 0 0 2.75 5A2.75 2.5 0 0 1 2.75 10A2.75 2.5 0 0 1 0 7.5"
     />
-    <path transform="translate(289.6 0)" d="M0 3A3 3 0 0 1 6 3V7A3 3 0 0 1 0 7Z" />
-    <path transform="translate(298.8 0)" d="M0 10V0L6 10V0" />
-    <path transform="translate(312.5 0)" d="M0 0V10H3A3 3 0 0 0 6 7V3A3 3 0 0 0 3 0Z" />
-    <path transform="translate(321.7 0)" d="M5 0H0V10H5M0 5H4" />
-    <path transform="translate(329.9 0)" d="M0 10V0L3.5 7.5L7 0V10" />
-    <path transform="translate(340.1 0)" d="M0 10L3 0L6 10M1.3 6.4H4.7" />
-    <path transform="translate(349.3 0)" d="M0 10V0L6 10V0" />
-    <path transform="translate(358.5 0)" d="M0 0V10H3A3 3 0 0 0 6 7V3A3 3 0 0 0 3 0Z" />
-    <path fill="#e0bb5e" stroke="none" d="M373 3.6L374.2 5L373 6.4L371.8 5Z" />
-    <path transform="translate(381.5 0)" d="M0 10V0H3A2.5 2.5 0 0 1 3 5H0" />
-    <path transform="translate(390.2 0)" d="M0 0V7A3 3 0 0 0 6 7V0" />
-    <path transform="translate(399.4 0)" d="M0 10V0H3A2.5 2.5 0 0 1 3 5H0M3 5L5.5 10" />
-    <path transform="translate(408.1 0)" d="M5 0H0V10H5M0 5H4" />
-    <path transform="translate(420.8 0)" d="M0 10V0H3A2.5 2.5 0 0 1 3 5H0M3 5L5.5 10" />
-    <path transform="translate(429.5 0)" d="M0 0V7A3 3 0 0 0 6 7V0" />
-    <path
-      transform="translate(438.7 0)"
-      d="M5.5 2.5A2.75 2.5 0 0 0 2.75 0A2.75 2.5 0 0 0 2.75 5A2.75 2.5 0 0 1 2.75 10A2.75 2.5 0 0 1 0 7.5"
-    />
-    <path transform="translate(447.4 0)" d="M0 0H6M3 0V10" />
+    <path transform="translate(411 0)" d="M0 5H5M2.5 2.5V7.5" />
+    <path transform="translate(423.7 0)" d="M0 10V0L3.5 7.5L7 0V10" />
+    <path transform="translate(433.9 0)" d="M5.12 0.88A3 3 0 0 0 0 3V7A3 3 0 0 0 5.12 9.12" />
+    <path transform="translate(442.5 0)" d="M0 10V0H3A2.5 2.5 0 0 1 3 5H0" />
   </g>
 </svg>
