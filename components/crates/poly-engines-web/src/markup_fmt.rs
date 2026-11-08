@@ -7,9 +7,10 @@
 //! ## Embedded code
 //!
 //! markup_fmt delegates embedded `<script>` / `<style>` blocks to an external
-//! formatter callback. Astro JavaScript and TypeScript are routed through OXC
-//! to keep nested expressions stable; other embedded languages are left for
-//! their native backends.
+//! formatter callback. Astro JavaScript and TypeScript, and `<script>` in plain HTML, are routed
+//! through OXC; `<style>` blocks in HTML, Vue and Svelte through `oxc_formatter_css`. Vue and Svelte
+//! `<script>` blocks are left as written, because the callback also receives template expressions
+//! under the same extension and an expression is not a program.
 //!
 //! ## Angular detection
 //! Angular templates share the `.html` extension with plain HTML. poly
@@ -59,7 +60,7 @@ pub struct MarkupFmtEngine;
 /// any stale cached output.
 /// Bumped suffix to +opts-1 after exposing full LanguageOptions (options were
 /// previously ignored — existing caches must be invalidated).
-const VERSION: &str = "0.27.6+opts-2+tmpltarget-2+embedded-oxc-2+rev:f799f17+syntax-skip-2";
+const VERSION: &str = "0.27.6+opts-2+tmpltarget-2+embedded-oxc-3+rev:f799f17+syntax-skip-2";
 
 /// Reason reported when a general-purpose template does not render markup.
 const NON_MARKUP_TEMPLATE_SKIP: &str = "template does not render markup";
@@ -146,21 +147,48 @@ impl Engine for MarkupFmtEngine {
 
         let options = build_options(cfg);
         let embedded_allocator = (src.language == Language::Astro).then(Allocator::new);
-        let mut embedded_cfg = (src.language == Language::Astro).then(|| cfg.clone());
 
+        let mut embedded_scratch = cfg.clone();
         let formatted = format_text(&src.content, language, &options, |code, hints| {
-            if src.language != Language::Astro || !matches!(hints.ext, "js" | "jsx" | "ts" | "tsx") {
+            embedded_scratch.globals.line_length = hints.print_width;
+            if src.language == Language::Astro && matches!(hints.ext, "js" | "jsx" | "ts" | "tsx") {
+                let allocator = embedded_allocator
+                    .as_ref()
+                    .expect("Astro formatter allocator must exist");
+                return super::oxc::format_embedded_js(allocator, code, hints.ext, &embedded_scratch)
+                    .map(Cow::Owned)
+                    .map_err(anyhow::Error::new);
+            }
+            // `<style>` blocks, and `<script>` blocks in plain HTML. Vue and Svelte route template
+            // expressions through the same callback with a `ts` extension, and an expression is not a
+            // program (`{ a: 1 }` parses as a block), so their scripts stay as written. Anything that
+            // does not parse is left as written too.
+            if hints.attr || !matches!(src.language, Language::Html | Language::Vue | Language::Svelte) {
                 return Ok(Cow::Borrowed(code));
             }
-
-            let allocator = embedded_allocator
-                .as_ref()
-                .expect("Astro formatter allocator must exist");
-            let embedded_cfg = embedded_cfg.as_mut().expect("Astro formatter config must exist");
-            embedded_cfg.globals.line_length = hints.print_width;
-            super::oxc::format_embedded_js(allocator, code, hints.ext, embedded_cfg)
-                .map(Cow::Owned)
-                .map_err(anyhow::Error::new)
+            let allocator = Allocator::new();
+            let formatted = match hints.ext {
+                "css" | "scss" | "less" => {
+                    let variant = match hints.ext {
+                        "scss" => oxc_formatter_css::CssVariant::Scss,
+                        "less" => oxc_formatter_css::CssVariant::Less,
+                        _ => oxc_formatter_css::CssVariant::Css,
+                    };
+                    oxc_formatter_css::format(
+                        &allocator,
+                        code,
+                        super::malva::oxc_css_options(&embedded_scratch, variant),
+                    )
+                    .ok()
+                    .and_then(|formatted| formatted.print().ok())
+                    .map(|printed| printed.into_code())
+                }
+                "js" | "jsx" | "ts" | "tsx" if src.language == Language::Html => {
+                    super::oxc::format_embedded_js(&allocator, code, hints.ext, &embedded_scratch).ok()
+                }
+                _ => None,
+            };
+            Ok(formatted.map_or(Cow::Borrowed(code), Cow::Owned))
         });
         let formatted = match formatted {
             Ok(formatted) => formatted,
@@ -435,6 +463,36 @@ mod tests {
         assert!(!caps.lint);
         assert!(caps.format);
         assert!(!caps.fix);
+    }
+
+    fn formatted_text(language: Language, path: &str, content: &str) -> String {
+        match MarkupFmtEngine
+            .format(&make_src(path, language, content), &engine_cfg())
+            .expect("format")
+        {
+            FormatOutput::Formatted(text) => text,
+            FormatOutput::Unchanged => content.to_string(),
+        }
+    }
+
+    #[test]
+    fn html_style_and_script_blocks_are_formatted() {
+        let out = formatted_text(
+            Language::Html,
+            "a.html",
+            "<style>\n.a{color:red}\n</style>\n<script>\nconst   a=1\n</script>\n",
+        );
+        assert!(out.contains("color: red;"), "{out}");
+        assert!(out.contains("const a = 1;"), "{out}");
+    }
+
+    #[test]
+    fn vue_style_is_formatted_and_script_and_expressions_are_left_alone() {
+        let input = "<template>\n  <p :a=\"{ b: 1 }\">{{ x }}</p>\n</template>\n<script setup lang=\"ts\">\nconst   a:number=1\n</script>\n<style>\n.a{color:red}\n</style>\n";
+        let out = formatted_text(Language::Vue, "a.vue", input);
+        assert!(out.contains("color: red;"), "{out}");
+        assert!(out.contains("const   a:number=1"), "{out}");
+        assert!(out.contains(":a=\"{ b: 1 }\""), "{out}");
     }
 
     #[test]
