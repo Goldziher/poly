@@ -3,7 +3,7 @@ source: crates/poly-cli/tests/cli_surface.rs
 assertion_line: 40
 expression: "help(&[\"--help\"])"
 ---
-Universal, zero-dependency linter & formatter
+polylint: one linter & formatter for every language in your repository
 
 Usage: poly [OPTIONS] <COMMAND>
 
