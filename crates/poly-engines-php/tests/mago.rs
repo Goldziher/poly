@@ -529,3 +529,13 @@ fn parse_errors_are_unaffected_by_the_advisory_downgrade() {
         "parse errors must stay Severity::Error; got: {parse:?}"
     );
 }
+
+/// The file-name rule must name the real file, not a placeholder.
+#[test]
+fn file_name_diagnostic_names_the_real_file() {
+    let engine = MagoEngine::default();
+    let src = make_src("dir/a.php", "<?php\n\ndeclare(strict_types=1);\n\nclass A\n{\n}\n");
+    let diags = engine.lint(&src, &engine_cfg()).unwrap();
+    let text = format!("{diags:?}");
+    assert!(!text.contains("input.php"), "placeholder file name leaked: {text}");
+}

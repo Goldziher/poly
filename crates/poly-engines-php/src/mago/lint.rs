@@ -59,6 +59,14 @@ use super::rules;
 /// Polylint-default PHP version used when the user does not specify one.
 const PHP_VERSION: PHPVersion = PHPVersion::PHP84;
 
+/// The file's own name, so path-sensitive rules (`class-name` vs file name) judge the real file
+/// rather than a placeholder; `input.php` only when the path has no usable name.
+fn file_name(src: &SourceFile) -> Vec<u8> {
+    src.path
+        .file_name()
+        .map_or_else(|| b"input.php".to_vec(), |name| name.as_encoded_bytes().to_vec())
+}
+
 /// Lint a single PHP source file.
 ///
 /// `registry_cache` is the engine's [`OnceLock`]-backed registry slot.  On the
@@ -75,7 +83,7 @@ pub(super) fn lint_php(
 ) -> anyhow::Result<Vec<Diagnostic>> {
     let arena = LocalArena::new();
 
-    let file = File::ephemeral(Cow::Borrowed(b"input.php"), Cow::Owned(src.content.as_bytes().to_vec()));
+    let file = File::ephemeral(Cow::Owned(file_name(src)), Cow::Owned(src.content.as_bytes().to_vec()));
 
     let program = parse_file(&arena, &file);
     let mut diags: Vec<Diagnostic> = Vec::new();
