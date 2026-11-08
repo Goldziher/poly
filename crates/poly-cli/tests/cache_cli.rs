@@ -88,3 +88,26 @@ fn default_subcommand_is_stats() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("cache format version"), "output: {stdout}");
 }
+
+#[test]
+fn stats_takes_format_like_every_other_command() {
+    let tmp = TempDir::new().expect("tempdir");
+    let cache_dir = tmp.path().join("cache");
+    seed_cache(&cache_dir, 2, 10);
+
+    let output = poly_cache(&cache_dir, &["stats", "--format", "json"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).expect("stdout is one JSON document");
+    assert_eq!(json["total_entries"], 2, "{json}");
+    assert!(json["namespaces"].as_array().is_some_and(|n| !n.is_empty()), "{json}");
+
+    let global_before = poly_cache(&cache_dir, &["--format", "json"]);
+    assert!(
+        global_before.status.success(),
+        "the default subcommand takes --format too"
+    );
+    let freed = poly_cache(&cache_dir, &["clean", "--format", "json"]);
+    let json: serde_json::Value = serde_json::from_slice(&freed.stdout).expect("clean emits JSON");
+    assert_eq!(json["command"], "clean");
+    assert_eq!(json["freed_bytes"], 20);
+}

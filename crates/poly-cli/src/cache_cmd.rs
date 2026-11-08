@@ -16,6 +16,9 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use poly_cache::{CacheStats, ResultCache, root_from_cwd};
 use poly_config::PolyConfig;
+use serde::Serialize;
+
+use crate::OutputFormat;
 
 const SECONDS_PER_DAY: u64 = 86_400;
 
@@ -29,6 +32,10 @@ pub struct CacheArgs {
     /// Operate on this cache directory instead of the resolved repo cache.
     #[arg(long)]
     pub cache_dir: Option<PathBuf>,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Pretty, global = true)]
+    pub format: OutputFormat,
 }
 
 /// The `poly cache` subcommands.
@@ -65,19 +72,87 @@ fn run(args: CacheArgs) -> Result<ExitCode> {
     let cache = ResultCache::open(root, true).context("failed to open the result cache")?;
 
     match args.command.unwrap_or(CacheCommand::Stats) {
-        CacheCommand::Stats => print_stats(&cache.stats()?),
+        CacheCommand::Stats => {
+            let stats = cache.stats()?;
+            emit(args.format, &StatsDocument::from(&stats), |_| print_stats(&stats))?;
+        }
         CacheCommand::Gc { max_age, max_size } => {
             let max_age = max_age.map(|days| Duration::from_secs(days * SECONDS_PER_DAY));
             let max_size = max_size.as_deref().map(parse_size).transpose()?;
             let freed = cache.gc(max_age, max_size)?;
-            println!("freed {} ({} bytes)", format_iec(freed), freed);
+            let document = FreedDocument {
+                command: "gc",
+                freed_bytes: freed,
+            };
+            emit(args.format, &document, |d| {
+                println!("freed {} ({} bytes)", format_iec(d.freed_bytes), d.freed_bytes);
+            })?;
         }
         CacheCommand::Clean => {
             let freed = cache.clean()?;
-            println!("cleaned {} ({} bytes)", format_iec(freed), freed);
+            let document = FreedDocument {
+                command: "clean",
+                freed_bytes: freed,
+            };
+            emit(args.format, &document, |d| {
+                println!("cleaned {} ({} bytes)", format_iec(d.freed_bytes), d.freed_bytes);
+            })?;
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// The `--format json|toon` document of `poly cache stats`.
+#[derive(Serialize)]
+struct StatsDocument {
+    format_version: String,
+    on_disk_version: Option<String>,
+    namespaces: Vec<NamespaceDocument>,
+    total_entries: u64,
+    total_bytes: u64,
+}
+
+#[derive(Serialize)]
+struct NamespaceDocument {
+    namespace: &'static str,
+    entries: u64,
+    bytes: u64,
+}
+
+/// The `--format json|toon` document of `poly cache gc` and `poly cache clean`.
+#[derive(Serialize)]
+struct FreedDocument {
+    command: &'static str,
+    freed_bytes: u64,
+}
+
+impl From<&CacheStats> for StatsDocument {
+    fn from(stats: &CacheStats) -> Self {
+        Self {
+            format_version: stats.format_version.clone(),
+            on_disk_version: stats.on_disk_version.clone(),
+            namespaces: stats
+                .per_namespace
+                .iter()
+                .map(|n| NamespaceDocument {
+                    namespace: n.namespace.as_dir(),
+                    entries: n.entries,
+                    bytes: n.bytes,
+                })
+                .collect(),
+            total_entries: stats.per_namespace.iter().map(|n| n.entries).sum(),
+            total_bytes: stats.total_bytes,
+        }
+    }
+}
+
+fn emit<T: Serialize>(format: OutputFormat, document: &T, pretty: impl FnOnce(&T)) -> Result<()> {
+    match format {
+        OutputFormat::Pretty => pretty(document),
+        OutputFormat::Json => println!("{}", poly_core::report::render_json(document)?),
+        OutputFormat::Toon => println!("{}", poly_core::report::render_toon(document)?),
+    }
+    Ok(())
 }
 
 /// Resolve the cache root: `--cache-dir` if given, else `[cache] dir` from the
