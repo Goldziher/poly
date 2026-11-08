@@ -211,13 +211,17 @@ fn pinned_release(
         return Ok(Some(pinned));
     }
     let seeds = install.map(|install| &install.releases);
+    let mut seed_gap = None;
     if let (Request::Exact(version), Some(seeds)) = (&request, seeds)
         && let Some(release) = seeds.get(version)
     {
-        return seeded(tool, version, release).map(Some);
+        match seeded(tool, version, release) {
+            Ok(pinned) => return Ok(Some(pinned)),
+            Err(message) => seed_gap = Some(message),
+        }
     }
     let Some(source) = source else {
-        return Err(no_source(tool, &request, seeds));
+        return Err(seed_gap.unwrap_or_else(|| no_source(tool, &request, seeds)));
     };
     let network = if poly_config::network::offline() || config.install != InstallPolicy::Auto {
         Network::Denied
@@ -250,14 +254,18 @@ fn pinned_release(
             }))
         }
         Err(message) => {
-            let newest_seed =
-                seeds.and_then(|seeds| seeds.iter().max_by_key(|(version, _)| resolve::version_key(version)));
+            let newest_seed = seeds.and_then(|seeds| {
+                seeds
+                    .iter()
+                    .filter(|(_, release)| install::asset_for(release).is_some())
+                    .max_by_key(|(version, _)| resolve::version_key(version))
+            });
             match (&request, network, newest_seed) {
                 (Request::Latest, Network::Denied, Some((version, release))) => {
                     seeded(tool, version, release).map(Some)
                 }
                 (Request::Latest, _, seed) if config.version.is_none() => Ok(implicit_fallback(tool, &message, seed)),
-                _ => Err(message),
+                _ => Err(seed_gap.map_or(message.clone(), |gap| format!("{gap} ({message})"))),
             }
         }
     }
@@ -517,6 +525,67 @@ mod tests {
             .unwrap();
         assert_eq!(pinned.version, seeded);
         assert_eq!(server.total(), 0, "old pins keep working without asking upstream");
+    }
+
+    /// `recipe` with the host platform removed from every seeded release.
+    fn without_host_seeds(recipe: &Recipe) -> Recipe {
+        let mut recipe = recipe.clone();
+        for release in recipe.install.as_mut().unwrap().releases.values_mut() {
+            release.assets.remove(&install::platform());
+        }
+        recipe
+    }
+
+    #[test]
+    fn a_seed_lacking_the_host_platform_is_resolved_through_the_source() {
+        let _lock = LockGuard::new();
+        let (tool, recipe, source) = setup("actionlint");
+        let recipe = without_host_seeds(recipe);
+        let seeded = recipe.install.as_ref().unwrap().releases.keys().next().unwrap().clone();
+        let tag = format!("v{seeded}");
+        let dir = tempfile::tempdir().unwrap();
+        let server = Server::start_with(|base| {
+            vec![(
+                format!("/repos/rhysd/actionlint/releases/tags/{tag}"),
+                vec![Canned::ok(release_for(base, source, &tag))],
+            )]
+        });
+        let resolver = Resolver::for_test(&server.base, dir.path().to_path_buf(), false);
+        let pinned = pinned_release(&resolver, tool, &recipe, &auto(Some(&seeded)))
+            .unwrap()
+            .unwrap();
+        assert_eq!(pinned.version, seeded);
+        assert!(server.total() > 0, "the version was resolved upstream");
+    }
+
+    #[test]
+    fn a_seed_lacking_the_host_platform_offline_gives_the_actionable_error() {
+        let _lock = LockGuard::new();
+        let (tool, recipe, _) = setup("actionlint");
+        let recipe = without_host_seeds(recipe);
+        let seeded = recipe.install.as_ref().unwrap().releases.keys().next().unwrap().clone();
+        let server = Server::start(Vec::new());
+        let dir = tempfile::tempdir().unwrap();
+        let resolver = Resolver::for_test(&server.base, dir.path().to_path_buf(), false);
+        let error = pinned_release(&resolver, tool, &recipe, &auto(Some(&seeded))).expect_err("unresolvable");
+        assert!(error.contains("has no download for") && error.contains("set `bin`"), "{error}");
+    }
+
+    #[test]
+    fn the_newest_seed_fallbacks_skip_seeds_lacking_the_host_platform() {
+        let _lock = LockGuard::new();
+        let (tool, recipe, _) = setup("actionlint");
+        let recipe = without_host_seeds(recipe);
+        let server = Server::start(Vec::new());
+        let dir = tempfile::tempdir().unwrap();
+        let resolver = Resolver::for_test(&server.base, dir.path().to_path_buf(), false);
+        assert!(pinned_release(&resolver, tool, &recipe, &auto(None)).unwrap().is_none());
+        let config = ToolConfig {
+            enabled: true,
+            version: Some("latest".into()),
+            ..ToolConfig::default()
+        };
+        assert!(pinned_release(&resolver, tool, &recipe, &config).is_err());
     }
 
     #[test]
