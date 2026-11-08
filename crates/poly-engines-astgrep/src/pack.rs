@@ -89,7 +89,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use ast_grep_config::{RuleConfig, from_yaml_string};
 
@@ -139,9 +139,15 @@ struct Built {
     rules: RuleMap,
     /// Pack languages whose rules were left out, with the reason.
     missing: HashMap<String, String>,
+    /// Whether any missing grammar may still recover (a failed download, as
+    /// opposed to an unknown or offline-uncached name, which cannot).
+    retryable: bool,
 }
 
 static BUILTIN_PACK: Mutex<Option<&'static Built>> = Mutex::new(None);
+/// The final build, published once nothing missing can recover, so the common
+/// case is a lock-free read.
+static SETTLED_PACK: OnceLock<&'static Built> = OnceLock::new();
 
 /// The embedded pack, grouped by language name — the same shape
 /// [`super::rules::load_rules`] returns for user rules, so callers merge the
@@ -166,6 +172,9 @@ pub(super) fn unavailable_reason(language: &str) -> Option<String> {
 }
 
 fn current() -> &'static Built {
+    if let Some(built) = SETTLED_PACK.get() {
+        return built;
+    }
     let mut guard = BUILTIN_PACK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(built) = *guard
         && !built
@@ -179,6 +188,9 @@ fn current() -> &'static Built {
     // most once per recovered language.
     let built: &'static Built = Box::leak(Box::new(build(&|lang| poly_grammar::try_language(lang).map(drop))));
     *guard = Some(built);
+    if !built.retryable {
+        let _ = SETTLED_PACK.set(built);
+    }
     built
 }
 
@@ -207,6 +219,7 @@ fn split_utils(yaml: &str) -> Vec<String> {
 
 fn build(available: &dyn Fn(&str) -> Result<(), GrammarError>) -> Built {
     let mut missing: HashMap<String, String> = HashMap::new();
+    let mut retryable = false;
     let mut check = |yaml: &str| -> bool {
         let Some(language) = declared_language(yaml) else {
             return true;
@@ -214,6 +227,7 @@ fn build(available: &dyn Fn(&str) -> Result<(), GrammarError>) -> Built {
         match available(language) {
             Ok(()) => true,
             Err(error) => {
+                retryable |= matches!(error, GrammarError::Unavailable { .. });
                 if !missing.contains_key(language) {
                     tracing::warn!(language, %error, "built-in ast-grep rules skipped: grammar unavailable");
                     missing.insert(language.to_owned(), error.to_string());
@@ -249,7 +263,11 @@ fn build(available: &dyn Fn(&str) -> Result<(), GrammarError>) -> Built {
             rules.entry(rule.language.name().to_string()).or_default().push(rule);
         }
     }
-    Built { rules, missing }
+    Built {
+        rules,
+        missing,
+        retryable,
+    }
 }
 
 #[cfg(test)]
@@ -291,6 +309,41 @@ mod tests {
         }
         assert!(built.missing["rust"].contains("HTTP 503"), "{:?}", built.missing);
         assert_eq!(built.missing.len(), 1);
+    }
+
+    #[test]
+    fn only_download_failures_are_retryable() {
+        assert!(build(&unavailable("rust")).retryable);
+        let offline = build(&|name| {
+            if name == "go" {
+                Err(GrammarError::NotCached(name.to_owned()))
+            } else {
+                Ok(())
+            }
+        });
+        assert!(!offline.retryable);
+        assert!(offline.missing["go"].contains("offline"), "{:?}", offline.missing);
+        assert!(!build(&|_| Ok(())).retryable);
+    }
+
+    #[test]
+    fn a_complete_pack_is_served_without_the_mutex() {
+        let first = builtin_pack();
+        if unavailable_reason("rust").is_some() {
+            return;
+        }
+        let settled = SETTLED_PACK.get().expect("a complete build is published lock-free");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            // Dropped on unwind too, so a failure panics instead of hanging the join.
+            let _held = BUILTIN_PACK.lock().unwrap();
+            scope.spawn(|| tx.send(std::ptr::from_ref(builtin_pack()).addr()).unwrap());
+            let got = rx
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("the settled pack must not wait on the build mutex");
+            assert_eq!(got, std::ptr::from_ref(first).addr());
+            assert!(std::ptr::eq(&settled.rules, first));
+        });
     }
 
     #[test]
