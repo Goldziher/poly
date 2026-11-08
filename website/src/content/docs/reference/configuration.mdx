@@ -326,7 +326,7 @@ Reserved keys:
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `stages` | array | Default stages for builtin hooks that do not set their own. |
+| `stages` | array | Default stages for builtin hooks that do not set their own. `commit-msg` and `prepare-commit-msg` apply only to `commit`; a file-checking builtin runs there only when it lists the stage itself. |
 | `env` | table | Environment merged into every job. |
 | `sources` | array of tables | `[[hooks.sources]]` producer catalogs: `{ id, path \| git, revision, hooks }`. |
 | `snapshot_include` | string or array | Untracked paths pulled into the staged snapshot (ADR 0019). |

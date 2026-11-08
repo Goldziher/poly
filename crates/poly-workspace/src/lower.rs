@@ -245,19 +245,28 @@ fn append_builtins(
 
 /// Whether a builtin runs on `config_stage`, given its own `stages`, the global
 /// default `stages`, and the builtin's own fallback when both are empty.
+///
+/// The global default does not carry the message stages (`commit-msg`, `prepare-commit-msg`) to a
+/// builtin that checks files: a message hook is handed no staged files, so `lint`, `fmt`, `file_safety`
+/// and `cargo` would only re-run over the worktree. A builtin that lists those stages itself still runs.
 pub(super) fn builtin_runs_on(
     own_stages: &[String],
     default_stages: &[String],
     fallback: ConfigStage,
     config_stage: ConfigStage,
 ) -> Result<bool> {
-    let raw = if !own_stages.is_empty() {
+    let inherited = own_stages.is_empty();
+    let raw = if !inherited {
         own_stages
     } else if !default_stages.is_empty() {
         default_stages
     } else {
         return Ok(config_stage == fallback);
     };
+    let message_stage = matches!(config_stage, ConfigStage::CommitMsg | ConfigStage::PrepareCommitMsg);
+    if inherited && message_stage && fallback != ConfigStage::CommitMsg {
+        return Ok(false);
+    }
     for name in raw {
         let parsed: ConfigStage = name
             .parse()

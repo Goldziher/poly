@@ -218,6 +218,45 @@ commit = true
 }
 
 #[test]
+fn file_builtins_do_not_inherit_message_stages_from_the_global_default() {
+    let hooks = hooks_from(
+        r#"
+[hooks]
+stages = ["pre-commit", "commit-msg"]
+[hooks.builtin]
+lint = true
+fmt = true
+file_safety = true
+commit = { stages = ["commit-msg"] }
+"#,
+    );
+    let msg = lower_stage(&hooks, &poly(), HookStage::CommitMsg, &[], &HookCacheMode::Safe).unwrap();
+    assert_eq!(
+        ids(&msg),
+        vec!["poly-commit"],
+        "only the commit check belongs at commit-msg"
+    );
+    let pre = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    assert!(
+        ids(&pre).contains(&"lint".to_string()) && ids(&pre).contains(&"fmt".to_string()),
+        "{:?}",
+        ids(&pre)
+    );
+}
+
+#[test]
+fn a_file_builtin_that_names_a_message_stage_still_runs_there() {
+    let hooks = hooks_from(
+        r#"
+[hooks.builtin]
+lint = { stages = ["commit-msg"] }
+"#,
+    );
+    let msg = lower_stage(&hooks, &poly(), HookStage::CommitMsg, &[], &HookCacheMode::Safe).unwrap();
+    assert_eq!(ids(&msg), vec!["lint"]);
+}
+
+#[test]
 fn inline_jobs_carry_run_args_env_and_stage_fixed() {
     let hooks = hooks_from(
         r#"
