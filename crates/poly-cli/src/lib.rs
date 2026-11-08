@@ -449,15 +449,34 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     }
 }
 
-/// Print why each needed component that fails the run could not be used, once, and say whether
-/// any does. A skipped component is not blocking: its files are in the skip list instead.
+/// Print why each needed component could not be used, once, and say whether any fails the run.
+///
+/// A component `on_missing = "skip"` turned into skips does not fail the run (the user chose
+/// that), but it is never silent: a warning names it and the files it left unchecked, and the
+/// document's `summary.missing_components` counts it.
 fn report_blocking_components(components: &poly_core::components::ComponentsReport) -> bool {
-    let mut blocking = false;
-    for missing in components.missing.iter().filter(|m| m.blocking) {
-        eprintln!("error: {}", missing.reason);
-        blocking = true;
+    for line in component_lines(components) {
+        eprintln!("{line}");
     }
-    blocking
+    components.blocking()
+}
+
+/// One `error:` or `warning:` line per missing component; see [`report_blocking_components`].
+fn component_lines(components: &poly_core::components::ComponentsReport) -> Vec<String> {
+    components
+        .missing
+        .iter()
+        .map(|missing| {
+            if missing.blocking {
+                format!("error: {}", missing.reason)
+            } else {
+                format!(
+                    "warning: {}; the files it handles were skipped, not checked (`on_missing = \"skip\"`)",
+                    missing.reason
+                )
+            }
+        })
+        .collect()
 }
 
 /// Apply `--deny-skips` / `--max-skips`, naming every file that put the run over
@@ -768,6 +787,35 @@ fn load_config(explicit: Option<&Path>, resolver: &dyn BaseConfigResolver) -> an
 mod tests {
     use super::*;
     use poly_core::Diagnostic;
+    use poly_core::components::{ComponentsReport, MissingComponent};
+
+    #[test]
+    fn a_skipped_component_is_a_warning_and_a_blocking_one_an_error() {
+        let missing = |name: &str, blocking| MissingComponent {
+            name: name.into(),
+            kind: "offline".into(),
+            reason: format!("component not installed: {name} (offline)"),
+            blocking,
+        };
+        let report = ComponentsReport {
+            missing: vec![missing("python", false), missing("web", true)],
+            ..ComponentsReport::default()
+        };
+        let lines = component_lines(&report);
+        assert_eq!(lines.len(), 2);
+        assert!(
+            lines[0].starts_with("warning: component not installed: python (offline)"),
+            "{lines:?}"
+        );
+        assert!(lines[0].contains("skipped, not checked"), "{lines:?}");
+        assert_eq!(lines[1], "error: component not installed: web (offline)");
+        assert!(report_blocking_components(&report));
+        let only_skipped = ComponentsReport {
+            missing: vec![missing("python", false)],
+            ..ComponentsReport::default()
+        };
+        assert!(!report_blocking_components(&only_skipped));
+    }
 
     fn diag(severity: Severity) -> Diagnostic {
         Diagnostic {
