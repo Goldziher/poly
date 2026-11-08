@@ -506,6 +506,22 @@ pub(crate) mod tests {
     /// unambiguous while no language shares a name with a cross-cutting engine —
     /// an assumption nothing enforced until this test, and one a new language
     /// (or a renamed engine) could quietly break.
+    /// A component engine names its languages by `Language::id()` on the wire, and the host reads them back
+    /// with `Language::from_catalog_name`. An id that comes back as `Language::Other` matches no discovered
+    /// file, so the component engine silently serves nothing: `ini` did that, and a core build reported
+    /// "no lint rules for Ini" while the bundled build linted the same file.
+    #[test]
+    fn every_language_id_reads_back_as_the_same_language() {
+        for language in all_languages() {
+            assert_eq!(
+                Language::from_catalog_name(language.id()),
+                language,
+                "`{}` does not read back as itself",
+                language.id()
+            );
+        }
+    }
+
     #[test]
     fn no_language_id_collides_with_a_cross_cutting_engine_name() {
         for language in all_languages() {

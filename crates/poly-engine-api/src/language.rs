@@ -362,6 +362,7 @@ impl Language {
             "gleam" => Language::Gleam,
             // Matches the `dotenv-linter` catalog entry's `languages = ["env"]`.
             "env" | "dotenv" => Language::Dotenv,
+            "ini" => Language::Ini,
             "make" | "makefile" => Language::Other("make".to_string()),
             "vim" | "vimscript" => Language::Other("vim".to_string()),
             other => Language::Other(other.to_string()),

@@ -126,6 +126,7 @@ alef-component-runtime.workspace = true
 criterion.workspace = true
 insta.workspace = true
 owo-colors.workspace = true
+poly-engines = { workspace = true, features = ["misc"] }
 proptest.workspace = true
 tracing-subscriber.workspace = true
 
