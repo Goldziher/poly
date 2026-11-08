@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="polylint">
+  <title>polylint</title>
+  <defs>
+    <linearGradient id="g" x1="0" y1="4" x2="0" y2="28" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f8e7b0" />
+      <stop offset="1" stop-color="#e0bb5e" />
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="6" fill="#0d1424" />
+  <path
+    fill="none"
+    stroke="#b48a3a"
+    stroke-width="1"
+    d="M2.5 4.5L4.5 4.5L4.5 2.5L27.5 2.5L27.5 4.5L29.5 4.5L29.5 27.5L27.5 27.5L27.5 29.5L4.5 29.5L4.5 27.5L2.5 27.5Z"
+  />
+  <path
+    transform="translate(10 4)"
+    fill="url(#g)"
+    d="M0 0h4v18h-4ZM0 0H7.14A4.86 4.86 0 0 1 7.14 9.72H0ZM4 2.4V7.32H7.14A0.86 2.46 0 0 0 7.14 2.4Z"
+  />
+  <path fill="#e0bb5e" d="M8 22h16v2h-16ZM6 26h20v2h-20Z" />
+</svg>

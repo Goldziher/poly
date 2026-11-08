@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD033 MD041 -->
 <div align="center">
 
-<img src="docs/media/poly-banner.svg" alt="poly" width="820">
+<img src="docs/media/polylint-banner.svg" alt="polylint — one linter, every language" width="820">
 
 # polylint
 
