@@ -1,5 +1,5 @@
 ---
-title: Migrating to poly 2
+title: Migrating to the v2 config schema
 description: >-
   The poly.toml v1 to v2 schema change, the removed and replaced CLI flags, and the commands that
   move a repository across.
@@ -7,8 +7,9 @@ description: >-
 
 import { Aside } from '@astrojs/starlight/components';
 
-poly 2 changes the `poly.toml` schema and the CLI surface together
-([ADR 0038](https://github.com/Goldziher/poly/blob/main/adrs/0038-poly-toml-v2-and-cli-surface.md)).
+The v2 config schema is a `poly.toml` format, not a 2.x release: it shipped in poly 0.33.1, together
+with a set of CLI changes
+([ADR 0038](https://github.com/Goldziher/polylint/blob/main/adrs/0038-poly-toml-v2-and-cli-surface.md)).
 The config is engine-first, and a handful of flags that were switches for a three-way choice or
 redundant with a default are gone.
 
@@ -63,7 +64,7 @@ builtin = true
 After:
 
 ```toml
-required_version = ">=2.0"
+required_version = ">=0.34.0"
 
 [engines.ruff]
 select = ["E", "F"]

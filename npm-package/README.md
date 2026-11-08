@@ -1,8 +1,9 @@
 # @goldziher/polylint
 
-[poly](https://github.com/Goldziher/poly) is a universal, zero-dependency linter and
-formatter: one pure-Rust binary that wraps best-in-class tools as in-process backends,
-with a tree-sitter generic tier for everything else.
+[polylint](https://github.com/Goldziher/polylint) is one linter and formatter for every
+language in your repository, driven by one `poly.toml`. It runs ruff, oxc, biome, mago,
+sqruff and more as signed engine components, uses host tools such as `rustfmt` and `gofmt`
+when they are installed, and formats the long tail with tree-sitter.
 
 > **The command is `poly`, not `polylint`.** The pnpm package is named
 > `@goldziher/polylint` because the unscoped `poly` name is taken; the executable it puts
@@ -42,10 +43,25 @@ registry's own integrity hashes.
 On any other platform, `poly` prints which platforms are supported and points at the
 source build instead of failing with a stack trace.
 
+## Engines are downloaded at run time
+
+Nothing is fetched at install time, but every platform package except
+`linux-x64-musl` carries a **core** build: the first `poly lint` or `poly fmt` downloads the
+engine components the repository needs (`python`, `web`, `sql`, …), verifies each against
+the signed lock embedded in the binary, and caches it. Later runs use the cache.
+
+- `@goldziher/polylint-linux-x64-musl` is the **bundled** build: every engine is linked in
+  and nothing is downloaded.
+- `POLY_COMPONENT_MIRROR` points component downloads at an internal mirror.
+- `poly components sync .` installs ahead of time; `poly components import <archive>`
+  seeds a host with no network; `--offline` forbids every download.
+
+See [Components and offline use](https://goldziher.github.io/polylint/guides/components/).
+
 ## Links
 
-- [Documentation](https://github.com/Goldziher/poly#readme)
-- [Changelog](https://github.com/Goldziher/poly/blob/main/CHANGELOG.md)
-- [Issues](https://github.com/Goldziher/poly/issues)
+- [Documentation](https://goldziher.github.io/polylint/)
+- [Changelog](https://github.com/Goldziher/polylint/blob/main/CHANGELOG.md)
+- [Issues](https://github.com/Goldziher/polylint/issues)
 
 MIT licensed.

@@ -1,7 +1,16 @@
 # Package-manager installs
 
-poly ships one binary. Every channel below installs that same prebuilt binary — none of
-them compiles anything, and none needs a Rust, Node, or Python toolchain at run time.
+polylint ships one binary, `poly`. Every channel below installs that same prebuilt binary —
+none of them compiles anything, and none needs a Rust, Node, or Python toolchain at run time.
+
+Every release binary except Linux x64 musl is a **core** build: nothing is downloaded at
+install time, but the first `poly lint` or `poly fmt` downloads the engine components the
+repository needs, verifies them against the signed lock embedded in the binary, and caches
+them. The Linux x64 musl build (archive, `@goldziher/polylint-linux-x64-musl`, the
+`musllinux_1_2_x86_64` wheel) is **bundled**: every engine is linked in and nothing is
+downloaded. For proxied or air-gapped hosts, `POLY_COMPONENT_MIRROR` redirects component
+downloads and `poly components import <archive>` installs from a file; see
+[Components and offline use](https://goldziher.github.io/polylint/guides/components/).
 
 > See the README's [Installation](../README.md#installation) section for the quickstart
 > version of this. This file is the deeper reference — per-platform package names, wheel

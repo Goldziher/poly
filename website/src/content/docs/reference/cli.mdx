@@ -110,7 +110,7 @@ skipped main.rs: no engine selected by --only/--skip for this file
 ```
 
 To turn an engine off for every run rather than one invocation, use
-[`enabled`](/guides/configuration/#turning-one-engine-off) in `poly.toml` instead.
+[`enabled`](/poly/guides/configuration/#turning-one-engine-off) in `poly.toml` instead.
 
 ### The whole-project phase (`poly lint` only)
 
@@ -283,10 +283,10 @@ staged isolation. The version probe of each `poly` on `PATH` is time-bounded;
 
 ```console
 $ poly --version
-poly 0.31.0 (release build v0.31.0, release)
+poly 0.34.0 (release build v0.34.0, release)
 ```
 
-versus `poly 0.31.0 (dev build v0.31.0-8-g18aa5e8, debug)` — so a development build carrying unreleased
+versus `poly 0.34.0 (dev build v0.34.0-8-g18aa5e8, debug)` — so a development build carrying unreleased
 changes cannot be quoted as a release. The identifier comes from `git describe` at build time;
 outside a git checkout it reads `unknown` rather than guessing, and packagers can set
 `POLY_BUILD_ID`.
@@ -488,7 +488,7 @@ source file is kept.
 | `--recurse` | Walk nested projects, skipping `.git`, `node_modules`, virtualenvs, build output and `.gitignore`d trees. |
 | `--verify` | Re-run lint and format after writing. |
 | `--strip-superseded` | Additionally strip `pyproject.toml` `[tool.*]` sections for the Python tools ruff supersedes — black, isort, flake8, … |
-| `--to-v2` | After the importers, rewrite `poly.toml` and `poly.local.toml` from the v1 to the v2 schema (ADR 0038), keeping comments. Conflicts with `--verify`. See [Migrating to poly 2](/poly/guides/migrating-to-v2/). |
+| `--to-v2` | After the importers, rewrite `poly.toml` and `poly.local.toml` from the v1 to the v2 schema (ADR 0038), keeping comments. Conflicts with `--verify`. See [Migrating to the v2 config schema](/poly/guides/migrating-to-v2/). |
 | `--allow-dirty` | Let it write into a repository with uncommitted changes. |
 
 It takes an optional path, defaulting to the current directory.

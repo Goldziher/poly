@@ -1,0 +1,128 @@
+---
+title: Toolchains, runtimes and recipes
+description: >-
+  How polylint works with what is already on the machine: host tools such as rustfmt and gofmt,
+  recipe tools it can download, tools that need a host JVM, Node or Python, and how to keep runs
+  reproducible.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+polylint's built-in engines ship as [components](/poly/guides/components/) pinned to the poly
+version. Two other mechanisms run tools that are not components: **host tools** and **recipes**.
+Both run as subprocesses, and both are where a run can depend on the machine. This page says
+exactly where.
+
+<Aside type="note" title="polylint never bundles a runtime">
+    No JVM, Node, Python, Ruby or BEAM runtime ships with polylint. A tool that needs one runs on
+    the runtime already installed on the host. Engines that need no runtime are components; tools
+    that do are recipes or host tools.
+</Aside>
+
+## Host tools
+
+A language's canonical CLI, run per file over stdin and stdout when it is on `PATH`. Each is an
+engine, configured as `[engines.<id>]`.
+
+| Engine id | Language | Default |
+| --- | --- | --- |
+| `rustfmt` | Rust | on when installed |
+| `gofmt` | Go | on when installed |
+| `shellcheck` | Shell (lint) | on when installed |
+| `zigfmt` | Zig | opt-in |
+| `google-java-format` | Java | opt-in |
+| `ktfmt` | Kotlin | opt-in |
+| `swift-format` | Swift | opt-in |
+| `dartfmt` | Dart | opt-in |
+| `gleamfmt` | Gleam | opt-in |
+| `styler` | R (via `Rscript`) | opt-in |
+
+```toml
+[engines.zigfmt]
+enabled = true
+
+[engines.gofmt]
+enabled = false   # use the tree-sitter tier for Go instead
+```
+
+- **Absent or disabled** — the language falls through to tree-sitter formatting with a notice. A
+  missing host tool is never an error.
+- **Cache** — each tool's own `--version` output is part of the cache key, so upgrading the tool
+  invalidates its cached results.
+- **Batching** — `batch = true` hands a tool many files per invocation, with output identical to
+  the per-file path; `rustfmt`, `swift-format` and `styler` cannot be batched.
+- **Shell formatting is not a host tool.** It comes from the `sh` component (shfmt as a Go
+  sidecar). The host `shfmt` is used only by the bundled build or with
+  `[components] disable = ["sh"]`; `[engines.shfmt] enabled = false` leaves shell unformatted.
+
+## Recipes
+
+A recipe is a built-in integration for an ecosystem tool. Enable one with `[tools.<name>]`:
+
+```toml
+[tools.golangci-lint]
+enabled = true
+version = "2.15.0"   # a release listed in the catalog
+install = "auto"     # download it when it is missing
+```
+
+Recipe tools run batched (once per Go module, Helm chart or `buf.yaml` module where that is the
+tool's unit), and their reports are parsed into per-line findings with rule codes and URLs. The
+full behavior is on the [tool catalog](/poly/reference/catalog/#tools-with-a-recipe) page.
+
+| Tool | Covers | Download (`install = "auto"`) | Needs on the host |
+| --- | --- | --- | --- |
+| `golangci-lint` | Go lint and format | yes | Go toolchain (it type-checks the module) |
+| `buf` | Protobuf | yes | — |
+| `actionlint` | GitHub Actions workflows | yes | — |
+| `gau` | GitHub Actions `uses:` pins | no | install `gh-actions-updater` |
+| `hadolint` | Dockerfile | yes | — |
+| `helm`, `helm-template` | Helm charts | yes | — |
+| `tflint` | Terraform | yes | — |
+| `tofu` | HCL / Terraform format | yes | — |
+| `terraform` | HCL / Terraform format | no | install `terraform` |
+| `buildifier` | Starlark / Bazel | yes | — |
+| `checkstyle` | Java lint | yes (a jar) | a JRE (`java`) |
+| `palantir-java-format` | Java format | yes (native image) | — |
+| `npm-groovy-lint` | Groovy | no | Node, `npm install --global npm-groovy-lint` |
+| `pyproject-fmt` | `pyproject.toml` | no | Python, `uv tool install pyproject-fmt` |
+
+- **Downloads** are available on macOS and Linux (arm64 and x86_64; the `checkstyle` jar is
+  platform-independent). On Windows, install the tool yourself.
+- **Verification** — a download is checked against its SHA-256 before use. A `version` polylint
+  cannot provision makes the tool unavailable with a message; polylint never runs a different
+  version from `PATH` instead.
+- **Missing tool** — without `install = "auto"`, a missing recipe tool is a warning naming the
+  command that installs it.
+- **Takes over its language** — an enabled recipe formatter that covers a whole language
+  (`golangci-lint` for Go, `tofu` for HCL) replaces the built-in formatter for it. If that tool is
+  missing, its files are reported as skipped rather than formatted by something else.
+
+<Aside type="note" title="Versions in the next release">
+    Today a download needs a pinned `version`. From the next release, a recipe tool defaults to the
+    latest upstream release, stays pinnable with `version`, and the resolved version is recorded in
+    `poly.lock`.
+</Aside>
+
+## Catalog tools
+
+Any of the 348 tools in the embedded [mdsf](https://github.com/hougesen/mdsf) catalog can be
+enabled the same way. Without a recipe, a catalog tool is probed on `PATH`, run per file, and gives
+a file-level verdict (no line, no rule code). See the [tool catalog](/poly/reference/catalog/).
+
+## Reproducible runs
+
+Components are pinned to the poly version. Everything else on this page depends on the machine,
+so pin it where results must match across machines:
+
+1. Fix the poly version in CI: `required_version` in `poly.toml` with the GitHub Action's
+   `version: from-config`, or `version:` / `POLY_VERSION` directly.
+2. Pin host toolchains (`rustfmt`, `gofmt`, `shellcheck`) in CI, for example with `mise` or the
+   language's setup action — or disable them and accept tree-sitter formatting everywhere.
+3. Give every downloaded recipe tool a `version`.
+4. Install the runtimes recipe tools need (`java`, `node`, `python`) at pinned versions.
+5. Run `poly lint --deny-skips` so a tool that went missing fails the job instead of quietly
+   checking less.
+
+`poly doctor` prints which poly is running and the configuration in effect — the first thing to
+compare when two machines disagree.

@@ -23,7 +23,7 @@ const DOCTOR_COMMAND: &str = "doctor";
 #[command(
     name = "poly",
     version = poly_buildinfo::long_version(),
-    about = "Universal, zero-dependency linter & formatter",
+    about = "polylint: one linter & formatter for every language in your repository",
     propagate_version = true
 )]
 struct Cli {

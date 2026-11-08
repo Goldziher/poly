@@ -1,65 +1,74 @@
 ---
-title: Backend coverage
+title: Languages and engines
 description: >-
-  The tiered backend model, and a language-by-language table of which backend handles what — with
-  lint and format support called out per language.
+  Which engine handles which language, whether it lints, formats or both, and how it runs — a
+  component, a host tool, a recipe or the tree-sitter tier.
 ---
 
 import { Aside, LinkCard } from '@astrojs/starlight/components';
 
-poly resolves every file through a tiered model:
+Every file is handled by one of four mechanisms (defined in the [glossary](/poly/reference/glossary/)):
 
-1. **Curated Rust backends** for high-fidelity lint and format support.
-2. **Native-toolchain backends** for canonical first-party formatters — plus `shellcheck` — when
-   configured or present on `PATH`.
-3. **Tree-sitter generic formatting** for identified languages without a dedicated backend.
-4. **Optional catalog tools** from the embedded registry.
-
-The curated Rust backends ship as engine components (`web`, `python`, `sql`, `php`, `biome`,
-`ruby`, `nix`, `astgrep`, `misc`, `typos`). A bundled build links them all in; a core build
-downloads the ones a run needs. Either way they are configured the same way, as
-`[engines.<id>]`. See [Components and offline use](/poly/guides/components/); `poly components
-list` names the engines in each component.
+1. **Engines from components** — signed downloads a core build fetches per language; linked in on
+   the bundled build. Configured as `[engines.<id>]`. See
+   [Components and offline use](/poly/guides/components/) for the component list; `poly
+   components list` names the engines in each.
+2. **Host tools** — a language's canonical CLI, used when it is on `PATH` (`rustfmt`, `gofmt`,
+   `shellcheck` by default; the rest opt-in).
+3. **Tree-sitter tier** — best-effort formatting for identified languages with nothing better.
+4. **Recipes and catalog tools** — opt-in `[tools.<name>]`. See
+   [Toolchains, runtimes and recipes](/poly/guides/toolchains/).
 
 ## Language table
 
-| Language or files | Backend | Lint | Format |
-| --- | --- | ---: | ---: |
-| JavaScript / TypeScript / JSX / TSX | oxc | yes | yes |
-| JSON / JSONC | oxc parse diagnostics + formatter | yes | yes |
-| Python | ruff internals | yes | yes |
-| Python (type checking) | opt-in project check, ty (`[engines.python-types] backend = "ty"`) or pyrefly (`backend = "pyrefly"`, its own component); imports resolve through the detected virtualenv's `site-packages`; `--only`/`--skip` accept `python-types` for either, and a backend whose component is disabled or missing is an error, not a silent skip (see [Python type checking](/poly/reference/configuration/#python-type-checking)) | opt-in | no |
-| JS/TS workspaces (npm, pnpm, yarn, bun) | skif (opt-in dependency, manifest, version-policy and dead-code project check; `[engines.skif] enabled = true`) | opt-in | no |
-| TOML | taplo (lint) + `oxc_formatter_toml` (format; taplo's formatter when a taplo layout key is set) | yes | yes |
-| Markdown | rumdl (lint) + `oxc_formatter_markdown` (format; rumdl's fixer when a rumdl rule key is set) | yes | yes |
-| Markdown ADRs (`NNNN-*.md`) | adrlint (opt-in MADR structural rules) | opt-in | no |
-| SQL | sqruff | yes | yes |
-| YAML | `serde_yaml` (libyaml, the grammar PyYAML implements) + `oxc_formatter_yaml` | yes | yes |
-| CSS / SCSS | `oxc_formatter_css` (format; malva when a malva key is set) + biome (lint) | yes | yes |
-| Less | `oxc_formatter_css` (malva when a malva key is set) | no | yes |
-| HTML / Vue / Svelte / Astro / Angular / templates / XML | `markup_fmt` | no | yes |
-| GraphQL | `graphql-parser` + `pretty_graphql` (parse-error lint + format) + biome (rule lint) | yes | yes |
-| HCL / Terraform | `hcl-edit` (lint) + a port of `hclwrite.Format` (the layout `terraform fmt` and `terragrunt hclfmt` produce) | yes | yes |
-| Dockerfile (`Dockerfile`, `Dockerfile.*`, `Dockerfile-*`, `*.dockerfile`, `Containerfile`, …) | vendored `dockerfile-parser`, hadolint-style rules | yes | no |
-| `.env` files (`.env`, `.env.*`, `*.env`) | dotenv-analyzer | yes | no |
-| INI and compatible (`.ini`, `.cfg`, `.desktop`, `.npmrc`, `.editorconfig`, `.pylintrc`, `.coveragerc`, `.flake8`, …) | `rust-ini` | yes | no |
-| Nix | alejandra | no | yes |
-| Ruby (`*.rb`, `Gemfile`, `Rakefile`, `*.gemspec`, `*.rake`, `*.ru`, `Podfile`, …) | rubyfmt | no | yes |
-| PHP | mago | yes | yes |
-| R | opt-in `styler` (via `Rscript`), tree-sitter fallback otherwise | no | yes |
-| Go | `gofmt` when present (default-on), imports grouped as `goimports` does; tree-sitter fallback otherwise | no | yes |
-| Rust | `rustfmt` when present (default-on), tree-sitter fallback otherwise | no | yes |
-| Zig | opt-in `zig fmt`, tree-sitter fallback otherwise | no | yes |
-| Java | opt-in `google-java-format`, tree-sitter fallback otherwise | no | yes |
-| Kotlin | opt-in `ktfmt`, tree-sitter fallback otherwise | no | yes |
-| Swift | opt-in `swift-format`, tree-sitter fallback otherwise | no | yes |
-| Dart | opt-in `dart format`, tree-sitter fallback otherwise | no | yes |
-| Gleam | opt-in `gleam format`, tree-sitter fallback otherwise | no | yes |
-| Shell | shfmt from the `sh` component (the host `shfmt` in the bundled build, or with `[components] disable = ["sh"]`); `shellcheck` when present (default-on) | optional | yes |
-| Starlark / Bazel (`BUILD`, `*.bzl`, `WORKSPACE`, `Tiltfile`, …) | opt-in `buildifier` [recipe tool](/poly/reference/catalog/#tools-with-a-recipe), tree-sitter fallback otherwise | opt-in | yes |
-| All text files | opt-in `typos` spell-check (`[engines.typos] enabled = true`) | opt-in | no |
-| Any recognized language | opt-in `uncomment` comment removal | opt-in | no |
-| Other identified grammars | tree-sitter generic tier | no | best effort |
+In the **How it runs** column, `↓` marks a recipe tool polylint can download as a pinned,
+checksummed release (macOS and Linux), and `RT` one that needs a host runtime.
+
+| Language or files | Engine | Lint | Format | How it runs |
+| --- | --- | ---: | ---: | --- |
+| JavaScript / TypeScript / JSX / TSX | oxc | yes | yes | component `web` |
+| JSON / JSONC | oxc parse diagnostics + formatter | yes | yes | component `web` |
+| Python | ruff internals | yes | yes | component `python` |
+| Python (type checking) | opt-in project check, ty (`[engines.python-types] backend = "ty"`) or pyrefly (`backend = "pyrefly"`); imports resolve through the detected virtualenv's `site-packages`; `--only`/`--skip` accept `python-types` for either, and a backend whose component is disabled or missing is an error, not a silent skip (see [Python type checking](/poly/reference/configuration/#python-type-checking)) | opt-in | no | component `python` (ty) or `pyrefly` |
+| JS/TS workspaces (npm, pnpm, yarn, bun) | skif (opt-in dependency, manifest, version-policy and dead-code project check; `[engines.skif] enabled = true`) | opt-in | no | component `web` |
+| TOML | taplo (lint) + `oxc_formatter_toml` (format; taplo's formatter when a taplo layout key is set) | yes | yes | component `web` |
+| Markdown | rumdl (lint) + `oxc_formatter_markdown` (format; rumdl's fixer when a rumdl rule key is set) | yes | yes | component `web` |
+| Markdown ADRs (`NNNN-*.md`) | adrlint (opt-in MADR structural rules) | opt-in | no | component `web` |
+| SQL | sqruff | yes | yes | component `sql` |
+| YAML | `serde_yaml` (libyaml, the grammar PyYAML implements) + `oxc_formatter_yaml` | yes | yes | component `web` |
+| CSS / SCSS | `oxc_formatter_css` (format; malva when a malva key is set) + biome (lint) | yes | yes | components `web`, `biome` |
+| Less | `oxc_formatter_css` (malva when a malva key is set) | no | yes | component `web` |
+| HTML / Vue / Svelte / Astro / Angular / templates / XML | `markup_fmt` | no | yes | component `web` |
+| GraphQL | `graphql-parser` + `pretty_graphql` (parse-error lint + format) + biome (rule lint) | yes | yes | components `misc`, `biome` |
+| HCL / Terraform | `hcl-edit` (lint) + a port of `hclwrite.Format` (the layout `terraform fmt` and `terragrunt hclfmt` produce); opt-in `tflint`, `tofu`, `terraform` | yes | yes | component `misc`; recipes (`tflint` ↓, `tofu` ↓, `terraform`) |
+| Dockerfile (`Dockerfile`, `Dockerfile.*`, `Dockerfile-*`, `*.dockerfile`, `Containerfile`, …) | vendored `dockerfile-parser`, hadolint-style rules; opt-in `hadolint` | yes | no | component `misc`; recipe `hadolint` ↓ |
+| `.env` files (`.env`, `.env.*`, `*.env`) | dotenv-analyzer | yes | no | component `misc` |
+| INI and compatible (`.ini`, `.cfg`, `.desktop`, `.npmrc`, `.editorconfig`, `.pylintrc`, `.coveragerc`, `.flake8`, …) | `rust-ini` | yes | no | component `misc` |
+| Nix | alejandra | no | yes | component `nix` |
+| Ruby (`*.rb`, `Gemfile`, `Rakefile`, `*.gemspec`, `*.rake`, `*.ru`, `Podfile`, …) | rubyfmt | no | yes | component `ruby` |
+| PHP | mago | yes | yes | component `php` |
+| Shell | shfmt (the host `shfmt` in the bundled build, or with `[components] disable = ["sh"]`); `shellcheck` when present (default-on) | optional | yes | component `sh` (Go sidecar); host `shellcheck` |
+| Go | `gofmt` when present (default-on), imports grouped as `goimports` does; tree-sitter fallback otherwise; opt-in `golangci-lint` | opt-in | yes | host; recipe `golangci-lint` ↓ |
+| Rust | `rustfmt` when present (default-on), tree-sitter fallback otherwise; `cargo clippy`, `cargo-sort`, `cargo-machete`, `cargo-deny` in the whole-project phase | whole-project | yes | host |
+| Java | opt-in `google-java-format`, tree-sitter fallback otherwise; opt-in `checkstyle`, `palantir-java-format` | opt-in | yes | host; recipes `checkstyle` ↓ RT (JRE), `palantir-java-format` ↓ |
+| Kotlin | opt-in `ktfmt`, tree-sitter fallback otherwise | no | yes | host |
+| Swift | opt-in `swift-format`, tree-sitter fallback otherwise | no | yes | host |
+| Zig | opt-in `zig fmt`, tree-sitter fallback otherwise | no | yes | host |
+| Dart | opt-in `dart format`, tree-sitter fallback otherwise | no | yes | host |
+| Gleam | opt-in `gleam format`, tree-sitter fallback otherwise | no | yes | host |
+| R | opt-in `styler` (via `Rscript`), tree-sitter fallback otherwise | no | yes | host |
+| Groovy | opt-in `npm-groovy-lint` | opt-in | opt-in | recipe RT (Node) |
+| Protobuf | opt-in `buf`, tree-sitter fallback otherwise | opt-in | yes | recipe `buf` ↓ |
+| Starlark / Bazel (`BUILD`, `*.bzl`, `WORKSPACE`, `Tiltfile`, …) | opt-in `buildifier`, tree-sitter fallback otherwise | opt-in | yes | recipe `buildifier` ↓ |
+| GitHub Actions workflows | opt-in `actionlint`, `gau` | opt-in | no | recipes `actionlint` ↓, `gau` |
+| Helm charts | opt-in `helm`, `helm-template` | opt-in | no | recipes ↓ |
+| `pyproject.toml` | opt-in `pyproject-fmt` | no | opt-in | recipe RT (Python) |
+| All text files | opt-in `typos` spell-check (`[engines.typos] enabled = true`) | opt-in | no | component `typos` |
+| Any recognized language | opt-in `uncomment` comment removal | opt-in | no | component `uncomment` |
+| Other identified grammars (C, C++, C#, Elixir, …) | tree-sitter generic tier | no | best effort | tree-sitter |
+
+Lint in this table is the language's own engine. The two cross-cutting tiers below add findings on
+top, including where the column says `no`.
 
 Unsupported or unknown file types are skipped unless `tree-sitter-language-pack` can identify them.
 Some whitespace-sensitive data, template or patch grammars intentionally no-op rather than risk a
@@ -91,7 +100,7 @@ formatted.
 
 ## The two cross-cutting lint tiers
 
-Beyond the dedicated backends above, two lint tiers run on **every** language:
+Beyond the dedicated engines above, two lint tiers run on **every** language:
 
 - The native **`quality` metric engine** — file and function length, type length, parameter count,
   nesting depth, cyclomatic complexity, lazy ignore markers, and test files the runner will not
@@ -107,9 +116,9 @@ own YAML, with the standard ast-grep `ignores:` key — `placeholder-implementat
 test source sets, and `unwrap-used` excludes test and generated paths. Those are **defaults**: a
 `[per_file_ignores]` entry naming the rule replaces them, and every finding they drop is listed in
 the run's `suppressed` array. See
-[per-file ignores](/poly/guides/configuration/#suppressing-a-rule-inline).
+[per-file ignores](/poly/reference/configuration/#per_file_ignores).
 
-Both run in-process alongside the backends in the table, at warning severity — so neither fails an
+Both run alongside the engines in the table, at warning severity — so neither fails an
 unconfigured CI on its own.
 
 <Aside type="note" title="Coverage is claimed, never assumed">

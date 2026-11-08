@@ -579,7 +579,8 @@ impl ServerHandler for PolyMcpServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_tasks().build())
             .with_server_info(Implementation::new("poly-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Universal zero-dependency linter & formatter. Tools mirror the `poly` CLI. Read-only: \
+                "polylint: one linter & formatter for every language in the repository. Tools mirror the \
+                 `poly` CLI. Read-only: \
                  lint / format_check / cache_stats / rules / config_show / components / version. Mutating: lint_fix / \
                  format_write / cache_clean / components_uninstall. Component management: components (status, never \
                  downloads), components_install (downloads; a Task when the client supports them and something must be \

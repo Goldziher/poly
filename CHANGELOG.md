@@ -13,6 +13,13 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   Homebrew Intel block and its component builds are gone; releases carry five platform archives. Intel Mac users build
   from source. See [ADR 0046](adrs/0046-drop-intel-macos.md).
 
+### Documentation
+
+- **polylint.** The README, docs site, package READMEs, agent skills, `poly --help` and the MCP server instructions
+  name the product polylint (the command stays `poly`) and describe engine components, host tools and recipes
+  instead of a "zero-dependency, pure-Rust" binary. New pages: Why polylint, Adopting polylint, Toolchains,
+  runtimes and recipes, and a glossary. "Migrating to poly 2" is now "Migrating to the v2 config schema".
+
 ## [0.34.0] - 2026-11-08
 
 ### Added

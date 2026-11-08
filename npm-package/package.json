@@ -1,7 +1,7 @@
 {
   "name": "@goldziher/polylint",
   "version": "0.34.0",
-  "description": "Universal zero-dependency linter & formatter. Installs the prebuilt poly binary and puts `poly` on PATH.",
+  "description": "polylint: one linter & formatter for every language in your repository. Installs the prebuilt poly binary and puts `poly` on PATH.",
   "keywords": [
     "linter",
     "formatter",

@@ -3,164 +3,74 @@
 
 <img src="docs/media/poly-banner.svg" alt="poly" width="820">
 
-**One binary. ~30 languages. No toolchain to install.**
+# polylint
 
-poly lints and formats whole repositories in seconds: curated Rust backends for the languages
-that matter, a tree-sitter fallback for everything else, and eleven coding-agent plugin profiles plus an MCP
-server so agents can drive it directly instead of shelling out.
+**One linter and formatter for every language in your repository.**
 
-Lint + format · one `poly.toml` · pure Rust, zero deps · blake3 cache + rayon parallelism · git
-hooks & commit checks · MCP + coding-agent plugins
+polylint is a small binary, `poly`, driven by one `poly.toml`. It fetches the engine each language in your
+repository needs — ruff, oxc, biome, mago, sqruff and more, as signed, checksum-verified components — uses the
+canonical tools you already have (`rustfmt`, `gofmt`, `shellcheck`), and runs ecosystem linters such as
+golangci-lint, hadolint, actionlint and buf as built-in recipes. Everything reports through one format, one exit
+code and one cache.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/poly/ci.yaml?style=flat-square&cacheSeconds=300)](https://github.com/Goldziher/poly/actions/workflows/ci.yaml)
+40+ languages and file formats with a dedicated tool · tree-sitter formatting for 300+ more · git hooks and
+commit linting · monorepo-aware config · MCP server and agent plugins
+
+[![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/poly/ci.yaml?style=flat-square&cacheSeconds=300)](https://github.com/Goldziher/polylint/actions/workflows/ci.yaml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
-[![Docs](https://img.shields.io/badge/docs-goldziher.github.io%2Fpoly-blue?style=flat-square)](https://goldziher.github.io/poly)
+[![Docs](https://img.shields.io/badge/docs-goldziher.github.io%2Fpolylint-blue?style=flat-square)](https://goldziher.github.io/polylint/)
 
-[Install](#installation) · [What You Get](#what-you-get) · [What Runs Out of the Box](#what-runs-out-of-the-box) ·
-[AI Agents & MCP](#ai-agents--mcp) · [Performance](#performance) ·
-[Docs](https://goldziher.github.io/poly) · [Contributing](#contributing)
+[How it works](#how-it-works) · [Quick start](#quick-start) · [Languages](#languages) ·
+[Why polylint](#why-polylint) · [Install](#installation) · [Docs](https://goldziher.github.io/polylint/)
 
 </div>
 
 ---
 
-## What You Get
+## How it works
 
-<!-- markdownlint-disable MD013 -->
+```mermaid
+flowchart LR
+  R["your repository"] --> C["poly core<br/>discover · plan · cache · hooks"]
+  C -->|"per language, on demand"| K["signed components<br/>ruff · oxc · biome · mago · sqruff · rubyfmt · shfmt …"]
+  C -->|"if installed"| H["host tools<br/>rustfmt · gofmt · shellcheck · zig fmt …"]
+  C -->|"opt-in"| P["recipes<br/>golangci-lint · hadolint · buf · checkstyle …"]
+  C -->|"everything else"| T["tree-sitter tier<br/>300+ grammars"]
+  K & H & P & T --> O["one report · one exit code<br/>pretty · JSON · TOON · MCP"]
+```
 
-| Capability | What it does |
-|---|---|
-| **Fast on real repos** | Lints Django in 0.82s and home-assistant's 25,000 files in 3.5s, cold cache; see [Performance](#performance). |
-| **One binary, no toolchain** | Compiled-in Rust backends for Python, JavaScript, TypeScript, JSX, TSX, JSON, YAML, TOML, Markdown, MDX, CSS, SCSS, Less, HTML, Vue, Svelte, Astro, Angular, XML, PHP, Ruby, SQL, GraphQL, Nix, HCL, Dockerfile, INI and `.env`. Go, Rust, Zig, Java, Kotlin, Swift, Dart, R, Gleam and shell use their own toolchain when it is installed, and a tree-sitter tier covers everything else. No Node, Python, or Ruby runtime needed. See the [language table](https://goldziher.github.io/poly/reference/backends/). |
-| **Built for agents** | Coding-agent plugin profiles and a stdio MCP server ship in the box — an agent calls poly's tools directly instead of shelling out and parsing text. See [AI Agents & MCP](#ai-agents--mcp). |
-| **One config** | `poly.toml` drives linting, formatting, git hooks, and commit-message policy. |
-| **Cache + parallelism** | A blake3 content-hash cache skips unchanged work; rayon parallelizes the rest across cores. |
-| **Git hooks & commit checks** | `poly hooks install` wires lint, format, and Conventional-Commit checks into git — no external hook framework. |
-| **Two lint tiers on every language** | A code-quality metrics engine and a built-in 26-rule ast-grep pack (13 rules on by default) run on top of the backends above, at warning severity so they never redden an unconfigured CI. |
-| **Simple distribution** | Prebuilt binaries via a shell/PowerShell installer, a GitHub Action, Homebrew, Scoop, npm, and PyPI. |
+- **Components** — the engines (Rust crates, plus a Go sidecar for shell), signed and pinned to your poly version,
+  downloaded once per language and cached. No Python, Node or Ruby runtime is needed for them. A needed component
+  that cannot be installed is exit `2` (or a counted skip, if you ask for that), never a silent downgrade.
+- **Host tools** — a language's canonical CLI when it is on `PATH`: `rustfmt`, `gofmt` and `shellcheck` on by
+  default, `zig fmt`, `google-java-format`, `ktfmt`, `swift-format`, `dart format`, `gleam format` and `styler`
+  opt-in. Absent, the language falls through to tree-sitter formatting with a notice.
+- **Recipes** — ecosystem tools enabled with `[tools.<name>]`, run batched, with findings parsed per line. Most can
+  download a checksummed release (`install = "auto"`); tools that need the JVM, Node or Python use the runtime
+  already on your machine. polylint never bundles a runtime.
+- **Tree-sitter tier** — best-effort formatting for languages with nothing better. Grammars are fetched on demand.
+- **On every language** — a code-quality metrics engine and a 26-rule ast-grep pack, at warning severity.
+- **Never silent** — a file nothing could check is counted and named; `--deny-skips` makes that a CI failure.
 
-<!-- markdownlint-enable MD013 -->
+Files are discovered once (respecting `.gitignore`) and processed in parallel. The result cache is keyed by file
+bytes, engine, engine version and resolved config, so an upgrade or a config change invalidates exactly what it
+affects. `--debug` prints per-file engine timing and cache hits.
 
 ---
 
-## Installation
-
-### Quick install
+## Quick start
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh
+poly lint            # lint everything; the first run fetches the engines this repository needs
+poly fmt --fix       # format everything
+poly hooks install   # run both on every commit, without pre-commit or lefthook
 ```
 
-Windows PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/Goldziher/poly/main/install.ps1 | iex
-```
-
-Both detect the platform, download the matching release archive, and verify it against
-`sha256sums.txt`. Set `POLY_VERSION=0.31.0` to pin an exact release.
-
-### GitHub Actions
-
-```yaml
-- uses: Goldziher/poly@v0
-  with:
-    version: v0.31.0 # omit for the latest release
-```
-
-Forwards to `install.sh` and caches the installed binary by version and platform. See
-[`ACTION_USAGE.md`](ACTION_USAGE.md) for the full input/output reference.
-
-Engine components (the engines a slim `poly` downloads instead of bundling) are fetched before the
-first run and cached by version and component lock, so a second run downloads nothing:
-
-```yaml
-- uses: actions/checkout@v7
-- uses: Goldziher/poly@v0
-  with:
-    version: from-config # the version `required_version` in poly.toml names
-    components: auto # what this repository needs; or all, none, or e.g. "sql,php"
-- run: poly lint .
-```
-
-### Bundled and core builds
-
-`x86_64-unknown-linux-musl` is the only **bundled** release binary: every engine and the MCP server
-are linked in, and nothing is downloaded at run time. The other five release binaries (Linux gnu
-x86_64 and aarch64, macOS aarch64, Windows x86_64) are **core** builds with an embedded signed component lock. Their engines are components downloaded on
-first use (`poly rules` fetches the `astgrep` component the same way):
-
-```sh
-poly components status .             # which components this directory needs, and their state
-poly components sync .               # install them (poly --offline components sync . only checks)
-poly components import <archive>     # seed an air-gapped host
-poly components prune                # drop cached archives the lock no longer references
-```
-
-`[components]` in `poly.toml` selects components and sets `install` (`auto` or `never`) and
-`on_missing` (`fail` or `skip`); `--offline` / `POLY_OFFLINE=1` forbids every download, and
-`POLY_COMPONENT_MIRROR` points downloads at an internal mirror. See
-[Components and offline use](https://goldziher.github.io/poly/guides/components/).
-
-### Package managers
-
-```sh
-brew install Goldziher/tap/poly
-```
-
-```powershell
-scoop bucket add goldziher https://github.com/Goldziher/scoop-bucket
-scoop install poly
-```
-
-Homebrew's tap is a single rolling formula with no versioned alias yet — treat it as a
-get-latest channel and use the installer script or the GitHub Action where a pinned version
-matters. `cargo binstall --git https://github.com/Goldziher/poly poly-cli` also works, resolving
-the same GitHub release archives.
-
-### npm and PyPI
-
-```sh
-npm i -g @goldziher/polylint
-pip install polylint
-```
-
-Both install the same prebuilt `poly` binary. The package is named `polylint` (the unscoped
-`poly` name belongs to unrelated projects on both registries), but **the executable is `poly`
-on every channel** — `polylint` also works everywhere as an alias for the same binary. Full
-per-platform detail in [docs/INSTALL-PACKAGES.md](docs/INSTALL-PACKAGES.md).
-
-### As an agent plugin
-
-poly ships eleven runtime profiles under `plugin/`, with five public skills and
-two prompts. MCP-capable profiles register `poly mcp`; Pi uses the CLI. The Claude profile includes 5 skills
-and 2 slash commands (`/poly-check`, `/poly-fix`):
-
-```text
-/plugin marketplace add Goldziher/poly
-/plugin install poly@poly
-```
-
-Codex: add the `Goldziher/poly` marketplace through your client's plugin manager (manifest at
-`plugin/.codex-plugin/plugin.json`). The plugin assumes `poly` is already on `PATH` — it does not
-bundle the binary — and its version tracks the `poly` binary version lock-step. See
-[AI Agents & MCP](#ai-agents--mcp).
-
-### As an MCP server
-
-Any MCP-capable client can run poly directly:
-
-```json
-{
-  "mcpServers": {
-    "poly": { "command": "poly", "args": ["mcp"] }
-  }
-}
-```
-
----
-
-## Quickstart
+The first `poly lint` downloads the components for the languages it finds (for a Python and TypeScript repository,
+`python` and `web` among them), verifies each against the signed lock embedded in the binary, and caches it. Later
+runs use the cache. The Linux musl build has every engine linked in and downloads nothing; see
+[Installation](#installation).
 
 ```console
 $ poly lint
@@ -172,97 +82,232 @@ $ poly lint
 3 issues found.
   2 files linted
   1 issue fixable with the `--fix` option
-
-$ poly fmt
-would reformat ./src/main.rs
-
-1 file will change.
-  2 files checked
-
-$ poly fmt --fix
-reformatted ./src/main.rs
-
-1 file reformatted.
-  2 files checked
-
-$ poly hooks install
-✓ Installed 2 git hooks in .git/hooks
-  › commit-msg
-  › pre-commit
 ```
 
-`poly fmt` is a dry run by default (CI-friendly); add `--fix` to write changes, and `poly lint
---fix` to apply lint autofixes. `poly hooks install` wires the git hooks once — lint, format, and
-commit checks then run on every `git commit`.
+`poly fmt` without `--fix` is a dry run. Exit codes are a contract: `0` clean, `1` findings (or, for a `poly fmt`
+dry run, files that would change), `2` the run verified less than it claims. `poly fmt --fix` exits `0` after
+rewriting; add `--exit-nonzero-on-fix` for a CI step that must fail when the tree was not already formatted.
 
-Exit codes are a contract: `0` is clean, `2` means the run verified less than it claims, and `1`
-means findings or, for a `poly fmt` dry run, files that would change. `poly fmt --fix` exits `0`
-after rewriting; add `--exit-nonzero-on-fix` for a CI step that must fail when the tree was not
-already formatted. Add `-q` to trim the per-file detail on a large repository; the summary keeps
-every count and reason.
+---
+
+## Languages
+
+**How it runs**: `component <name>` is a signed download (linked in on the bundled build); `host` is a CLI used
+when installed; `recipe` is an opt-in `[tools.<name>]` integration (↓ = polylint can download a pinned release on
+macOS and Linux; RT = needs a host runtime); `ts` is the tree-sitter tier. **Q** = quality-tier lint, **AG** =
+built-in ast-grep rules.
+
+<!-- markdownlint-disable MD013 -->
+
+| Language or files | Lint | Format | How it runs |
+|---|---|---|---|
+| Python | ruff; ty or pyrefly (opt-in type check) · Q · AG | ruff | component `python` (`pyrefly`) |
+| JavaScript, TypeScript, JSX, TSX | oxlint; skif (opt-in workspace check) · Q | oxc formatter | component `web` |
+| JSON, JSONC | oxc parse errors | oxc formatter | component `web` |
+| YAML | serde_yaml | oxc_formatter_yaml | component `web` |
+| TOML | taplo | oxc_formatter_toml (taplo on request) | component `web` |
+| Markdown, MDX | rumdl; adrlint (opt-in, ADRs) | oxc_formatter_markdown | component `web` |
+| CSS, SCSS | biome | oxc_formatter_css (malva on request) | components `web`, `biome` |
+| Less | — | oxc_formatter_css (malva on request) | component `web` |
+| HTML, Vue, Svelte, Astro, Angular, XML, Jinja | — | markup_fmt | component `web` |
+| GraphQL | graphql parse errors, biome | pretty_graphql | components `misc`, `biome` |
+| SQL | sqruff | sqruff | component `sql` |
+| PHP | mago | mago | component `php` |
+| Ruby | Q · AG | rubyfmt | component `ruby` |
+| Nix | — | alejandra | component `nix` |
+| HCL, Terraform | hcl-edit; tflint (recipe ↓) | hclwrite port; tofu (recipe ↓), terraform (recipe) | component `misc` |
+| Dockerfile | built-in rules; hadolint (recipe ↓) | — | component `misc` |
+| `.env`, INI | dotenv, ini | — | component `misc` |
+| Shell | shellcheck (host, default-on) | shfmt | component `sh` (Go sidecar) |
+| Go | golangci-lint (recipe ↓) · Q · AG | gofmt (host, default-on); golangci-lint (recipe ↓) | host, recipe |
+| Rust | cargo clippy, sort, machete, deny (whole-project phase) · Q · AG | rustfmt (host, default-on) | host |
+| Java | checkstyle (recipe ↓, RT: JRE) · Q · AG | google-java-format (host, opt-in); palantir-java-format (recipe ↓, native) | host, recipe |
+| Kotlin | Q · AG | ktfmt (host, opt-in) | host |
+| Swift | AG | swift-format (host, opt-in) | host |
+| Zig, Dart, Gleam, R | — | zig fmt, dart format, gleam format, styler (host, opt-in) | host |
+| Groovy | npm-groovy-lint (recipe, RT: Node) | npm-groovy-lint | recipe |
+| Protobuf | buf (recipe ↓) | buf | recipe |
+| Starlark, Bazel | buildifier (recipe ↓) | buildifier | recipe |
+| GitHub Actions workflows | actionlint (recipe ↓); gau (recipe) | — | recipe |
+| Helm charts | helm, helm-template (recipe ↓) | — | recipe |
+| `pyproject.toml` | — | pyproject-fmt (recipe, RT: Python) | recipe |
+| C, C++, C# | Q (C# also AG) | tree-sitter | ts |
+| Elixir | AG | tree-sitter | ts |
+| 300+ other grammars | — | tree-sitter, best effort | ts |
+| Any text | typos (opt-in) | — | component `typos` |
+| Any language | uncomment (opt-in) | — | component `uncomment` |
+
+<!-- markdownlint-enable MD013 -->
+
+348 more tools from the embedded [mdsf](https://github.com/hougesen/mdsf) catalog can be enabled per tool, with
+file-level verdicts. Recipe downloads are not available on Windows; install the tool yourself there. Full reference:
+[Languages and engines](https://goldziher.github.io/polylint/reference/backends/) and
+[Toolchains, runtimes and recipes](https://goldziher.github.io/polylint/guides/toolchains/).
+
+---
+
+## Why polylint
+
+| If you use… | What changes |
+|---|---|
+| ruff, oxlint, biome, … individually | The same engines (ruff, oxc, biome and mago are linked as libraries), one config, one report format, one cache and one exit-code contract. No per-ecosystem toolchain for the built-in engines. |
+| pre-commit or lefthook | `poly hooks` runs from `poly.toml`, checks a snapshot of the staged index rather than your worktree, and needs no Python environment. `poly migrate` converts `.pre-commit-config.yaml` and `lefthook.yml`. |
+| MegaLinter or Super-Linter | No Docker image: a native binary fast enough for local runs and git hooks as well as CI, with a content-hash cache and per-line findings from parsed reports. Trade-off: they wrap more linters. |
+| dprint | polylint lints as well as formats. |
 
 ---
 
 ## Demos
 
-Real recordings, not mockups — `vhs` runs each command live, so the timings on screen are the
-timings you get. Tapes are in [`docs/media/tapes/`](docs/media/tapes/).
+Real recordings — `vhs` runs each command live. Tapes are in [`docs/media/tapes/`](docs/media/tapes/).
 
-**Kubernetes: 31,303 files, one binary, no Go toolchain.**
+**Kubernetes: 31,303 files in one run.**
 
 ![poly linting the Kubernetes repository](docs/media/scale.gif)
 
-**Django is not a Python repo** — it is Python, JavaScript, CSS, HTML, TOML, YAML and Markdown.
-One tool, one config, one pass.
+**Django is not a Python repo** — it is Python, JavaScript, CSS, HTML, TOML, YAML and Markdown. One tool, one
+config, one pass.
 
 ![poly formatting and linting Django](docs/media/polyglot.gif)
 
-**Every report has a machine-readable form.** `--format toon` is compact enough to hand to an
-agent without burning its context; `--format json` is there when you want a document to parse.
+**Every report has a machine-readable form.** `--format toon` is compact enough to hand to an agent; `--format json`
+is there when you want a document to parse.
 
 ![poly emitting TOON output](docs/media/toon.gif)
 
-**And an agent can skip the terminal entirely.** `poly mcp` speaks MCP over stdio and advertises
-fourteen tools that mirror the CLI.
+**An agent can skip the terminal entirely.** `poly mcp` speaks MCP over stdio and advertises fourteen tools that
+mirror the CLI.
 
 ![the poly MCP server listing its tools](docs/media/agent.gif)
 
 ---
 
-## How It Works
+## Installation
 
-poly discovers files once (respecting `.gitignore`), plans the engine list once per language, and runs the per-file
-work in parallel on a rayon pool. Every backend — a linked-in Rust crate, the tree-sitter tier, or a wrapped CLI —
-returns the same `Diagnostic` and `FormatOutput` shapes, so reporting, caching, and MCP output stay uniform.
-
-```mermaid
-flowchart LR
-  A["paths"]
-  B["discover<br/>gitignore aware"]
-  C["plan engines<br/>per language"]
-  D["rayon file loop"]
-  E["blake3 cache"]
-  F["lint / format<br/>reports"]
-  A --> B --> C --> D
-  D <-->|hit / miss| E
-  D --> F
+```sh
+curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh   # macOS, Linux
+brew install Goldziher/tap/poly
+pnpm add --global @goldziher/polylint
+pip install polylint
+cargo binstall --git https://github.com/Goldziher/poly poly-cli
 ```
 
-The default path needs no Python, Node, Go, or JVM — the backends are Rust crates compiled into the binary, and a
-language without a dedicated backend falls through to a tree-sitter generic tier that is still pure Rust. The result
-cache is keyed by file bytes, engine name, engine version, and resolved engine config, so a tool upgrade or a config
-change invalidates exactly the entries it affects. `--debug` prints per-file engine timing and cache hit/miss data.
+```powershell
+irm https://raw.githubusercontent.com/Goldziher/poly/main/install.ps1 | iex
+scoop bucket add goldziher https://github.com/Goldziher/scoop-bucket
+scoop install poly
+```
+
+The installers verify the archive against `sha256sums.txt`; set `POLY_VERSION=0.34.0` to pin a release. Homebrew is
+a rolling get-latest formula. The npm and PyPI packages are named `polylint` because `poly` is taken on both
+registries; **the command is `poly` on every channel**, with `polylint` as an alias. Details:
+[docs/INSTALL-PACKAGES.md](docs/INSTALL-PACKAGES.md).
+
+### Platforms and builds
+
+| Target | Build |
+|---|---|
+| Linux x86_64 (glibc), Linux aarch64 (glibc) | core |
+| Linux x86_64 (musl) | **bundled** |
+| macOS aarch64 (Apple silicon) | core |
+| Windows x86_64 | core |
+
+Intel macOS is not supported from the release after 0.34.0 (build from source); Windows arm64 and Linux musl
+aarch64 have no release binary.
+
+A **core** build is under 14 MiB (11.1 MB on macOS arm64) and downloads engine components on first use. The **bundled** build links every
+engine and the MCP server in and downloads nothing. For controlled networks:
+
+```sh
+poly components sync .             # install what this directory needs, ahead of time
+poly components import <archive>   # seed an air-gapped host
+poly --offline lint .              # forbid every download (also POLY_OFFLINE=1)
+```
+
+`POLY_COMPONENT_MIRROR` points downloads at an internal mirror. See
+[Components and offline use](https://goldziher.github.io/polylint/guides/components/).
+
+### GitHub Actions
+
+```yaml
+- uses: actions/checkout@v4
+- uses: Goldziher/poly@v0
+  with:
+    version: from-config # the release that `required_version` in poly.toml allows
+    components: auto     # pre-install and cache the components this repository needs
+- run: poly fmt .
+- run: poly lint --deny-skips .
+```
+
+See [`ACTION_USAGE.md`](ACTION_USAGE.md) for every input.
 
 ---
 
-## What Runs Out of the Box
+## Configure
 
-poly is useful with an empty `poly.toml`. This is what a run with no configuration actually does; anything opt-in is
-marked as such.
+polylint works with no config. When you want one:
+
+```toml
+# poly.toml
+[discovery]
+exclude = ["vendor/**"]
+
+[engines.ruff]
+extend_select = ["D"]
+
+[tools.golangci-lint]
+enabled = true
+
+[hooks]
+stages = ["pre-commit", "commit-msg"]
+
+[hooks.builtin]
+lint = true
+fmt = true
+commit = { stages = ["commit-msg"] }
+```
+
+- `poly migrate` reads existing ruff, taplo, markdownlint and typos configs, `.pre-commit-config.yaml` and
+  `lefthook.yml`, and folds what it can honor into `poly.toml` (dry run by default; `--write` applies).
+- Nested `poly.toml` files cascade in a monorepo; `poly.local.toml` layers local overrides; `extends` shares a
+  baseline across repositories; `poly config show` prints the effective result.
+- Unknown keys, sections and wrongly typed values are reported as warnings, never silently ignored.
+
+---
+
+## Git hooks and commit linting
+
+`poly hooks install` wires lint, format, file-safety and Conventional Commits checks into git from `[hooks]` in
+`poly.toml`. Hooks run against a snapshot of the staged index, so unstaged edits neither hide nor cause failures.
+`poly commit` lints and cleans commit messages. See
+[Git hooks](https://goldziher.github.io/polylint/guides/hooks/).
+
+---
+
+## Agents and MCP
+
+`poly mcp` is a stdio MCP server with fourteen tools that mirror the CLI (`lint`, `format_check`, `lint_fix`,
+`format_write`, `components`, `workspace_lint`, …). Every result identifies the binary that answered and separates
+checked, skipped and errored files, so an agent can gate on what was actually verified.
+
+```text
+/plugin marketplace add Goldziher/poly
+/plugin install poly@poly
+```
+
+Any other MCP client runs it as `{ "command": "poly", "args": ["mcp"] }`. Plugins ship for Claude, Codex, Cursor,
+Gemini, Kimi, OpenCode, Factory, Hermes, Pi, Agent Plugins and Copilot, and assume `poly` is already on `PATH`;
+see [plugin/README.md](plugin/README.md) and
+[Agents and MCP](https://goldziher.github.io/polylint/guides/agents-and-mcp/).
+
+---
+
+<details>
+<summary><strong>What runs out of the box</strong></summary>
 
 <!-- markdownlint-disable MD013 -->
 
-| Backend | What it enables by default |
+| Engine | What it enables by default |
 |---|---|
 | **ruff** (Python) | 22 selector groups: ruff's own `F`, `E4`, `E7`, `E9`, plus `W6`, `I`, `UP`, `B`, `ANN`, `SIM`, `C4`, `RET`, `FURB`, `PERF`, `TRY`, `BLE`, `S110`, `C90`, `PLR`, `T20`, `TC`, `PTH`, `RUF`, `ARG`. `E1`/`E2`/`E3`/`W1`/`W2`/`W3` stay off because the formatter owns them, and seven noisy members are turned back off: `B008`, `RUF100`, `ANN002`, `ANN003`, `ARG002`, `PLR2004`, `TRY003`. Line length 120, docstring code formatted at width 120. |
 | **oxlint** (JS/TS) | oxlint's own default is `correctness` only. poly adds `suspicious`, `pedantic`, `complexity`, `typescript/no-explicit-any`, `typescript/no-non-null-assertion` and `no-console`, all at warning. `restriction`, `style` and `nursery` stay off; `no-underscore-dangle`, `max-lines-per-function`, `max-lines` and `max-classes-per-file` are turned back off. |
@@ -272,16 +317,14 @@ marked as such.
 
 <!-- markdownlint-enable MD013 -->
 
-### Three tiers that run on every language
+Two cross-cutting lint tiers are on by default for every language, and two more are opt-in:
 
-- **`typos`** — spell-checks identifiers, comments and strings. Opt-in: enable it with `[engines.typos] enabled = true`.
-  `poly migrate` writes that key for configs that relied on the old default.
-- **The code-quality engine** — tree-sitter metric rules, listed below.
-- **The built-in ast-grep pack** — 26 rules across C#, Elixir, Go, Java, Kotlin, Python, Ruby, Rust and Swift. **13
-  are on by default**; the other 13 ship `severity: off` and are one config line away. Your own rules under
-  `[engines.astgrep] rule_dirs` sit above the pack — a rule with the same `id` replaces the built-in one outright.
-
-A fourth cross-cutting engine, `uncomment` (comment removal), is off by default and ships as its own component.
+- **The code-quality engine** (on) — tree-sitter metric rules, listed below.
+- **The built-in ast-grep pack** (on) — 26 rules across C#, Elixir, Go, Java, Kotlin, Python, Ruby, Rust and Swift.
+  13 are on by default; the other 13 ship `severity: off` and are one config line away. Your own rules under
+  `[engines.astgrep] rule_dirs` sit above the pack — a rule with the same `id` replaces the built-in one.
+- **`typos`** (opt-in) — spell-checks identifiers, comments and strings: `[engines.typos] enabled = true`.
+- **`uncomment`** (opt-in) — comment removal.
 
 | Quality rule | Default |
 |---|---|
@@ -296,132 +339,16 @@ A fourth cross-cutting engine, `uncomment` (comment removal), is off by default 
 | `law-of-demeter` | opt-in — chain depth 3 |
 | `uncollected-test-file` | on for Python, Go, Ruby — a test name the runner will not collect |
 
-The quality engine never duplicates a backend rule: where ruff or oxlint already covers a metric, it defers. It counts
-as lint *coverage* only for languages whose control flow it can model — Python, Rust, Go, JavaScript, JSX, TypeScript,
-TSX, Java, Kotlin, C, C++, C# and Ruby — while other languages still get the line-count rules.
+The quality engine never duplicates an engine rule: where ruff or oxlint already covers a metric, it defers. It
+counts as lint coverage only for languages whose control flow it can model — Python, Rust, Go, JavaScript, JSX,
+TypeScript, TSX, Java, Kotlin, C, C++, C# and Ruby. Everything these tiers report is **warning** severity, and
+warnings alone do not fail a run, so turning polylint on does not redden an unconfigured CI.
 
-Everything these three tiers report is **warning** severity, and warnings alone do not fail a run, so turning poly on
-does not redden an unconfigured CI.
+[adrlint](https://github.com/Goldziher/adrlint) is an opt-in MADR engine for numbered ADR files (`NNNN-*.md`),
+enabled with `[engines.adrlint] enabled = true`; see
+[ADR 0037](adrs/0037-adrlint-madr-linting.md) and [ADR 0041](adrs/0041-adrlint-tree-wide-rules-as-project-check.md).
 
-### Native toolchain CLIs
-
-`gofmt`, `rustfmt` and `shellcheck` run automatically when found on `PATH`; `shellcheck` is the only one
-that lints. Shell is formatted by the `sh` component, shfmt's own Go library run as a sidecar, so it no longer needs
-`shfmt` on `PATH` (the bundled build and `[components] disable = ["sh"]` still use the host `shfmt`). `zig fmt`, `google-java-format`, `ktfmt`, `styler` (R), `swift-format`, `dart format` and `gleam format`
-are opt-in. When a tool is absent the language falls through to the tree-sitter tier, so the
-zero-dependency promise holds either way.
-
-### Architecture decision records
-
-[adrlint](https://github.com/Goldziher/adrlint) is linked in as an opt-in MADR backend for numbered ADR files
-(`NNNN-*.md`). It checks the decision structure (`MADR01`–`MADR08`), front-matter YAML, list style and the
-document-local link rules, and its structural heading fix runs under `poly lint --fix`:
-
-```toml
-[engines.adrlint]
-enabled = true
-# Optional: narrow or extend the rule set. Codes match by prefix, so MADR07 covers MADR07a/b.
-# select = ["MADR01", "MADR05", "MADR06", "MADR31"]
-# ignore = ["MADR12"]
-# dir = "docs/adr"   # the ADR log for the tree-wide rules; lock = "adrlint.lock"
-```
-
-It is **off by default**, because an existing log may follow a different template. The tree-wide rules run as a
-project check over the whole log: directory numbering and file names (`MADR41`–`MADR44`) and the immutability lock
-(`ADR50`/`ADR51`, read from `adrlint.lock`). Point it at the log with `dir` (default `docs/adr`) or `paths`. Link-target
-existence (`MADR12a`/`c`) and external links (`MADR11`) stay in the `adrlint` CLI, since they need the tree or the
-network. See [ADR 0037](adrs/0037-adrlint-madr-linting.md) and
-[ADR 0041](adrs/0041-adrlint-tree-wide-rules-as-project-check.md).
-
----
-
-## Backend Coverage
-
-<!-- markdownlint-disable MD013 -->
-
-| Language | Backend | Lint | Format |
-|---|---|---:|---:|
-| Python | ruff | yes | yes |
-| JavaScript / TypeScript / JSX / TSX / JSON | oxc | yes | yes |
-| TOML | taplo (lint) + oxc_formatter_toml | yes | yes |
-| YAML | serde_yaml (libyaml) + oxc_formatter_yaml | yes | yes |
-| Markdown / MDX | rumdl (lint) + oxc_formatter_markdown | yes | yes |
-| Markdown ADRs (`NNNN-*.md`) | adrlint, opt-in | opt-in | no |
-| Python type checking | ty or pyrefly, opt-in project check | opt-in | no |
-| JS/TS workspaces (npm, pnpm, yarn, bun) | skif, opt-in project check | opt-in | no |
-| SQL | sqruff | yes | yes |
-| CSS / SCSS | oxc_formatter_css (malva on request) + biome | yes | yes |
-| Less | oxc_formatter_css (malva on request) | no | yes |
-| GraphQL | graphql + biome | yes | yes |
-| PHP | mago | yes | yes |
-| HCL / Terraform | hcl | yes | yes |
-| HTML / Vue / Svelte / Astro / XML | markup_fmt | no | yes |
-| Dockerfile | dockerfile | yes | no |
-| `.env` | dotenv | yes | no |
-| INI | ini | yes | no |
-| Ruby | rubyfmt | no | yes |
-| Nix | alejandra | no | yes |
-| Go | `gofmt`, automatic when installed | no | yes |
-| Rust | `rustfmt`, automatic when installed | no | yes |
-| Shell | shfmt (`sh` component); `shellcheck`, automatic when installed | yes | yes |
-| Zig / Java / Kotlin / R / Swift / Dart / Gleam | first-party CLI, opt-in | no | opt-in |
-| Everything else identified | tree-sitter generic tier | no | best effort |
-
-<!-- markdownlint-enable MD013 -->
-
-The `Lint` column is the language's own backend; the three cross-cutting tiers add findings on top, including where
-that column says `no`. Beyond this table, an opt-in catalog of 348 tools across 175 languages covers the long tail;
-fourteen of them (`golangci-lint`, `helm`, `buf`, `hadolint`, `tflint`, `actionlint`, `buildifier`, `checkstyle`, …)
-carry recipes that run them batched, parse their reports into per-line findings, and can download a pinned,
-checksummed release with `install = "auto"`.
-Full per-language reference: [Backends](https://goldziher.github.io/poly/reference/backends/).
-
----
-
-## AI Agents & MCP
-
-poly ships its agent integration in the box rather than expecting one to be bolted on.
-
-```text
-/plugin marketplace add Goldziher/poly
-/plugin install poly@poly
-```
-
-That installs 5 skills and 2 slash commands (`/poly-check`, `/poly-fix`) that teach an agent poly's tiered backend
-model and when to reach for lint vs. format vs. hooks. Codex clients add the same marketplace through their own
-plugin manager.
-
-### Pi
-
-Install the `poly` binary first, then install the Pi package from Git:
-
-```sh
-pi install git:github.com/Goldziher/poly
-```
-
-The package contains 5 skills and the `/poly-check` and `/poly-fix` prompt templates.
-Pi runs `poly` through its shell tool; this package does not register an MCP server or install the binary.
-Use `pi install -l git:github.com/Goldziher/poly` to save the package in the current project's configuration.
-
-The same bundle is published to npm as `@goldziher/opencode-poly` for OpenCode and Pi:
-`pi install npm:@goldziher/opencode-poly` installs it from the registry and enables Pi catalog discovery.
-
-`poly mcp` is a stdio MCP server exposing fourteen tools that mirror the CLI 1:1 — `lint`, `format_check`, `rules`,
-`config_show`, `cache_stats`, `components` and `version` (read-only), `lint_fix`, `format_write` and `cache_clean`
-(mutating), `components_install` / `components_uninstall`, and `workspace_lint` / `workspace_lint_fix`. The last two run the multi-minute whole-project phase (`cargo clippy`,
-`cargo-sort`, `cargo-machete`, `cargo-deny`) and are exposed as async **Tasks**: the call returns a handle the client
-polls with `tasks/get`, falling back to a synchronous result for clients that do not declare the capability.
-
-Every result carries a `poly` identity block (version, build id, channel, executable, pid, `engines` — a blake3
-digest of every compiled-in backend's version) and separates three per-file outcomes — **checked**, **skipped**
-(poly declined the file) and **errored** (poly failed on a file it accepted). `isError` is set whenever anything
-errored, so an agent can gate on it before trusting the payload.
-
-Full parameter reference: [`poly-mcp`](skills/poly-mcp/SKILL.md).
-
-See [all runtime installation instructions](plugin/README.md) for Claude, Cursor, Codex, Gemini,
-Kimi, OpenCode, Factory, Hermes, Pi, Agent Plugins and Copilot. Public skills can be installed
-individually with `npx skills add Goldziher/poly --skill poly-mcp`.
+</details>
 
 ---
 
@@ -445,39 +372,36 @@ oxlint, biome or anything else; no such benchmark was run.
 <!-- markdownlint-enable MD013 -->
 
 Kubernetes is the one repository where formatting costs more than linting: its Go files go
-through `gofmt`, the one backend that is a subprocess rather than a linked-in crate, and ~20,000
-process spawns dominate the run.
+through the host `gofmt`, one subprocess per file, and ~20,000 process spawns dominate the run.
 
-The blake3 cache and rayon parallelism (see [How It Works](#how-it-works)) are what keep repeat
-runs fast — Django re-lints in 0.71s warm against 0.82s cold: a cache hit skips the engine
-entirely, and everything else is split across cores.
+Repeat runs are faster — Django re-lints in 0.71s warm against 0.82s cold: a cache hit skips the
+engine entirely, and everything else is split across cores.
 
 ---
 
 ## Documentation
 
-A single `poly.toml` drives linting, formatting, git hooks, and commit-message policy; `poly.local.toml` layers local
-overrides on top, nested files cascade in a monorepo, and `poly config show` prints the effective merged result.
-Unknown keys, unknown sections and wrongly-typed values are reported as warnings, never silently ignored.
-
-- [Quickstart](https://goldziher.github.io/poly/start/quickstart/) — install, first run, first config.
-- [Configuration](https://goldziher.github.io/poly/guides/configuration/) — every key, rule selection, inline
+- [Quickstart](https://goldziher.github.io/polylint/start/quickstart/) — install, first run, first config.
+- [Adopting polylint in a polyglot repo](https://goldziher.github.io/polylint/guides/adopting/) — migration,
+  rollout, CI.
+- [Configuration](https://goldziher.github.io/polylint/guides/configuration/) — every key, rule selection, inline
   suppression, monorepo cascading, shared and remote config.
-- [Hooks](https://goldziher.github.io/poly/guides/hooks/) — `poly hooks install`, builtin hooks, staged isolation,
-  timeouts, concurrency, caching.
-- [Components and offline use](https://goldziher.github.io/poly/guides/components/) — bundled and core builds,
+- [Toolchains, runtimes and recipes](https://goldziher.github.io/polylint/guides/toolchains/) — host tools, recipe
+  downloads, host runtimes, reproducibility.
+- [Components and offline use](https://goldziher.github.io/polylint/guides/components/) — bundled and core builds,
   `[components]`, mirrors, air-gapped hosts.
-- [Migrating to poly 2](https://goldziher.github.io/poly/guides/migrating-to-v2/) — the `poly.toml` v2 schema and the
-  removed CLI flags.
-- [CLI reference](https://goldziher.github.io/poly/reference/cli/) — every subcommand and flag, and the exit-code
-  contract.
-- [Backends](https://goldziher.github.io/poly/reference/backends/) — full language table and the tool catalog.
+- [Git hooks](https://goldziher.github.io/polylint/guides/hooks/) — `poly hooks install`, builtin hooks, staged
+  isolation, timeouts, concurrency, caching.
+- [Migrating to the v2 config schema](https://goldziher.github.io/polylint/guides/migrating-to-v2/) — the
+  `poly.toml` v2 schema and the removed CLI flags.
+- [CLI reference](https://goldziher.github.io/polylint/reference/cli/) — every subcommand and flag, and the
+  exit-code contract.
 
 ---
 
 ## Contributing
 
-Keep changes small and test-backed. A new or changed backend needs known-bad and known-unformatted fixtures under
+Keep changes small and test-backed. A new or changed engine needs known-bad and known-unformatted fixtures under
 `crates/poly-core/tests/`, and must preserve the uniform `Engine` boundary. Before committing:
 
 ```sh
