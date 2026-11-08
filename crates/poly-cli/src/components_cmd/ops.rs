@@ -12,7 +12,7 @@ use std::time::SystemTime;
 
 use alef_component_runtime::{ArtifactCache, ComponentLock, ComponentStatus, TrustPolicy};
 use anyhow::{Context, bail};
-use poly_component_host::{Availability, ComponentHost};
+use poly_component_host::{Availability, CacheCheck, ComponentHost};
 use poly_component_index::{Component, ComponentIndex, ComponentKind};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -62,8 +62,11 @@ impl Env<'_> {
 pub enum State {
     /// Linked into this binary.
     Bundled,
-    /// Downloaded and cached.
+    /// Downloaded and cached, and it passes verification.
     Installed,
+    /// Cached, but it fails verification (a digest, size, manifest or signature check). Not
+    /// usable: `install` or `sync` repairs it, and an online run downloads it again.
+    Corrupt,
     /// Published for this platform but not downloaded.
     NotInstalled,
     /// Not in the lock for this platform, or there is no lock.
@@ -77,6 +80,7 @@ impl State {
         match self {
             Self::Bundled => "bundled",
             Self::Installed => "installed",
+            Self::Corrupt => "corrupt",
             Self::NotInstalled => "not installed",
             Self::Unavailable => "unavailable",
         }
@@ -96,6 +100,9 @@ pub struct ComponentRow {
     pub kind: &'static str,
     /// Where it stands.
     pub state: State,
+    /// The version the lock pins for this platform, which is what an installed copy is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
     /// Installed only when asked for, never by the `all` preset.
     pub opt_in: bool,
     /// The engines it hosts.
@@ -153,7 +160,7 @@ impl Listing {
 pub struct ActionRow {
     /// The component, or the cached object a prune names.
     pub name: String,
-    /// What happened: `installed`, `already_installed`, `bundled`, `removed`, `not_installed`,
+    /// What happened: `installed`, `already_installed`, `bundled`, `repaired`, `removed`, `not_installed`,
     /// `would_remove`, `skipped`, `imported` or `failed`.
     pub action: &'static str,
     /// The reason, for a failure or a skipped removal.
@@ -239,7 +246,13 @@ pub(super) fn state_of(env: &Env<'_>, component: &Component) -> (State, Option<S
         return (State::Unavailable, env.no_host.clone());
     };
     match host.status(&component.name) {
-        Ok(ComponentStatus::Cached | ComponentStatus::Ready) => (State::Installed, None),
+        Ok(ComponentStatus::Ready) => (State::Installed, None),
+        Ok(ComponentStatus::Cached) => match host.check_cache(&component.name) {
+            Ok(CacheCheck::Corrupt(detail)) => (State::Corrupt, Some(detail)),
+            Ok(CacheCheck::NotCached) => (State::NotInstalled, None),
+            Ok(CacheCheck::Intact) => (State::Installed, None),
+            Err(error) => (State::Unavailable, Some(format!("{error:#}"))),
+        },
         Ok(ComponentStatus::Bundled) => (State::Bundled, None),
         Ok(ComponentStatus::NotDownloaded) => (State::NotInstalled, None),
         Ok(ComponentStatus::Unsupported { reason }) => (State::Unavailable, Some(reason)),
@@ -249,7 +262,7 @@ pub(super) fn state_of(env: &Env<'_>, component: &Component) -> (State, Option<S
 
 fn row(env: &Env<'_>, component: &Component, cached: &[alef_component_runtime::CachedObject]) -> ComponentRow {
     let (state, detail) = state_of(env, component);
-    let object = (state == State::Installed)
+    let object = matches!(state, State::Installed | State::Corrupt)
         .then(|| {
             cached
                 .iter()
@@ -264,6 +277,7 @@ fn row(env: &Env<'_>, component: &Component, cached: &[alef_component_runtime::C
             ComponentKind::Sidecar => "sidecar",
         },
         state,
+        version: env.host.and_then(|host| host.locked_version(&component.name)),
         opt_in: component.opt_in,
         engines: engine_names(component),
         needed: None,
@@ -306,8 +320,9 @@ pub fn list(env: &Env<'_>) -> Listing {
     listing(env, "list", rows, None)
 }
 
-/// The components `needed` names and where they stand; with `verify`, re-check each installed
-/// archive against the lock. Never downloads: the host is offline-only for this command.
+/// The components `needed` names and where they stand. A cached copy is re-verified against the
+/// lock either way, so a damaged one reads `corrupt`; `verify` also marks each installed row
+/// `verified`. Never downloads: the host is offline-only for this command.
 #[must_use]
 pub fn status(env: &Env<'_>, needed: &[String], verify: bool) -> Listing {
     let cached = cached_objects(env);
@@ -315,15 +330,8 @@ pub fn status(env: &Env<'_>, needed: &[String], verify: bool) -> Listing {
     for component in env.index.components.iter().filter(|c| needed.contains(&c.name)) {
         let mut row = row(env, component, &cached);
         row.needed = Some(true);
-        if verify && row.state == State::Installed {
-            match env.host.map(|host| host.manager().prefetch(&[component.name.as_str()])) {
-                Some(Ok(_)) => row.verified = Some(true),
-                Some(Err(error)) => {
-                    row.verified = Some(false);
-                    row.detail = Some(format!("{error:#}"));
-                }
-                None => {}
-            }
+        if verify && matches!(row.state, State::Installed | State::Corrupt) {
+            row.verified = Some(row.state == State::Installed);
         }
         rows.push(row);
     }
@@ -360,8 +368,13 @@ pub fn resolve<'a>(index: &'a ComponentIndex, names: &[String]) -> anyhow::Resul
     Ok(picked)
 }
 
-fn availability_row(actions: &mut Actions, name: &str, availability: &Availability) {
+fn availability_row(actions: &mut Actions, host: &ComponentHost, name: &str, availability: &Availability) {
     match availability {
+        Availability::InstalledNow if host.was_repaired(name) => actions.push(
+            name,
+            "repaired",
+            Some("the cached copy failed verification and was downloaded again".into()),
+        ),
         Availability::Present => actions.push(name, "already_installed", None),
         Availability::InstalledNow => actions.push(name, "installed", None),
         Availability::Unavailable(unavailable) => actions.push(name, "failed", Some(unavailable.reason(name))),
@@ -369,6 +382,8 @@ fn availability_row(actions: &mut Actions, name: &str, availability: &Availabili
 }
 
 /// Install `components`. Linked ones are a no-op with a note; an offline run fails the missing.
+/// A cached copy is re-verified first: an intact one is `already_installed`, a damaged one is
+/// downloaded again and reported `repaired` (offline, it fails with the reason instead).
 ///
 /// # Errors
 ///
@@ -380,8 +395,9 @@ pub fn install(env: &Env<'_>, components: &[&Component]) -> anyhow::Result<Actio
             actions.push(&component.name, "bundled", None);
             continue;
         }
-        let availability = env.host()?.ensure(&component.name, true);
-        availability_row(&mut actions, &component.name, &availability);
+        let host = env.host()?;
+        let availability = host.ensure(&component.name, true);
+        availability_row(&mut actions, host, &component.name, &availability);
     }
     if actions.results.iter().any(|r| r.action == "bundled") {
         actions
@@ -402,8 +418,9 @@ pub fn sync(env: &Env<'_>, needed: &[String]) -> anyhow::Result<Actions> {
         actions.notes.push("no downloadable component is needed".into());
     }
     for name in needed {
-        let availability = env.host()?.ensure(name, true);
-        availability_row(&mut actions, name, &availability);
+        let host = env.host()?;
+        let availability = host.ensure(name, true);
+        availability_row(&mut actions, host, name, &availability);
     }
     actions
         .notes

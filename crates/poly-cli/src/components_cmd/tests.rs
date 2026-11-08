@@ -5,9 +5,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 
-use alef_component_runtime::ComponentManager;
+use alef_component_runtime::{
+    COMPONENT_ABI_VERSION, COMPONENT_MANIFEST_SCHEMA, ComponentIdentity, ComponentLibrary, ComponentManager,
+    ComponentManifest,
+};
 use poly_component_host::{ComponentHost, ComponentTransport, HostOptions, TransportConnector};
 use poly_component_index::{Component, ComponentIndex};
+use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 use super::ops::{self, Env, State};
@@ -59,18 +63,51 @@ fn is_baked(component: &Component) -> bool {
     component.name == "baked"
 }
 
+const LIBRARY: &[u8] = b"native library bytes";
+
+fn hex_sha(bytes: &[u8]) -> String {
+    super::ops::hex(&Sha256::digest(bytes))
+}
+
+/// The manifest of the `demo` archive for [`TARGET`], exactly as the lock below names it.
+fn demo_manifest() -> Vec<u8> {
+    ComponentManifest {
+        schema_version: COMPONENT_MANIFEST_SCHEMA,
+        abi_version: COMPONENT_ABI_VERSION,
+        identity: ComponentIdentity {
+            crate_name: "c".into(),
+            component: "demo".into(),
+            version: "1.0.0".into(),
+            target: TARGET.into(),
+            feature_hash: "11".repeat(32),
+            contract_hash: "11".repeat(32),
+        },
+        provides: Vec::new(),
+        features: Vec::new(),
+        default_features: false,
+        library: ComponentLibrary {
+            file: "libdemo.so".into(),
+            sha256: hex_sha(LIBRARY),
+            size: LIBRARY.len() as u64,
+        },
+    }
+    .canonical_bytes()
+    .unwrap()
+}
+
 fn lock() -> String {
     format!(
         r#"{{"schema_version":2,"public_keys":{{}},"artifacts":[{{
             "identity":{{"crate_name":"c","component":"demo","version":"1.0.0","target":"{TARGET}",
                          "feature_hash":"{h}","contract_hash":"{h}"}},
             "provides":[],"mode":"download","url":"https://127.0.0.1:9/unreachable/demo.tar.gz",
-            "sha256":"{DEMO_SHA}","size":1,"manifest_sha256":"{h}","key_id":"k"}},{{
+            "sha256":"{DEMO_SHA}","size":1,"manifest_sha256":"{manifest}","key_id":""}},{{
             "identity":{{"crate_name":"c","component":"demo","version":"1.0.0","target":"other-target",
                          "feature_hash":"{h}","contract_hash":"{h}"}},
             "provides":[],"mode":"download","url":"https://127.0.0.1:9/unreachable/demo-other.tar.gz",
             "sha256":"{OTHER_TARGET_SHA}","size":1,"manifest_sha256":"{h}","key_id":"k"}}]}}"#,
         h = "11".repeat(32),
+        manifest = hex_sha(&demo_manifest()),
     )
 }
 
@@ -125,9 +162,21 @@ impl Fixture {
         self.root().join("sha256").join(sha)
     }
 
+    /// A cached object. The `demo` archive is a valid one (it passes verification); any other
+    /// digest is a stub that only has to exist for the cache listing and pruning.
     fn seed(&self, sha: &str) {
         std::fs::create_dir_all(self.object(sha)).unwrap();
-        std::fs::write(self.object(sha).join("component.json"), "{}").unwrap();
+        if sha == DEMO_SHA {
+            std::fs::write(self.object(sha).join("component.json"), demo_manifest()).unwrap();
+            std::fs::write(self.object(sha).join("libdemo.so"), LIBRARY).unwrap();
+        } else {
+            std::fs::write(self.object(sha).join("component.json"), "{}").unwrap();
+        }
+    }
+
+    /// Damage the seeded `demo` archive's library so its digest no longer matches.
+    fn corrupt(&self) {
+        std::fs::write(self.object(DEMO_SHA).join("libdemo.so"), b"tampered").unwrap();
     }
 }
 
@@ -201,8 +250,85 @@ fn installed_state_reports_size_path_and_verification() {
     assert_eq!(row.state, State::Installed);
     assert!(row.size_bytes.is_some());
     assert_eq!(row.path.as_deref(), Some(fixture.object(DEMO_SHA).as_path()));
-    assert_eq!(row.verified, Some(false), "a stub archive must fail verification");
-    assert!(!listing.ok());
+    assert_eq!(row.verified, Some(true));
+    assert_eq!(row.version.as_deref(), Some("1.0.0"));
+    assert!(listing.ok());
+    assert_eq!(fixture.connects.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn a_damaged_archive_reads_corrupt_in_list_and_status() {
+    let fixture = Fixture::new(true);
+    fixture.seed(DEMO_SHA);
+    fixture.corrupt();
+    let env = fixture.env();
+
+    let listed = &ops::list(&env).components[0];
+    assert_eq!(listed.state, State::Corrupt);
+    assert!(listed.detail.as_deref().unwrap().contains("failed verification"));
+
+    let status = ops::status(&env, &names(&["demo"]), false);
+    assert_eq!(status.components[0].state, State::Corrupt);
+    assert_eq!(
+        status.missing,
+        Some(names(&["demo"])),
+        "a damaged archive is not usable"
+    );
+    assert!(!status.ok());
+    assert_eq!(
+        ops::status(&env, &names(&["demo"]), true).components[0].verified,
+        Some(false)
+    );
+    assert_eq!(fixture.connects.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn offline_install_and_sync_refuse_a_damaged_archive_instead_of_calling_it_installed() {
+    let fixture = Fixture::new(true);
+    fixture.seed(DEMO_SHA);
+    fixture.corrupt();
+    let demo = ops::resolve(&fixture.index, &names(&["demo"])).unwrap();
+    let installed = ops::install(&fixture.env(), &demo).unwrap();
+    assert_eq!(installed.results[0].action, "failed");
+    let detail = installed.results[0].detail.as_deref().unwrap();
+    assert!(detail.contains("failed verification"), "{detail}");
+    assert!(!detail.contains("network access is disabled"), "{detail}");
+    assert!(!installed.ok);
+
+    let synced = ops::sync(&fixture.env(), &names(&["demo"])).unwrap();
+    assert_eq!(synced.results[0].action, "failed");
+    assert_eq!(fixture.connects.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn online_install_and_sync_repair_a_damaged_archive() {
+    for command in ["install", "sync"] {
+        let fixture = Fixture::new(false);
+        fixture.seed(DEMO_SHA);
+        fixture.corrupt();
+        let actions = if command == "install" {
+            let demo = ops::resolve(&fixture.index, &names(&["demo"])).unwrap();
+            ops::install(&fixture.env(), &demo).unwrap()
+        } else {
+            ops::sync(&fixture.env(), &names(&["demo"])).unwrap()
+        };
+        assert_eq!(actions.results[0].action, "repaired", "{command}");
+        assert!(actions.ok, "{command}");
+        assert_eq!(
+            fixture.connects.load(Ordering::SeqCst),
+            1,
+            "{command} did not reinstall"
+        );
+    }
+}
+
+#[test]
+fn an_intact_archive_is_left_alone_by_online_install() {
+    let fixture = Fixture::new(false);
+    fixture.seed(DEMO_SHA);
+    let demo = ops::resolve(&fixture.index, &names(&["demo"])).unwrap();
+    let actions = ops::install(&fixture.env(), &demo).unwrap();
+    assert_eq!(actions.results[0].action, "already_installed");
     assert_eq!(fixture.connects.load(Ordering::SeqCst), 0);
 }
 

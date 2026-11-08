@@ -158,6 +158,8 @@ fn plan_install(env: &Env<'_>, components: &[&Component]) -> Actions {
         match ops::state_of(env, component) {
             (State::Bundled, _) => actions.push(&component.name, "bundled", None),
             (State::Installed, _) => actions.push(&component.name, "already_installed", None),
+            (State::Corrupt, detail) if env.offline => actions.push(&component.name, "failed", detail),
+            (State::Corrupt, detail) => actions.push(&component.name, "would_repair", detail),
             (State::NotInstalled, _) if env.offline => {
                 actions.push(
                     &component.name,

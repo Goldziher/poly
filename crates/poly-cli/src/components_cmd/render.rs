@@ -38,11 +38,18 @@ pub fn print_listing(listing: &Listing) {
         .map(|c| c.state.label().len())
         .max()
         .unwrap_or(0);
+    let version = listing
+        .components
+        .iter()
+        .map(|c| c.version.as_deref().map_or(1, str::len))
+        .max()
+        .unwrap_or(1);
     for component in &listing.components {
         let mut line = format!(
-            "{:<width$}  {:<state$}  {}",
+            "{:<width$}  {:<state$}  {:<version$}  {}",
             component.name,
             component.state.label(),
+            component.version.as_deref().unwrap_or("-"),
             component.engines.join(", ")
         );
         if component.opt_in {
