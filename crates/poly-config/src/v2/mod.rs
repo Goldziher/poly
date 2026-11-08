@@ -21,6 +21,7 @@ mod engines;
 mod paths;
 mod workspace;
 
+pub(crate) use components::validate_components;
 pub use components::{ComponentInstallPolicy, ComponentsConfig, Enable, OnMissing};
 pub use detect::{V1Marker, detect_v1, v1_error};
 pub use engines::{EngineTable, LangTable, PhaseTable, RESERVED_ENGINE_KEYS, RuleOverride};

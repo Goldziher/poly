@@ -1446,3 +1446,68 @@ fn astgrep_rule_dirs_resolve_against_the_config_root() {
         Some(dir.path().join("lint/rules").to_string_lossy().as_ref())
     );
 }
+
+fn load_components(source: &str) -> anyhow::Result<PolyConfig> {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(&path, source).unwrap();
+    PolyConfig::load_file(&path)
+}
+
+fn components_error(source: &str) -> String {
+    format!(
+        "{:#}",
+        load_components(source).expect_err("the config must be rejected")
+    )
+}
+
+#[test]
+fn an_unknown_name_in_components_enable_or_disable_is_a_load_error() {
+    for (key, source) in [
+        ("enable", "[components]\nenable = [\"bogus\"]\n"),
+        // poly: allow[typo] a deliberate misspelling of a component name
+        ("disable", "[components]\ndisable = [\"pyhton\"]\n"),
+    ] {
+        let message = components_error(source);
+        assert!(
+            message.contains("invalid [components] config") && message.contains(&format!("[components] {key}")),
+            "{message}"
+        );
+        assert!(message.contains("known:") && message.contains("python"), "{message}");
+    }
+}
+
+#[test]
+fn a_component_in_both_enable_and_disable_is_a_load_error() {
+    let message = components_error("[components]\nenable = [\"python\"]\ndisable = [\"python\"]\n");
+    assert!(message.contains("`python` is in both"), "{message}");
+}
+
+#[test]
+fn known_names_presets_and_an_enable_all_with_a_disable_are_accepted() {
+    load_components("[components]\nenable = [\"python\", \"web\"]\ndisable = [\"ruby\"]\n").expect("names");
+    load_components("[components]\nenable = [\"all\"]\ndisable = [\"ruby\"]\n").expect("a preset minus one");
+}
+
+#[test]
+fn configuring_an_engine_of_a_disabled_component_is_a_load_error() {
+    for source in [
+        "[components]\ndisable = [\"python\"]\n[lint.python.ruff]\nselect = [\"E\"]\n",
+        "[components]\ndisable = [\"python\"]\n[fmt.python.ruff]\nline_length = 100\n",
+        "[components]\ndisable = [\"python\"]\n[engines.ruff]\nenabled = true\n",
+        "[components]\ndisable = [\"python\"]\n[engines.ruff.lint]\nselect = [\"E\"]\n",
+    ] {
+        let message = components_error(source);
+        assert!(
+            message.contains("engine `ruff`") && message.contains("component `python` is disabled"),
+            "{source}: {message}"
+        );
+    }
+}
+
+#[test]
+fn switching_off_an_engine_of_a_disabled_component_is_not_an_error() {
+    load_components("[components]\ndisable = [\"python\"]\n[engines.ruff]\nenabled = false\n").expect("v2");
+    load_components("[components]\ndisable = [\"python\"]\n[lint.python.ruff]\nenabled = false\n").expect("v1");
+    load_components("[components]\ndisable = [\"ruby\"]\n[engines.ruff]\nenabled = true\n").expect("another component");
+}

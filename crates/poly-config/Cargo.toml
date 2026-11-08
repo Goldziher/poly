@@ -16,6 +16,7 @@ path = "src/lib.rs"
 anyhow.workspace = true
 json5.workspace = true
 poly-catalog.workspace = true
+poly-component-index.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
