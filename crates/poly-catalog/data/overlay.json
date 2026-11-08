@@ -204,6 +204,12 @@
             },
             "linux-aarch64": {
               "name": "buildifier-linux-arm64"
+            },
+            "windows-x86_64": {
+              "name": "buildifier-windows-amd64.exe"
+            },
+            "windows-aarch64": {
+              "name": "buildifier-windows-arm64.exe"
             }
           }
         },
@@ -296,6 +302,12 @@
             },
             "linux-x86_64": {
               "name": "buf-Linux-x86_64"
+            },
+            "windows-x86_64": {
+              "name": "buf-Windows-x86_64.exe"
+            },
+            "windows-aarch64": {
+              "name": "buf-Windows-arm64.exe"
             }
           }
         },
@@ -379,6 +391,14 @@
             "linux-x86_64": {
               "name": "actionlint_{version}_linux_amd64.tar.gz",
               "member": "actionlint"
+            },
+            "windows-x86_64": {
+              "name": "actionlint_{version}_windows_amd64.zip",
+              "member": "actionlint.exe"
+            },
+            "windows-aarch64": {
+              "name": "actionlint_{version}_windows_arm64.zip",
+              "member": "actionlint.exe"
             }
           }
         },
@@ -497,6 +517,9 @@
             },
             "linux-x86_64": {
               "name": "hadolint-linux-x86_64"
+            },
+            "windows-x86_64": {
+              "name": "hadolint-windows-x86_64.exe"
             }
           }
         },
@@ -614,6 +637,14 @@
             "linux-x86_64": {
               "name": "golangci-lint-{version}-linux-amd64.tar.gz",
               "member": "golangci-lint-{version}-linux-amd64/golangci-lint"
+            },
+            "windows-x86_64": {
+              "name": "golangci-lint-{version}-windows-amd64.zip",
+              "member": "golangci-lint-{version}-windows-amd64/golangci-lint.exe"
+            },
+            "windows-aarch64": {
+              "name": "golangci-lint-{version}-windows-arm64.zip",
+              "member": "golangci-lint-{version}-windows-arm64/golangci-lint.exe"
             }
           }
         },
@@ -725,6 +756,14 @@
             "linux-x86_64": {
               "name": "helm-v{version}-linux-amd64.tar.gz",
               "member": "linux-amd64/helm"
+            },
+            "windows-x86_64": {
+              "name": "helm-v{version}-windows-amd64.zip",
+              "member": "windows-amd64/helm.exe"
+            },
+            "windows-aarch64": {
+              "name": "helm-v{version}-windows-arm64.zip",
+              "member": "windows-arm64/helm.exe"
             }
           }
         },
@@ -837,6 +876,14 @@
             "linux-x86_64": {
               "name": "helm-v{version}-linux-amd64.tar.gz",
               "member": "linux-amd64/helm"
+            },
+            "windows-x86_64": {
+              "name": "helm-v{version}-windows-amd64.zip",
+              "member": "windows-amd64/helm.exe"
+            },
+            "windows-aarch64": {
+              "name": "helm-v{version}-windows-arm64.zip",
+              "member": "windows-arm64/helm.exe"
             }
           }
         },
@@ -928,6 +975,10 @@
             "linux-x86_64": {
               "name": "tflint_linux_amd64.zip",
               "member": "tflint"
+            },
+            "windows-x86_64": {
+              "name": "tflint_windows_amd64.zip",
+              "member": "tflint.exe"
             }
           }
         },
@@ -1039,6 +1090,14 @@
             "linux-x86_64": {
               "name": "tofu_{version}_linux_amd64.tar.gz",
               "member": "tofu"
+            },
+            "windows-x86_64": {
+              "name": "tofu_{version}_windows_amd64.zip",
+              "member": "tofu.exe"
+            },
+            "windows-aarch64": {
+              "name": "tofu_{version}_windows_arm64.zip",
+              "member": "tofu.exe"
             }
           }
         },

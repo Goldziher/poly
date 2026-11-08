@@ -431,6 +431,54 @@ fn a_source_reproduces_every_seeded_release() {
     }
 }
 
+/// Windows builds upstream publishes (checked against each project's releases),
+/// so a Windows host downloads rather than reporting the platform unsupported.
+#[test]
+fn sources_declare_the_windows_builds_upstream_publishes() {
+    let both = [
+        "buildifier",
+        "buf",
+        "actionlint",
+        "golangci-lint",
+        "tofu",
+        "helm",
+        "helm-template",
+    ];
+    for name in both {
+        let source = recipe_of(name).install.as_ref().unwrap().source.as_ref().unwrap();
+        for platform in ["windows-x86_64", "windows-aarch64"] {
+            let spec = source
+                .asset_spec(platform)
+                .unwrap_or_else(|| panic!("{name} lacks {platform}"));
+            let member = crate::Source::member(spec, "1.0.0");
+            assert!(
+                crate::Source::asset_name(spec, "1.0.0").ends_with(".exe")
+                    || member.is_some_and(|m| m.ends_with(".exe")),
+                "{name} {platform}"
+            );
+        }
+    }
+    for name in ["hadolint", "tflint"] {
+        let source = recipe_of(name).install.as_ref().unwrap().source.as_ref().unwrap();
+        assert!(source.asset_spec("windows-x86_64").is_some(), "{name}");
+        assert!(
+            source.asset_spec("windows-aarch64").is_none(),
+            "{name} publishes no arm64 build"
+        );
+    }
+    let palantir = recipe_of("palantir-java-format")
+        .install
+        .as_ref()
+        .unwrap()
+        .source
+        .as_ref()
+        .unwrap();
+    assert!(
+        palantir.asset_spec("windows-x86_64").is_none(),
+        "no native Windows binary exists"
+    );
+}
+
 #[test]
 fn an_invalid_overlay_source_fails_the_catalog_parse() {
     let overlay = r#"[{"name":"x","binary":"x","categories":["linter"],"languages":[],"commands":{"lint":{"arguments":[],"stdin":false}},
