@@ -16,7 +16,7 @@
             "fix": true,
             "project": true
           },
-          "version": "adrlint-0.5.0+poly2",
+          "version": "adrlint-0.5.0+poly3",
           "option_keys": [
             {
               "table": "Lint",
@@ -192,7 +192,7 @@
             "fix": false,
             "project": false
           },
-          "version": "0.27.6+opts-2+tmpltarget-2+embedded-oxc-2+rev:f799f17+syntax-skip-2",
+          "version": "0.27.6+opts-2+tmpltarget-2+embedded-oxc-3+rev:f799f17+syntax-skip-2",
           "option_keys": [
             {
               "table": "Lint",
@@ -1765,7 +1765,7 @@
             "fix": true,
             "project": false
           },
-          "version": "mago-1.59.0+advisory-sev1",
+          "version": "mago-1.59.0+advisory-sev1+filename",
           "option_keys": [
             {
               "table": "Lint",
@@ -2408,7 +2408,7 @@
             "fix": true,
             "project": false
           },
-          "version": "dotenv-analyzer-0.1.1+core-0.1.1+map1",
+          "version": "dotenv-analyzer-0.1.1+core-0.1.1+map2",
           "option_keys": [
             {
               "table": "Lint",
@@ -2458,7 +2458,7 @@
             "fix": false,
             "project": false
           },
-          "version": "pretty_graphql-0.2.3+config2",
+          "version": "pretty_graphql-0.2.3+config3",
           "option_keys": [
             {
               "table": "Lint",

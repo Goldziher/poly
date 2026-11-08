@@ -77,7 +77,7 @@ use settings::Settings;
 /// (grammars can change) or this engine's own detection/threshold logic
 /// changes in a way that alters output.
 const QUALITY_VERSION: &str =
-    "quality-4+parse-limit+tslp1.24.0+no-rust-allow+max-in-title+no-prose-lazy-ignore+uncollected-test-file";
+    "quality-5+parse-limit+tslp1.24.0+no-rust-allow+max-in-title+no-prose-lazy-ignore+uncollected-test-file";
 
 thread_local! {
     /// Per-thread parser pool keyed by grammar name, shared by every

@@ -534,8 +534,12 @@ fn parse_errors_are_unaffected_by_the_advisory_downgrade() {
 #[test]
 fn file_name_diagnostic_names_the_real_file() {
     let engine = MagoEngine::default();
-    let src = make_src("dir/a.php", "<?php\n\ndeclare(strict_types=1);\n\nclass A\n{\n}\n");
+    let src = make_src("dir/b.php", "<?php\n\ndeclare(strict_types=1);\n\nclass A\n{\n}\n");
     let diags = engine.lint(&src, &engine_cfg()).unwrap();
     let text = format!("{diags:?}");
+    assert!(
+        text.contains("b.php"),
+        "the file-name rule must have fired and named b.php: {text}"
+    );
     assert!(!text.contains("input.php"), "placeholder file name leaked: {text}");
 }

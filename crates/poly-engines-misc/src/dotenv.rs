@@ -44,7 +44,7 @@ use poly_engine_api::rule_config::RuleSelection;
 /// Cache-key version: `dotenv-analyzer` + `dotenv-core` crate versions, plus a
 /// marker for this backend's own line-entry construction / rendering logic.
 /// Bump whenever either crate is updated OR the mapping logic changes.
-const DOTENV_VERSION: &str = "dotenv-analyzer-0.1.1+core-0.1.1+map1";
+const DOTENV_VERSION: &str = "dotenv-analyzer-0.1.1+core-0.1.1+map2";
 
 /// Every [`LintKind`] variant, used to translate a `select`/`ignore` rule
 /// selection (an inclusion/exclusion vocabulary) into the crate's own
