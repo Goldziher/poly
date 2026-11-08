@@ -7,24 +7,54 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.34.1] - 2026-11-09
+
+### Added
+
+- **Tool versions from upstream.** A recipe tool with `install = "auto"` (golangci-lint, hadolint, tflint, …) now
+  resolves its download from the tool's own releases instead of a version hardcoded in poly. `version` defaults to the
+  latest upstream release and accepts any published version; `poly lock` records the version and per-platform digests
+  in `poly.lock` (`--upgrade`, `--check`). Lookups retry transient failures (honoring `Retry-After`), time out, cache
+  `latest` for 24 hours with ETag revalidation, lock per tool across processes and work offline from the cache. See
+  [ADR 0047](adrs/0047-tool-release-sources.md). (#137)
+
 ### Changed
 
-- **Renamed the project to polylint.** The GitHub repository moves from `Goldziher/poly` to `Goldziher/polylint`, and
-  the documentation site from `goldziher.github.io/poly` to `goldziher.github.io/polylint`. The command is still
-  `poly` (with `polylint` as its alias), the config file is still `poly.toml`, and cache directories and internal
-  crate names are unchanged. The installers, release scripts, package manifests, plugin manifests and component
-  download template now name `Goldziher/polylint`. Homebrew publishes `Formula/polylint.rb`, Scoop publishes
-  `bucket/polylint.json`.
-- **Kept working after the rename.** `brew install Goldziher/tap/poly` (an alias plus a `formula_renames.json` entry),
-  `scoop install poly` (`bucket/poly.json` is still updated), `uses: Goldziher/poly@v0` and release downloads from
-  older binaries (GitHub redirects the old repository URL). The old documentation site path is not redirected:
-  `#:schema` URLs under `goldziher.github.io/poly/` need updating to `goldziher.github.io/polylint/`.
+- **polylint.** The GitHub repository is now `Goldziher/polylint` and the Action is `Goldziher/polylint@v0`; the old
+  names redirect. The command stays `poly`, the config stays `poly.toml` and the agent plugin id stays `poly`.
+- **The release moves the major tag.** Each release force-updates `v0` (and `v1` once releases are 1.x) to the new tag.
 
 ### Removed
 
 - **Intel macOS.** The `x86_64-apple-darwin` archive, `@goldziher/polylint-darwin-x64`, the `macosx_10_12_x86_64` wheel, the
   Homebrew Intel block and its component builds are gone; releases carry five platform archives. Intel Mac users build
   from source. See [ADR 0046](adrs/0046-drop-intel-macos.md).
+
+### Fixed
+
+- **Grammar download failures.** A failed tree-sitter grammar download no longer makes the built-in ast-grep pack
+  panic as a "release defect" on every file: the failure is retried after 30 seconds, the pack loads every grammar it
+  has, and a file whose pack rules could not run reports the real reason. (#122)
+- **Mixed-path runs.** `poly lint README.md packages/a/x.ts`, and so a pre-commit run over mixed staged paths, plans
+  whole-tree engines such as skif from the outermost config, as `poly lint .` does. (#118)
+- **The musl archive runs on stock Alpine.** It no longer needs `libgcc_s.so.1`, and the release smoke-tests it on a
+  bare `alpine:3.20`.
+- **Components.** `poly components install` and `sync` re-verify a cached copy and repair a damaged one; `list` and
+  `status` show it as `corrupt` and show versions. `[components]` names, and engines configured under a disabled
+  component, are validated when the config loads. A component skipped by `on_missing = "skip"` warns. On a bundled
+  build, `components list` shows the MCP server as bundled and says the `sh` row runs the host `shfmt`, and selecting
+  pyrefly says how to get it. `ini` files are linted alike in core and bundled builds. `poly cache` takes `--format`.
+- **Config and CLI.** `required_version` is enforced when a config loads. `poly lint` reports unknown engine and
+  `[defaults]` keys. A file named on the command line is counted once, `--only` counts a file its engine ran on as
+  checked, and the JSON `configs` list is de-duplicated. A closed stdout (`poly config schema | head`) exits quietly,
+  an empty file stays empty, and file-checking hook builtins no longer run at the commit-msg stage. `poly commit`
+  explains a malformed header and rejects a plain AI banner.
+- **Tree-sitter fallback.** With rustfmt or gofmt missing, the fallback no longer rewrites canonical code: on 200 real
+  files per language, changed lines dropped from 5319 to 12 for Rust and from 430 to 4 for Go. It now reindents Java.
+- **Engines.** MADR31 (the `*` list marker) is opt-in, so `poly fmt` and adrlint agree. HTML, Vue and Svelte
+  `<style>` blocks and HTML `<script>` blocks are formatted. GraphQL documents mixing executable and schema
+  definitions parse. Diagnostics are ordered deterministically, mago names the real file, and `file-too-long` no
+  longer applies to prose and data formats.
 
 ### Documentation
 
