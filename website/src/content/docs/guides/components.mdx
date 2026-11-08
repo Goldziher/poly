@@ -15,7 +15,7 @@ only decides where an engine's code lives.
 
 | Flavor | How it is built | What it does |
 | --- | --- | --- |
-| **bundled** | The `poly-bundled` crate in the `components/` workspace | Every engine family and the MCP server are linked in. Nothing is downloaded. |
+| **bundled** | The `poly-bundled` crate in the `components/` workspace | Every engine family and the MCP server are linked in, except `pyrefly` (below). Nothing is downloaded. |
 | **core** | `poly-cli --no-default-features --features core` | Config, discovery, cache, runner, hooks and the tree-sitter tier, plus the quality engine and the native-toolchain and catalog tiers. Every other engine is a component. |
 
 `x86_64-unknown-linux-musl` is the only release archive that is a bundled build: it embeds no
@@ -27,6 +27,10 @@ demand; `--offline` and `[components] install = "never"` stop that download, and
 directory needs.
 
 On a bundled build `poly components install` only prints a note: there is nothing to fetch.
+
+**`pyrefly`** is not part of a bundled build: it is built in a workspace of its own, so no bundled build
+links it, and a bundled build embeds no lock to download it. `[engines.python-types] backend = "pyrefly"`
+therefore fails the run (exit `2`) with that reason. Keep the default `backend = "ty"`, or use a core build.
 
 ## The components
 
