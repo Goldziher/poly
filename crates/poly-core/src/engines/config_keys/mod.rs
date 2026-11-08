@@ -89,7 +89,8 @@ const INVALID_VALUE_CODE: &str = "invalid-config-value";
 /// `4`: a language id that is a near miss of a known one is reported.
 /// `5`: an unknown key suggests the nearest accepted one, and a tool name one edit from an engine of the
 /// language is reported.
-const VERSION: &str = "5";
+/// `6`: `[defaults]` keys and the v2 `[engines.*]` / `[components]` tables are checked.
+const VERSION: &str = "6";
 
 /// The `poly.toml` schema backend: reports keys under `[lint.*]` / `[fmt.*]`
 /// that no engine reads, and keys whose value no engine can use.
@@ -213,15 +214,79 @@ fn config_key_diagnostics(source: &str, engine_name: &str) -> Vec<Diagnostic> {
             });
         }
     }
+    let v2 = poly_config::v2::detect_v1(&document).is_empty();
+    if !v2 {
+        collect_defaults(&document, &mut findings);
+    }
     for (section, kind) in [("lint", Kind::Lint), ("fmt", Kind::Format)] {
         let Some(table) = document.get(section).and_then(toml::Value::as_table) else {
             continue;
         };
         collect_section(section, kind, table, &mut findings);
     }
-    findings
+    let mut diagnostics: Vec<Diagnostic> = findings
         .into_iter()
         .map(|finding| diagnostic(finding, &spans, engine_name))
+        .collect();
+    if v2 {
+        diagnostics.extend(v2_diagnostics(source, &spans, engine_name));
+    }
+    diagnostics
+}
+
+/// Unknown keys of `[defaults]` in a v1 document (a v2 one is judged by [`crate::config_validate`]).
+fn collect_defaults(document: &toml::Table, findings: &mut Vec<Finding>) {
+    let Some(defaults) = document.get("defaults").and_then(toml::Value::as_table) else {
+        return;
+    };
+    let known: Vec<String> = poly_config::DEFAULTS_KEYS
+        .iter()
+        .map(|key| (*key).to_string())
+        .collect();
+    for key in defaults.keys().filter(|key| !known.contains(key)) {
+        findings.push(Finding {
+            table: "defaults".to_string(),
+            key: key.clone(),
+            engine: "poly".to_string(),
+            problem: Problem::UnknownKey {
+                known: known.clone(),
+                note: None,
+            },
+        });
+    }
+}
+
+/// The v2 config problems ([`crate::config_validate`]) as warnings anchored at the offending key.
+///
+/// Document-level problems (path empty) are left out: an unknown top-level section is already reported
+/// above, and TOML or schema errors fail the run when the config is loaded.
+fn v2_diagnostics(source: &str, spans: &KeySpans, engine_name: &str) -> Vec<Diagnostic> {
+    crate::config_validate::validate_source(source)
+        .problems
+        .into_iter()
+        .filter(|problem| !problem.path.is_empty())
+        .map(|problem| {
+            let code = if problem.message.starts_with("invalid value") {
+                INVALID_VALUE_CODE
+            } else {
+                UNKNOWN_KEY_CODE
+            };
+            let (parent, key) = match &problem.key {
+                Some(key) => (problem.path.as_str(), key.as_str()),
+                None => problem.path.rsplit_once('.').unwrap_or(("", problem.path.as_str())),
+            };
+            Diagnostic {
+                engine: engine_name.to_string(),
+                code: Some(code.to_string()),
+                severity: Severity::Warning,
+                title: problem.message,
+                description: None,
+                span: spans.span(parent, key),
+                url: None,
+                fix: Vec::new(),
+                metadata: std::collections::BTreeMap::new(),
+            }
+        })
         .collect()
 }
 

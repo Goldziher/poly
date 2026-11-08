@@ -36,7 +36,7 @@ use merge::{merge_layer, merge_tables};
 
 pub use cache::{CacheConfig, HookCacheMode, ResultsCacheConfig, SccacheConfig};
 pub use commit::{CleanupRule, CommitConfig, CommitRules, ExcludeRule, MessageRule};
-pub use defaults::{GlobalDefaults, LineEnding, RawDefaults};
+pub use defaults::{DEFAULTS_KEYS, GlobalDefaults, LineEnding, RawDefaults};
 pub use extends::{BaseConfigResolver, ExtendsSource, LocalPathResolver};
 pub use hook_sources::{HookMachinePreferences, HookSource, load_hook_preferences};
 pub use hooks::{

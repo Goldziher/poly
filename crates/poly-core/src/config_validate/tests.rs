@@ -158,3 +158,21 @@ fn invalid_toml_and_unknown_top_level_keys_are_reported() {
     assert_eq!(validate_source("[engines").problems.len(), 1);
     assert_eq!(validate_source("bogus = 1\n").problems.len(), 1);
 }
+
+#[test]
+fn a_misspelled_defaults_key_is_caught_in_v1_and_v2_documents() {
+    for source in [
+        "[defaults]\nline_lenght = 100\n[engines.ruff]\nselect = [\"E\"]\n",
+        "[defaults]\nline_lenght = 100\n[lint.python.ruff]\nselect = [\"E\"]\n",
+    ] {
+        let report = validate_source(source);
+        let found = messages(&report);
+        assert!(
+            found
+                .iter()
+                .any(|m| m.contains("line_lenght") && m.contains("line_length")),
+            "{found:?}"
+        );
+    }
+    assert!(validate_source("[defaults]\nline_length = 100\n").is_valid());
+}
