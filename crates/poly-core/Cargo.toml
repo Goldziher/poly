@@ -79,6 +79,7 @@ engine-graphql = ["dep:poly-engines-misc", "poly-engines-misc/graphql"]
 anyhow.workspace = true
 blake3.workspace = true
 flate2.workspace = true
+fs2.workspace = true
 globset.workspace = true
 ignore.workspace = true
 owo-colors.workspace = true

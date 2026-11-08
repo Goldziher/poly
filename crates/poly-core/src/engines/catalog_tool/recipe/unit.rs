@@ -60,25 +60,78 @@ impl Retry {
         Duration::from_secs(doubled.saturating_add(jitter))
     }
 
+    /// A policy of `attempts` tries with the given backoff, for callers that do
+    /// not read it from a tool's config (HTTP fetches).
+    pub(super) const fn new(attempts: u32, backoff_secs: u64, jitter_secs: u64) -> Self {
+        Retry {
+            attempts,
+            backoff_secs,
+            jitter_secs,
+        }
+    }
+
     /// Run `step` until it succeeds or the attempts are spent, calling `wait`
     /// between attempts. Returns the last failure.
     pub(super) fn run(
         &self,
         mut step: impl FnMut() -> Result<(), String>,
-        mut wait: impl FnMut(Duration),
+        wait: impl FnMut(Duration),
     ) -> Result<(), String> {
+        self.run_with(|| step().map_err(Failed::transient), wait)
+            .map_err(|failed| failed.error)
+    }
+
+    /// [`Retry::run`] for a step that returns a value and says, per failure,
+    /// whether trying again can help and how long the other side asked to wait.
+    pub(super) fn run_with<T, E>(
+        &self,
+        mut step: impl FnMut() -> Result<T, Failed<E>>,
+        mut wait: impl FnMut(Duration),
+    ) -> Result<T, Failed<E>> {
         let mut failed = 0;
         loop {
             match step() {
-                Ok(()) => return Ok(()),
-                Err(reason) => {
+                Ok(value) => return Ok(value),
+                Err(failure) => {
                     failed += 1;
-                    if failed >= self.attempts {
-                        return Err(reason);
+                    if !failure.retryable || failed >= self.attempts {
+                        return Err(failure);
                     }
-                    wait(self.delay(failed, clock_entropy()));
+                    let own = self.delay(failed, clock_entropy());
+                    wait(failure.retry_after.map_or(own, |asked| asked.max(own)));
                 }
             }
+        }
+    }
+}
+
+/// One failed attempt of [`Retry::run_with`].
+#[derive(Debug)]
+pub(super) struct Failed<E> {
+    /// What went wrong, returned when the attempts are spent.
+    pub(super) error: E,
+    /// Whether another attempt can succeed (a 503, not a 404).
+    pub(super) retryable: bool,
+    /// The wait the other side asked for (`Retry-After`), already capped.
+    pub(super) retry_after: Option<Duration>,
+}
+
+impl<E> Failed<E> {
+    /// A failure worth retrying after the policy's own backoff.
+    pub(super) fn transient(error: E) -> Self {
+        Failed {
+            error,
+            retryable: true,
+            retry_after: None,
+        }
+    }
+
+    /// A failure no retry can fix.
+    pub(super) fn fatal(error: E) -> Self {
+        Failed {
+            error,
+            retryable: false,
+            retry_after: None,
         }
     }
 }

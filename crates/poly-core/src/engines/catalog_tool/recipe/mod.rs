@@ -17,8 +17,9 @@
 //!
 //! The submodules split along those lines: [`argv`] (placeholders and sharding),
 //! [`lint`] (grouping, running, attributing), [`format`] (scratch copies and
-//! in-place passes), [`output`] (report parsers), [`launch`] and [`install`]
-//! (finding or downloading the program), [`salt`] (cache inputs), [`mirror`],
+//! in-place passes), [`output`] (report parsers), [`launch`], [`resolve`] and [`install`]
+//! (finding the program, resolving which release of it to download and the digest it must have, and
+//! downloading it over [`net`]), [`salt`] (cache inputs), [`mirror`],
 //! [`paths`], [`gofix`] (golangci-lint's fixes on a scratch copy of the module),
 //! [`unit`] (per-chart values, skipped charts, the prepare step) and [`exec`].
 
@@ -31,9 +32,13 @@ mod install;
 mod launch;
 mod lint;
 mod mirror;
+mod net;
 mod output;
 mod paths;
+pub(super) mod resolve;
 mod salt;
+#[cfg(test)]
+mod testserver;
 mod unit;
 
 use std::collections::BTreeMap;

@@ -2829,12 +2829,17 @@
           "default": null
         },
         "version": {
-          "description": "Release of the tool to use. Looked up in the catalog's pinned releases;\na version the catalog does not know needs `url` and `sha256` too.",
+          "description": "Release of the tool to use: `\"latest\"` (the default for a tool poly can\ndownload, when `install = \"auto\"`) or an exact upstream version such as\n`\"2.14.1\"`. Resolved against the tool's release source; `poly.lock`\nrecords the answer so runs need no lookup.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "resolve_ttl": {
+          "description": "How long a resolved `latest` is trusted before it is revalidated with\nupstream: a number with `s`, `m`, `h` or `d` (default `24h`; `0` always\nrevalidates).",
           "type": ["string", "null"],
           "default": null
         },
         "url": {
-          "description": "Download URL for `version` when the catalog has no such pinned release.",
+          "description": "Download URL for `version`, overriding the release source (with `sha256`).",
           "type": ["string", "null"],
           "default": null
         },

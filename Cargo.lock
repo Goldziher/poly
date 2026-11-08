@@ -3301,6 +3301,7 @@ dependencies = [
  "blake3",
  "criterion",
  "flate2",
+ "fs2",
  "globset",
  "ignore",
  "insta",

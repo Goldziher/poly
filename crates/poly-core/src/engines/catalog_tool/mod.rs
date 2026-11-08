@@ -45,7 +45,10 @@ use crate::engine::{
 };
 use crate::language::Language;
 
+mod lock;
 mod recipe;
+
+pub use self::lock::{lock_satisfies, lock_tool, lockable_tools};
 
 use self::recipe::{RecipeTool, Role};
 
