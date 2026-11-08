@@ -31,7 +31,6 @@ platform-specific wheels carrying one prebuilt binary:
 | Wheel platform tag             | Binary                          |
 | ------------------------------ | ------------------------------- |
 | `macosx_11_0_arm64`            | `aarch64-apple-darwin`          |
-| `macosx_10_12_x86_64`          | `x86_64-apple-darwin`           |
 | `manylinux_2_*_aarch64`        | `aarch64-unknown-linux-gnu`     |
 | `manylinux_2_*_x86_64`         | `x86_64-unknown-linux-gnu`      |
 | `musllinux_1_2_x86_64`         | `x86_64-unknown-linux-musl`     |

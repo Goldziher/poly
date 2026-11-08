@@ -2,7 +2,7 @@
 
 // Resolves the prebuilt `poly` binary that npm installed for this host.
 //
-// Distribution model: this package ships no binary at all. The six platform
+// Distribution model: this package ships no binary at all. The five platform
 // packages listed under `optionalDependencies` each ship exactly one, and npm
 // installs only the ones whose `os`/`cpu`/`libc` match the host — so there is no
 // postinstall download, the install works offline, and the registry's own
@@ -19,7 +19,6 @@ const path = require("node:path");
 // even on a package manager that ignores the field and installs both.
 const PLATFORM_PACKAGES = [
   { pkg: "@goldziher/polylint-darwin-arm64", platform: "darwin", arch: "arm64", libc: null },
-  { pkg: "@goldziher/polylint-darwin-x64", platform: "darwin", arch: "x64", libc: null },
   { pkg: "@goldziher/polylint-linux-arm64-gnu", platform: "linux", arch: "arm64", libc: "glibc" },
   { pkg: "@goldziher/polylint-linux-x64-gnu", platform: "linux", arch: "x64", libc: "glibc" },
   { pkg: "@goldziher/polylint-linux-x64-musl", platform: "linux", arch: "x64", libc: "musl" },

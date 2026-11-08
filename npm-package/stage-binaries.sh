@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stage the prebuilt release binaries into the six npm platform packages.
+# Stage the prebuilt release binaries into the five npm platform packages.
 #
 #   ./stage-binaries.sh --artifacts <dir>   # the release archives, as published
 #   ./stage-binaries.sh --local <binary>    # one locally built poly, host platform only
@@ -17,7 +17,6 @@ VERSION="$(node -p "require('$PACKAGE_DIR/package.json').version")"
 # platform-package-name:release-triple
 TARGETS=(
   "darwin-arm64:aarch64-apple-darwin"
-  "darwin-x64:x86_64-apple-darwin"
   "linux-arm64-gnu:aarch64-unknown-linux-gnu"
   "linux-x64-gnu:x86_64-unknown-linux-gnu"
   "linux-x64-musl:x86_64-unknown-linux-musl"
@@ -100,7 +99,6 @@ fi
 }
 case "$(uname -s)/$(uname -m)" in
 Darwin/arm64) name="darwin-arm64" ;;
-Darwin/x86_64) name="darwin-x64" ;;
 Linux/aarch64) name="linux-arm64-gnu" ;;
 Linux/x86_64) name="linux-x64-gnu" ;;
 *)
