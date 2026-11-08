@@ -151,6 +151,44 @@ pub(super) fn unix_now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
+/// The seconds a `Retry-After` value asks for at Unix time `now`: either a
+/// number of seconds or an HTTP date (`Sun, 06 Nov 1994 08:49:37 GMT`).
+fn retry_after_seconds(value: &str, now: u64) -> Option<u64> {
+    let value = value.trim();
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(seconds);
+    }
+    http_date(value).map(|at| at.saturating_sub(now))
+}
+
+/// The Unix time of an IMF-fixdate (`Sun, 06 Nov 1994 08:49:37 GMT`).
+fn http_date(text: &str) -> Option<u64> {
+    let (_, rest) = text.split_once(", ")?;
+    let mut parts = rest.split_whitespace();
+    let day: i64 = parts.next()?.parse().ok()?;
+    let named = parts.next()?;
+    let month = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ]
+    .iter()
+    .position(|name| name.eq_ignore_ascii_case(named))? as i64
+        + 1;
+    let year: i64 = parts.next()?.parse().ok()?;
+    let mut clock = parts.next()?.split(':').map(str::parse::<i64>);
+    let (hour, minute, second) = (clock.next()?.ok()?, clock.next()?.ok()?, clock.next()?.ok()?);
+    if parts.next()? != "GMT" || !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 60 {
+        return None;
+    }
+    // Howard Hinnant's days-from-civil.
+    let y = year - i64::from(month <= 2);
+    let era = y.div_euclid(400);
+    let yoe = y.rem_euclid(400);
+    let doy = (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    u64::try_from(days * 86_400 + hour * 3_600 + minute * 60 + second).ok()
+}
+
 fn retryable_status(status: u16) -> bool {
     matches!(status, 429 | 500 | 502 | 503 | 504)
 }
@@ -276,7 +314,7 @@ impl Http {
         let rate_limit = (header(response, "x-ratelimit-remaining").as_deref() == Some("0")).then(|| RateLimit {
             reset: header(response, "x-ratelimit-reset").and_then(|value| value.parse().ok()),
         });
-        let asked = header(response, "retry-after").and_then(|value| value.trim().parse::<u64>().ok());
+        let asked = header(response, "retry-after").and_then(|value| retry_after_seconds(&value, unix_now()));
         let error = FetchError::Status {
             url: url.to_owned(),
             status,
@@ -351,6 +389,22 @@ mod tests {
     fn a_unix_time_renders_as_utc() {
         assert_eq!(utc(0), "1970-01-01 00:00 UTC");
         assert_eq!(utc(1_700_000_000), "2023-11-14 22:13 UTC");
+    }
+
+    #[test]
+    fn retry_after_reads_seconds_and_http_dates() {
+        assert_eq!(retry_after_seconds(" 7 ", 0), Some(7));
+        assert_eq!(http_date("Sun, 06 Nov 1994 08:49:37 GMT"), Some(784_111_777));
+        assert_eq!(
+            retry_after_seconds("Sun, 06 Nov 1994 08:49:47 GMT", 784_111_777),
+            Some(10)
+        );
+        assert_eq!(
+            retry_after_seconds("Sun, 06 Nov 1994 08:49:37 GMT", 784_111_900),
+            Some(0)
+        );
+        assert_eq!(retry_after_seconds("tomorrow", 0), None);
+        assert_eq!(retry_after_seconds("Sun, 31 Feb 1994 08:49:37 UTC", 0), None);
     }
 
     #[test]

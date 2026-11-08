@@ -2,13 +2,18 @@
 //!
 //! The order, first match wins:
 //!
-//! 1. `[tools.<name>] bin` — an explicit executable (for a JVM tool, the `java`).
+//! 1. `[tools.<name>] bin` — an explicit executable (for a JVM tool, the `java`,
+//!    which still needs the jar pin of step 2). A binary `bin` is checked before
+//!    any pin is resolved: it never costs a lookup, and a broken pin cannot hide it.
 //! 2. The pinned release in poly's tool cache, when `version` names one (or
 //!    `install = "auto"` implies `latest`) — a pin beats whatever is on `PATH`.
 //! 3. The pinned release downloaded now, when `install = "auto"`.
 //! 4. The tool's binary on `PATH`, only when no `version` is pinned: a pin that
 //!    cannot be honoured makes the tool unavailable instead of running another
-//!    version.
+//!    version. The one exception is an implicit `latest` (`install = "auto"`, no
+//!    `version`) that cannot be looked up: that falls back to the newest seeded
+//!    release, else the `PATH` binary, with a warning, because the user pinned
+//!    nothing that a fallback could violate.
 //!
 //! A tool that is nowhere is [`Resolved::Missing`] with a message that says what
 //! to run, never a silent no-op: a linter that did not run must not look like a
@@ -40,18 +45,20 @@ pub(in crate::engines::catalog_tool) enum Resolved {
 }
 
 pub(in crate::engines::catalog_tool) fn resolve(tool: &Tool, recipe: &Recipe, config: &ToolConfig) -> Resolved {
+    if !recipe.java
+        && let Some(bin) = &config.bin
+    {
+        return match locate(bin) {
+            Some(path) => ready(path, Vec::new(), "bin"),
+            None => Resolved::Missing(format!("`bin = \"{bin}\"` for tool `{}` does not exist", tool.name)),
+        };
+    }
     let pinned = match pinned_release(Resolver::shared(), tool, recipe, config) {
         Ok(pinned) => pinned,
         Err(message) => return Resolved::Missing(message),
     };
     if recipe.java {
         return resolve_jvm(tool, recipe, config, pinned);
-    }
-    if let Some(bin) = &config.bin {
-        return match locate(bin) {
-            Some(path) => ready(path, Vec::new(), "bin"),
-            None => Resolved::Missing(format!("`bin = \"{bin}\"` for tool `{}` does not exist", tool.name)),
-        };
     }
     if let Some(pin) = &pinned {
         return match provision(tool, config, pin) {
@@ -180,6 +187,9 @@ fn pinned_release(
         ReleaseKind::Binary
     };
     if let (Some(version), Some(url), Some(sha256)) = (&config.version, &config.url, &config.sha256) {
+        if !resolve::valid_version(version) {
+            return Err(format!("tool `{}`: `{version}` is not a version", tool.name));
+        }
         return Ok(Some(Pinned {
             version: version.clone(),
             asset: Asset {
@@ -191,7 +201,9 @@ fn pinned_release(
         }));
     }
     let request = match (&config.version, config.install, source) {
-        (Some(version), _, _) => Request::of(Some(version)),
+        (Some(version), _, _) => {
+            Request::of(Some(version)).map_err(|message| format!("tool `{}`: {message}", tool.name))?
+        }
         (None, InstallPolicy::Auto, Some(_)) => Request::Latest,
         (None, _, _) => return Ok(None),
     };
@@ -244,10 +256,29 @@ fn pinned_release(
                 (Request::Latest, Network::Denied, Some((version, release))) => {
                     seeded(tool, version, release).map(Some)
                 }
+                (Request::Latest, _, seed) if config.version.is_none() => Ok(implicit_fallback(tool, &message, seed)),
                 _ => Err(message),
             }
         }
     }
+}
+
+/// What an implicit `latest` that could not be resolved runs instead: the newest
+/// seeded release, else (`None`) the tool on `PATH`. Says so once.
+fn implicit_fallback(tool: &Tool, message: &str, seed: Option<(&String, &Release)>) -> Option<Pinned> {
+    let fallback = seed.and_then(|(version, release)| seeded(tool, version, release).ok());
+    let using = fallback.as_ref().map_or_else(
+        || format!("the `{}` on PATH, if any", tool.binary),
+        |pin| format!("the bundled release {}", pin.version),
+    );
+    cache::warn_once(
+        &format!("implicit-latest:{}", tool.name),
+        &format!(
+            "could not look up the latest `{}` ({message}); using {using}. Pin `version` or run `poly lock` to avoid this",
+            tool.name
+        ),
+    );
+    fallback
 }
 
 /// The release `poly.lock` pins for this tool, when it answers `request`: any
@@ -372,6 +403,27 @@ mod tests {
     use super::*;
     use crate::engines::catalog_tool::recipe::testserver::{Canned, Server};
 
+    /// Serializes tests that read or write the process-global lock, and empties it
+    /// again on drop so a failing test cannot leak its pins into another.
+    struct LockGuard {
+        _held: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl LockGuard {
+        fn new() -> Self {
+            static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+            let held = SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            tool_lock::install(Vec::new());
+            LockGuard { _held: held }
+        }
+    }
+
+    impl Drop for LockGuard {
+        fn drop(&mut self) {
+            tool_lock::install(Vec::new());
+        }
+    }
+
     const HEX: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 
     fn setup(name: &str) -> (&'static Tool, &'static Recipe, &'static Source) {
@@ -405,6 +457,7 @@ mod tests {
 
     #[test]
     fn a_locked_tool_is_pinned_with_no_resolution_traffic() {
+        let _lock = LockGuard::new();
         let (tool, recipe, _) = setup("tflint");
         tool_lock::install(vec![LockedTool {
             name: "tflint".into(),
@@ -433,6 +486,7 @@ mod tests {
 
     #[test]
     fn a_version_the_catalog_never_listed_is_resolved_through_the_source() {
+        let _lock = LockGuard::new();
         let (tool, recipe, source) = setup("hadolint");
         let server = Server::start_with(|base| {
             vec![(
@@ -452,6 +506,7 @@ mod tests {
 
     #[test]
     fn a_seeded_version_needs_no_lookup() {
+        let _lock = LockGuard::new();
         let (tool, recipe, _) = setup("buf");
         let server = Server::start(Vec::new());
         let dir = tempfile::tempdir().unwrap();
@@ -466,6 +521,7 @@ mod tests {
 
     #[test]
     fn without_install_auto_nothing_is_looked_up_and_the_message_says_why() {
+        let _lock = LockGuard::new();
         let (tool, recipe, _) = setup("tofu");
         let server = Server::start(Vec::new());
         let dir = tempfile::tempdir().unwrap();
@@ -482,6 +538,7 @@ mod tests {
 
     #[test]
     fn latest_without_network_falls_back_to_the_newest_seed() {
+        let _lock = LockGuard::new();
         let (tool, recipe, _) = setup("actionlint");
         let server = Server::start(Vec::new());
         let dir = tempfile::tempdir().unwrap();
@@ -506,6 +563,7 @@ mod tests {
 
     #[test]
     fn no_version_and_no_auto_install_means_the_path_binary() {
+        let _lock = LockGuard::new();
         let (tool, recipe, _) = setup("hadolint");
         let server = Server::start(Vec::new());
         let dir = tempfile::tempdir().unwrap();
@@ -519,6 +577,7 @@ mod tests {
 
     #[test]
     fn a_bad_resolve_ttl_is_reported_by_tool() {
+        let _lock = LockGuard::new();
         let (tool, recipe, _) = setup("hadolint");
         let server = Server::start(Vec::new());
         let dir = tempfile::tempdir().unwrap();
@@ -527,5 +586,83 @@ mod tests {
         config.resolve_ttl = Some("soon".into());
         let error = pinned_release(&resolver, tool, recipe, &config).expect_err("bad ttl");
         assert!(error.contains("resolve_ttl") && error.contains("hadolint"), "{error}");
+    }
+
+    #[test]
+    fn bin_wins_without_resolving_any_pin() {
+        let _lock = LockGuard::new();
+        let (tool, recipe, _) = setup("hadolint");
+        let exe = std::env::current_exe().unwrap();
+        // A version no resolution accepts: were the pin consulted first, this would be Missing.
+        let mut config = auto(Some("not a version"));
+        config.bin = Some(exe.to_string_lossy().into_owned());
+        match resolve(tool, recipe, &config) {
+            Resolved::Ready(launcher) => assert_eq!(launcher.program, exe),
+            Resolved::Missing(message) => panic!("`bin` must be used as is: {message}"),
+        }
+        config.bin = Some("/nonexistent/hadolint".into());
+        match resolve(tool, recipe, &config) {
+            Resolved::Missing(message) => assert!(message.contains("does not exist"), "{message}"),
+            Resolved::Ready(_) => panic!("a missing `bin` is missing"),
+        }
+    }
+
+    #[test]
+    fn an_implicit_latest_that_cannot_be_looked_up_runs_the_newest_seed() {
+        let _lock = LockGuard::new();
+        let (tool, recipe, _) = setup("actionlint");
+        let server = Server::start(Vec::new());
+        let dir = tempfile::tempdir().unwrap();
+        let resolver = Resolver::for_test(&server.base, dir.path().to_path_buf(), false);
+        let pinned = pinned_release(&resolver, tool, recipe, &auto(None))
+            .expect("falls back")
+            .expect("to a seed");
+        let newest = recipe
+            .install
+            .as_ref()
+            .unwrap()
+            .releases
+            .keys()
+            .max_by_key(|v| resolve::version_key(v))
+            .unwrap();
+        assert_eq!(&pinned.version, newest);
+        assert!(server.total() > 0, "the lookup was attempted first");
+    }
+
+    #[test]
+    fn an_implicit_latest_without_a_seed_falls_back_to_the_path_binary() {
+        let _lock = LockGuard::new();
+        let (tool, recipe, _) = setup("actionlint");
+        let mut recipe = recipe.clone();
+        recipe.install.as_mut().unwrap().releases.clear();
+        let server = Server::start(Vec::new());
+        let dir = tempfile::tempdir().unwrap();
+        let resolver = Resolver::for_test(&server.base, dir.path().to_path_buf(), false);
+        assert!(pinned_release(&resolver, tool, &recipe, &auto(None)).unwrap().is_none());
+    }
+
+    #[test]
+    fn an_explicit_version_that_cannot_be_resolved_never_falls_back() {
+        let _lock = LockGuard::new();
+        let (tool, recipe, _) = setup("actionlint");
+        let server = Server::start(Vec::new());
+        let dir = tempfile::tempdir().unwrap();
+        let resolver = Resolver::for_test(&server.base, dir.path().to_path_buf(), false);
+        for version in ["9.9.9", "latest"] {
+            let error = pinned_release(&resolver, tool, recipe, &auto(Some(version))).expect_err(version);
+            assert!(error.contains("actionlint"), "{version}: {error}");
+        }
+    }
+
+    #[test]
+    fn a_hostile_version_is_refused_before_any_lookup() {
+        let _lock = LockGuard::new();
+        let (tool, recipe, _) = setup("actionlint");
+        let server = Server::start(Vec::new());
+        let dir = tempfile::tempdir().unwrap();
+        let resolver = Resolver::for_test(&server.base, dir.path().to_path_buf(), false);
+        let error = pinned_release(&resolver, tool, recipe, &auto(Some("../../x"))).expect_err("refused");
+        assert!(error.contains("not a version"), "{error}");
+        assert_eq!(server.total(), 0);
     }
 }

@@ -481,8 +481,192 @@ fn two_processes_resolving_at_once_ask_upstream_once() {
 
 #[test]
 fn a_request_parses_latest_and_versions() {
-    assert_eq!(Request::of(None), Request::Latest);
-    assert_eq!(Request::of(Some("latest")), Request::Latest);
-    assert_eq!(Request::of(Some("v2.14.1")), Request::Exact("2.14.1".into()));
-    assert_eq!(Request::of(Some("2.14.1")), Request::Exact("2.14.1".into()));
+    assert_eq!(Request::of(None), Ok(Request::Latest));
+    assert_eq!(Request::of(Some("latest")), Ok(Request::Latest));
+    assert_eq!(Request::of(Some("v2.14.1")), Ok(Request::Exact("2.14.1".into())));
+    assert_eq!(Request::of(Some("2.14.1")), Ok(Request::Exact("2.14.1".into())));
+}
+
+#[test]
+fn a_version_that_could_escape_a_path_or_url_is_refused() {
+    for bad in ["../../etc", "1.0/../x", "1..0", "a b", "1.0?x=y", "1.0#frag"] {
+        let error = Request::of(Some(bad)).expect_err(bad);
+        assert!(error.contains("not a version"), "{bad}: {error}");
+    }
+}
+
+#[test]
+fn an_upstream_tag_that_is_not_a_safe_version_is_refused() {
+    let server = latest_server(|base| vec![Canned::ok(release_body(base, "v1.0/../../evil", Some(HEX_A)))]);
+    let dir = tempfile::tempdir().unwrap();
+    let (resolver, _) = resolver(&server, dir.path(), false);
+    let error = latest(&resolver, DEFAULT_TTL).expect_err("hostile tag");
+    assert!(error.contains("does not fit the tag template"), "{error}");
+    assert!(!dir.path().join("..").join("evil").exists());
+}
+
+/// A source publishing the host platform and one more, each with its own asset.
+fn two_platform_source() -> Source {
+    serde_json::from_value(serde_json::json!({
+        "kind": "binary",
+        "github": "o/r",
+        "assets": {
+            platform(): {"name": "tool-{version}.tar.gz"},
+            "plan9-mips": {"name": "tool-{version}.mips.tar.gz"},
+        }
+    }))
+    .expect("source")
+}
+
+fn two_platform_body(base: &str) -> String {
+    let asset = |name: &str| {
+        serde_json::json!({
+            "name": name,
+            "browser_download_url": format!("{base}/dl/{name}"),
+            "digest": format!("sha256:{HEX_A}"),
+        })
+    };
+    serde_json::json!({"tag_name": "v1.2.3", "assets": [
+        asset("tool-1.2.3.tar.gz"), asset("tool-1.2.3.mips.tar.gz")]})
+    .to_string()
+}
+
+fn resolve_all(resolver: &Resolver, source: &Source) -> Result<Arc<Release>, String> {
+    resolver.resolve(
+        "tool",
+        source,
+        &Request::Latest,
+        Duration::ZERO,
+        Scope::All,
+        Network::Allowed,
+    )
+}
+
+#[test]
+fn a_host_only_cache_is_not_revalidated_into_a_one_platform_lock() {
+    let source = two_platform_source();
+    let server = latest_server(|base| vec![Canned::ok(two_platform_body(base))]);
+    let dir = tempfile::tempdir().unwrap();
+    let host_only = Release {
+        version: "1.2.3".into(),
+        assets: [(
+            platform(),
+            cache::ResolvedAsset {
+                url: "http://example.invalid/host".into(),
+                sha256: HEX_A.into(),
+                member: None,
+            },
+        )]
+        .into(),
+        checked_at: 1,
+        etag: Some("\"abc\"".into()),
+        last_modified: Some("Sun, 06 Nov 1994 08:49:37 GMT".into()),
+    };
+    cache::write(&cache::latest_path(dir.path(), "tool"), &host_only).unwrap();
+    let (resolver, _) = resolver(&server, dir.path(), false);
+    let release = resolve_all(&resolver, &source).expect("all platforms");
+    assert_eq!(
+        release.assets.len(),
+        2,
+        "{:?}",
+        release.assets.keys().collect::<Vec<_>>()
+    );
+    let sent = &server.requests(LATEST)[0];
+    assert!(
+        !sent.headers.contains_key("if-none-match") && !sent.headers.contains_key("if-modified-since"),
+        "a cache that cannot answer must not ask for a 304: {:?}",
+        sent.headers
+    );
+}
+
+#[test]
+fn a_304_to_a_request_the_cache_cannot_answer_is_an_error_not_a_partial_lock() {
+    let source = two_platform_source();
+    let server = latest_server(|_| vec![Canned::new(304, "")]);
+    let dir = tempfile::tempdir().unwrap();
+    let host_only = Release {
+        version: "1.2.3".into(),
+        assets: [(
+            platform(),
+            cache::ResolvedAsset {
+                url: "http://example.invalid/host".into(),
+                sha256: HEX_A.into(),
+                member: None,
+            },
+        )]
+        .into(),
+        checked_at: 1,
+        etag: Some("\"abc\"".into()),
+        ..Release::default()
+    };
+    cache::write(&cache::latest_path(dir.path(), "tool"), &host_only).unwrap();
+    let (resolver, _) = resolver(&server, dir.path(), false);
+    assert!(resolve_all(&resolver, &source).is_err());
+}
+
+#[test]
+fn a_platform_missing_upstream_is_left_out_while_the_others_lock() {
+    let source = two_platform_source();
+    let server = latest_server(|base| {
+        let body = two_platform_body(base).replace("tool-1.2.3.mips.tar.gz", "other.tar.gz");
+        vec![Canned::ok(body)]
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let (resolver, _) = resolver(&server, dir.path(), false);
+    let release = resolve_all(&resolver, &source).expect("the host platform still resolves");
+    assert_eq!(release.assets.keys().collect::<Vec<_>>(), [&platform()]);
+}
+
+#[test]
+fn offline_resolution_neither_locks_nor_creates_the_cache() {
+    let server = latest_server(|base| vec![ok_latest(base)]);
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("never-created");
+    let (offline, _) = resolver(&server, &root, true);
+    latest(&offline, DEFAULT_TTL).expect_err("nothing cached");
+    let denied = Resolver::with_http(fast_http(1).0, &server.base, root.clone(), false);
+    denied
+        .resolve(
+            "tool",
+            &github_source(),
+            &Request::Latest,
+            DEFAULT_TTL,
+            Scope::Host,
+            Network::Denied,
+        )
+        .expect_err("nothing cached");
+    assert!(
+        !root.exists(),
+        "reading the cache must not create directories or take its lock"
+    );
+}
+
+#[test]
+fn the_token_goes_only_to_the_apis_exact_https_origin() {
+    let (http, _) = fast_http(1);
+    let mut resolver = Resolver::with_http(http, "https://api.github.com", std::env::temp_dir(), false);
+    resolver.token = Some("secret".into());
+    let auth = |url: &str| resolver.headers(url).iter().any(|(name, _)| name == "Authorization");
+    assert!(auth("https://api.github.com/repos/o/r/releases/latest"));
+    assert!(auth("https://API.github.com:443/repos/o/r"));
+    assert!(!auth("https://api.github.com.evil.example/repos/o/r"));
+    assert!(!auth("https://api.github.com:8443/repos/o/r"));
+    assert!(!auth("http://api.github.com/repos/o/r"));
+    assert!(!auth("https://user@api.github.com/repos/o/r"));
+    assert!(!auth("https://github.com/o/r/releases/download/x"));
+
+    let (http, _) = fast_http(1);
+    let mut plain = Resolver::with_http(http, "http://127.0.0.1:123", std::env::temp_dir(), false);
+    plain.token = Some("secret".into());
+    assert!(
+        plain
+            .headers("http://127.0.0.1:123/x")
+            .iter()
+            .all(|(name, _)| name != "Authorization"),
+        "never over http"
+    );
+    assert!(
+        plain.headers("http://127.0.0.1:1234/x").is_empty(),
+        "another port is another origin"
+    );
 }

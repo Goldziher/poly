@@ -11,9 +11,28 @@ pub(super) fn from_api_digest(field: &str) -> Option<String> {
     sha256_hex(field.strip_prefix("sha256:")?)
 }
 
-/// The digest in a sidecar file: its first word (`<hex>  <name>` or just `<hex>`).
-pub(super) fn from_sidecar(body: &str) -> Option<String> {
-    sha256_hex(body.split_whitespace().next()?)
+/// The digest in a sidecar file (`<hex>  <name>` or just `<hex>`). A file name
+/// in the sidecar must be `name`: another asset's digest is not this one's.
+pub(super) fn from_sidecar(body: &str, name: &str) -> Option<String> {
+    let mut words = body.split_whitespace();
+    let digest = sha256_hex(words.next()?)?;
+    if let Some(file) = words.next() {
+        let file = file.trim_start_matches('*');
+        if file.rsplit('/').next().unwrap_or(file) != name {
+            return None;
+        }
+    }
+    Some(digest)
+}
+
+/// Whether `version` is safe to use as a path segment and in a URL:
+/// `[A-Za-z0-9._+-]+` with no `..`.
+pub(in crate::engines::catalog_tool) fn valid_version(version: &str) -> bool {
+    !version.is_empty()
+        && !version.contains("..")
+        && version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+' | '-'))
 }
 
 /// The digest of `name` in a `<hex>  <name>` list (`sha256sum` output, where a
@@ -39,7 +58,7 @@ fn element<'a>(xml: &'a str, tag: &str) -> Option<&'a str> {
 pub(super) fn maven_release(xml: &str) -> Option<String> {
     element(xml, "release")
         .or_else(|| element(xml, "latest"))
-        .filter(|version| !version.is_empty())
+        .filter(|version| valid_version(version))
         .map(str::to_owned)
 }
 
@@ -53,6 +72,7 @@ pub(super) fn maven_versions(xml: &str) -> Vec<String> {
         .skip(1)
         .filter_map(|part| part.split("</version>").next())
         .map(|version| version.trim().to_owned())
+        .filter(|version| valid_version(version))
         .collect()
 }
 
@@ -101,12 +121,33 @@ mod tests {
     fn digests_are_read_from_every_published_shape() {
         assert_eq!(from_api_digest(&format!("sha256:{HEX}")).as_deref(), Some(HEX));
         assert_eq!(from_api_digest(&format!("sha512:{HEX}")), None);
-        assert_eq!(from_sidecar(&format!("{HEX}  helm.tar.gz\n")).as_deref(), Some(HEX));
-        assert_eq!(from_sidecar(&format!("{HEX}\n")).as_deref(), Some(HEX));
-        assert_eq!(from_sidecar("<html>not found</html>"), None);
+        assert_eq!(
+            from_sidecar(&format!("{HEX}  helm.tar.gz\n"), "helm.tar.gz").as_deref(),
+            Some(HEX)
+        );
+        assert_eq!(from_sidecar(&format!("{HEX}\n"), "helm.tar.gz").as_deref(), Some(HEX));
+        assert_eq!(from_sidecar("<html>not found</html>", "helm.tar.gz"), None);
         let list = format!("{}  other\n{HEX} *tool_1.0_linux_amd64.tar.gz\n", "0".repeat(64));
         assert_eq!(from_list(&list, "tool_1.0_linux_amd64.tar.gz").as_deref(), Some(HEX));
         assert_eq!(from_list(&list, "absent"), None);
+    }
+
+    #[test]
+    fn a_sidecar_naming_another_file_is_not_this_files_digest() {
+        let body = format!("{HEX}  helm-v1.0.0-linux-arm64.tar.gz\n");
+        assert_eq!(from_sidecar(&body, "helm-v1.0.0-linux-amd64.tar.gz"), None);
+        let starred = format!("{HEX} *dist/helm.tar.gz\n");
+        assert_eq!(from_sidecar(&starred, "helm.tar.gz").as_deref(), Some(HEX));
+    }
+
+    #[test]
+    fn only_path_and_url_safe_versions_are_valid() {
+        for good in ["1.2.3", "v2", "14.4.0", "1.0.0-rc.1+build_5"] {
+            assert!(valid_version(good), "{good}");
+        }
+        for bad in ["", "..", "1/../2", "1..2", "a b", "1.0/x", "%2e%2e", "1\\2", "x?y"] {
+            assert!(!valid_version(bad), "{bad}");
+        }
     }
 
     #[test]

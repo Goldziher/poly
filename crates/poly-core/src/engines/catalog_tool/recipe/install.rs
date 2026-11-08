@@ -38,11 +38,16 @@ pub(super) fn asset_for(release: &Release) -> Option<&Asset> {
 /// Where a release of `tool` is stored: `<cache>/tools/<tool>/<version>/<file>`,
 /// where `<file>` is the archive member's name, or the download's own name.
 pub(super) fn destination(tool: &str, version: &str, asset: &Asset) -> Result<PathBuf> {
+    if !super::resolve::valid_version(version) {
+        bail!("`{version}` is not a version");
+    }
     let named = match &asset.member {
         Some(member) => Path::new(member).file_name().and_then(|name| name.to_str()),
         None => asset.url.rsplit('/').next(),
     };
-    let file = named.filter(|f| !f.is_empty()).unwrap_or(tool);
+    let file = named
+        .filter(|name| !matches!(*name, "" | "." | ".."))
+        .with_context(|| format!("{} does not name a file to install", asset.url))?;
     Ok(poly_cache::cache_home()?
         .join("tools")
         .join(tool)
@@ -255,6 +260,25 @@ mod tests {
         };
         let path = destination("helm", "4.0.0", &asset).expect("destination");
         assert!(path.ends_with("tools/helm/4.0.0/helm"), "{}", path.display());
+    }
+
+    #[test]
+    fn a_download_that_names_no_file_or_a_hostile_version_has_no_destination() {
+        let asset = |url: &str| Asset {
+            url: url.to_owned(),
+            sha256: String::new(),
+            member: None,
+        };
+        for url in [
+            "https://example.invalid/dl/",
+            "https://example.invalid/..",
+            "https://example.invalid/.",
+        ] {
+            let error = destination("helm", "4.0.0", &asset(url)).expect_err(url);
+            assert!(error.to_string().contains("does not name a file"), "{url}: {error:#}");
+        }
+        assert!(destination("helm", "../x", &asset("https://example.invalid/helm")).is_err());
+        assert!(destination("helm", "4.0.0", &asset("https://example.invalid/helm")).is_ok());
     }
 
     #[test]

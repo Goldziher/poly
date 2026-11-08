@@ -16,7 +16,7 @@ pub(in crate::engines::catalog_tool) mod cache;
 mod digest;
 mod github;
 
-pub(in crate::engines::catalog_tool) use self::digest::version_key;
+pub(in crate::engines::catalog_tool) use self::digest::{valid_version, version_key};
 
 #[cfg(test)]
 pub(in crate::engines::catalog_tool) mod tests;
@@ -49,10 +49,24 @@ pub(in crate::engines::catalog_tool) enum Request {
 impl Request {
     /// `latest`/absent is [`Request::Latest`]; anything else an exact version
     /// (a leading `v` is dropped: tags and versions are written both ways).
-    pub(in crate::engines::catalog_tool) fn of(version: Option<&str>) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// A version with anything but `[A-Za-z0-9._+-]`, or a `..`, is refused: it
+    /// ends up in URLs and cache paths.
+    pub(in crate::engines::catalog_tool) fn of(version: Option<&str>) -> Result<Self, String> {
         match version.map(str::trim) {
-            None | Some("" | "latest") => Request::Latest,
-            Some(exact) => Request::Exact(exact.strip_prefix('v').unwrap_or(exact).to_owned()),
+            None | Some("" | "latest") => Ok(Request::Latest),
+            Some(exact) => {
+                let exact = exact.strip_prefix('v').unwrap_or(exact);
+                if digest::valid_version(exact) {
+                    Ok(Request::Exact(exact.to_owned()))
+                } else {
+                    Err(format!(
+                        "`{exact}` is not a version: use letters, digits and `.`, `_`, `+`, `-` only (no `..`)"
+                    ))
+                }
+            }
         }
     }
 }
@@ -210,8 +224,16 @@ impl Resolver {
     ) -> Result<Release, String> {
         let keys = wanted_keys(tool, source, scope)?;
         let root = self.root()?;
-        let _held = FileLock::acquire(&cache::tool_dir(&root, tool).join(".resolve.lock"))
-            .map_err(|error| format!("tool `{tool}`: {error:#}"))?;
+        // Only a run that may ask upstream writes the cache, so only it needs the
+        // lock (and the directory the lock lives in); reading never does.
+        let _held = if self.no_network(network).is_none() {
+            Some(
+                FileLock::acquire(&cache::tool_dir(&root, tool).join(".resolve.lock"))
+                    .map_err(|error| format!("tool `{tool}`: {error:#}"))?,
+            )
+        } else {
+            None
+        };
         match request {
             Request::Latest => self.latest(tool, source, &root, ttl, &keys, network),
             Request::Exact(version) => self.exact(tool, source, &root, version, &keys, network),
@@ -309,6 +331,9 @@ impl Resolver {
     ) -> Result<Release, Fail> {
         let (url, github) = self.latest_url(source);
         let mut headers = self.headers(&url);
+        // Validators only for an answer that would serve this request: a 304
+        // keeps the cached record, which must then cover every wanted platform.
+        let cached = cached.filter(|cached| cached.covers(keys));
         if let Some(cached) = cached {
             if let Some(etag) = &cached.etag {
                 headers.push(("If-None-Match".into(), etag.clone()));
@@ -333,12 +358,14 @@ impl Resolver {
         let mut release = if github {
             let api: ApiRelease = github::parse(&reply.body, &url).map_err(Fail::new)?;
             let latest_template = source.latest_tag_template();
-            let version = poly_catalog::version_from_tag(latest_template, &api.tag_name).ok_or_else(|| {
-                Fail::new(format!(
-                    "tool `{tool}`: the latest release tag `{}` does not fit the tag template `{latest_template}`",
-                    api.tag_name
-                ))
-            })?;
+            let version = poly_catalog::version_from_tag(latest_template, &api.tag_name)
+                .filter(|version| digest::valid_version(version))
+                .ok_or_else(|| {
+                    Fail::new(format!(
+                        "tool `{tool}`: the latest release tag `{}` does not fit the tag template `{latest_template}`",
+                        api.tag_name
+                    ))
+                })?;
             if source.github.is_some() {
                 self.github_assets(tool, source, &api, &version, keys)?
             } else {
@@ -431,6 +458,13 @@ impl Resolver {
                 if strict {
                     return Err(Fail::new(missing_asset(tool, source, api, &name, key, version)));
                 }
+                cache::warn_once(
+                    &format!("missing-asset:{tool}:{version}:{key}"),
+                    &format!(
+                        "tool `{tool}` {version} publishes no `{name}` for {key}; \
+                         it is left out of the lock and that platform cannot download it"
+                    ),
+                );
                 continue;
             };
             let sha256 = found.digest.as_deref().and_then(digest::from_api_digest);
@@ -470,7 +504,7 @@ impl Resolver {
             };
             let sha256 = if let Some(sidecar) = checksum.sidecar_url(&url) {
                 let reply = self.plain(&sidecar, tool, "fetching a checksum")?;
-                digest::from_sidecar(&reply.body)
+                digest::from_sidecar(&reply.body, &name)
                     .ok_or_else(|| Fail::new(format!("tool `{tool}`: {sidecar} does not hold a SHA-256 digest")))?
             } else {
                 if list.is_none() {
@@ -511,12 +545,17 @@ impl Resolver {
         })
     }
 
-    /// Request headers for `url`. The token goes only to the GitHub API.
+    /// Request headers for `url`. The token goes only to the GitHub API's exact
+    /// origin (scheme, host and port), and only over https.
     fn headers(&self, url: &str) -> Vec<(String, String)> {
         let mut headers = Vec::new();
-        if url.starts_with(&self.api) {
+        if let (Some(target), Some(api)) = (Origin::of(url), Origin::of(&self.api))
+            && target == api
+        {
             headers.push(("Accept".to_owned(), "application/vnd.github+json".to_owned()));
-            if let Some(token) = &self.token {
+            if let Some(token) = &self.token
+                && target.scheme == "https"
+            {
                 headers.push(("Authorization".to_owned(), format!("Bearer {token}")));
             }
         }
@@ -600,6 +639,7 @@ impl Resolver {
                     releases
                         .iter()
                         .filter_map(|r| poly_catalog::version_from_tag(source.latest_tag_template(), &r.tag_name))
+                        .filter(|version| digest::valid_version(version))
                         .collect()
                 })
                 .unwrap_or_default();
@@ -613,6 +653,40 @@ impl Resolver {
                 .unwrap_or_default();
         }
         Vec::new()
+    }
+}
+
+/// The scheme, host and port of a URL, compared whole so that
+/// `https://api.github.com.evil.example` or another port is never the API.
+#[derive(Debug, PartialEq, Eq)]
+struct Origin {
+    scheme: String,
+    host: String,
+    port: u16,
+}
+
+impl Origin {
+    fn of(url: &str) -> Option<Origin> {
+        let (scheme, rest) = url.split_once("://")?;
+        let scheme = scheme.to_ascii_lowercase();
+        let authority = rest.split(['/', '?', '#']).next()?;
+        if authority.contains('@') {
+            return None;
+        }
+        let default = match scheme.as_str() {
+            "https" => 443,
+            "http" => 80,
+            _ => return None,
+        };
+        let (host, port) = match authority.rsplit_once(':') {
+            Some((host, port)) if !host.ends_with(']') || host.starts_with('[') => (host, port.parse().ok()?),
+            _ => (authority, default),
+        };
+        (!host.is_empty()).then(|| Origin {
+            scheme,
+            host: host.to_ascii_lowercase(),
+            port,
+        })
     }
 }
 

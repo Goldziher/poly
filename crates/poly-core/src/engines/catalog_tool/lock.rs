@@ -44,16 +44,20 @@ pub fn lockable_tools(tools: &ToolsConfig) -> Vec<String> {
 /// serves `latest`, and an exact `version` needs that very version.
 pub fn lock_satisfies(config: &ToolConfig, locked: &LockedTool) -> bool {
     match Request::of(config.version.as_deref()) {
-        Request::Latest => true,
-        Request::Exact(version) => version == locked.version,
+        Ok(Request::Latest) => true,
+        Ok(Request::Exact(version)) => version == locked.version,
+        Err(_) => false,
     }
 }
 
 /// The lock entry for the tool `name`.
 ///
-/// An `existing` entry that still satisfies the config is kept without asking
-/// anyone, unless `upgrade` asks for the newest release (or, for an exact
-/// version, a re-verification of its digests).
+/// An `existing` entry that still satisfies the config and covers every
+/// platform the source publishes is kept without asking anyone, unless `upgrade`
+/// asks for the newest release. `upgrade` leaves an exact `version` where it is:
+/// the digests of a version already locked are not fetched again, and a
+/// re-published asset is refused only when a re-resolution (a missing platform,
+/// or the entry removed) finds it changed.
 ///
 /// # Errors
 ///
@@ -71,10 +75,11 @@ pub fn lock_tool(
     if let Some(kept) = existing
         && !upgrade
         && lock_satisfies(config, kept)
+        && covers_platforms(source, kept)
     {
         return Ok(kept.clone());
     }
-    let request = Request::of(config.version.as_deref());
+    let request = Request::of(config.version.as_deref()).map_err(|message| format!("tool `{name}`: {message}"))?;
     let ttl = match (&request, upgrade) {
         (Request::Latest, true) => Duration::ZERO,
         _ => match config.resolve_ttl.as_deref() {
@@ -100,6 +105,15 @@ pub fn lock_tool(
         version: release.version.clone(),
         assets,
     })
+}
+
+/// Whether `locked` has an asset for every platform `source` publishes, so a
+/// platform added to the catalog is picked up by a plain `poly lock`.
+fn covers_platforms(source: &Source, locked: &LockedTool) -> bool {
+    source
+        .assets
+        .keys()
+        .all(|platform| locked.assets.iter().any(|asset| &asset.platform == platform))
 }
 
 /// An asset of the version already locked must keep its digest: a changed one
@@ -148,6 +162,23 @@ mod tests {
         refuse_republished("t", Some(&old), &locked("1.0.0", 'a').assets).expect("same digest");
         refuse_republished("t", Some(&old), &locked("1.1.0", 'b').assets).expect("another version, another url");
         refuse_republished("t", None, &locked("1.0.0", 'b').assets).expect("nothing locked");
+    }
+
+    #[test]
+    fn an_entry_missing_a_published_platform_is_not_kept() {
+        let source: Source = serde_json::from_value(serde_json::json!({
+            "kind": "binary", "github": "o/r",
+            "assets": {"linux-x86_64": {"name": "t-{version}"}, "windows-x86_64": {"name": "t-{version}.zip"}}
+        }))
+        .unwrap();
+        let entry = locked("1.0.0", 'a');
+        assert!(!covers_platforms(&source, &entry));
+        let mut full = entry.clone();
+        full.assets.push(LockedAsset {
+            platform: "windows-x86_64".into(),
+            ..entry.assets[0].clone()
+        });
+        assert!(covers_platforms(&source, &full));
     }
 
     #[test]

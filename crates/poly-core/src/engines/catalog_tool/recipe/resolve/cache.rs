@@ -152,7 +152,7 @@ pub(in crate::engines::catalog_tool) fn parse_ttl(text: &str) -> Result<Duration
 }
 
 /// Say `message` on stderr once per `key` for the life of the process.
-pub(super) fn warn_once(key: &str, message: &str) {
+pub(in crate::engines::catalog_tool) fn warn_once(key: &str, message: &str) {
     static SAID: Mutex<Option<HashSet<String>>> = Mutex::new(None);
     let mut said = SAID.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if said.get_or_insert_with(HashSet::new).insert(key.to_owned()) {
