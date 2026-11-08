@@ -109,3 +109,19 @@ fn format_honors_language_option() {
         "arguments.paren_spacing adds inner spaces; got: {out}"
     );
 }
+
+/// A document may mix operations and type definitions; neither family is a syntax error.
+#[test]
+fn mixed_executable_and_type_system_document_has_no_syntax_error() {
+    let doc = "query Q { user { id } }\ntype A { id: ID! }\n";
+    let diags = GraphQlEngine.lint(&make_src(doc), &engine_cfg()).unwrap();
+    assert!(diags.is_empty(), "{diags:?}");
+}
+
+#[test]
+fn a_real_error_in_a_mixed_document_is_still_reported() {
+    let doc = "type A { id: ID! }\nquery Q { user(id: ) { id } }\n";
+    let diags = GraphQlEngine.lint(&make_src(doc), &engine_cfg()).unwrap();
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    assert_eq!(diags[0].span.as_ref().map(|s| s.start_line), Some(2));
+}

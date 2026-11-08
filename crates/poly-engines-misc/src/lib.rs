@@ -7,6 +7,8 @@ pub mod dockerfile;
 pub mod dotenv;
 #[cfg(feature = "graphql")]
 pub mod graphql;
+#[cfg(feature = "graphql")]
+mod graphql_mixed;
 #[cfg(feature = "hcl")]
 pub mod hcl;
 #[cfg(feature = "ini")]
