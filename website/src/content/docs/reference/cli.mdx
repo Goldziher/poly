@@ -327,9 +327,11 @@ with the flavor, cache root, installed components and what the current directory
 poly lock [--upgrade] [--check] [--config <PATH>]
 ```
 
-`poly lock` writes `poly.lock`, the one lock file for remote `extends` bases (`[[extends]]`) and
-Git hook sources (`[[hook_sources]]`). A plain run keeps every revision already recorded and
-resolves only new sources; `--upgrade` re-resolves every symbolic ref to its latest object ID.
+`poly lock` writes `poly.lock`, the one lock file for remote `extends` bases (`[[extends]]`),
+Git hook sources (`[[hook_sources]]`) and downloadable tools (`[[tools]]`: the release each enabled
+`install = "auto"` tool resolves to, with every platform's URL and SHA-256). A plain run keeps every
+revision and release already recorded and resolves only new sources; `--upgrade` re-resolves every
+symbolic ref to its latest object ID and every `latest` tool to its newest release.
 `--check` writes nothing and exits `1` when `poly.lock` would change, so CI can gate on it.
 `poly.lock` replaces `poly-config.lock`, `poly-hooks.lock`, `poly config update` and
 `poly hooks update`; commands read only `poly.lock`.

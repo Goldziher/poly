@@ -49,7 +49,7 @@ pre-commit gate typically runs, and `poly migrate` maps those jobs onto them.
 [tools.checkstyle]
 enabled = true
 extra_args = ["-c", "checkstyle.xml", "-p", "checkstyle.properties"]
-version = "12.3.1"   # a pinned, checksummed release
+version = "12.3.1"   # "latest" (the default) or any upstream version
 install = "auto"     # download it when it is missing
 
 [tools.actionlint]
@@ -101,14 +101,25 @@ How they differ from the breadth tier above:
   opinions win. `pyproject-fmt` is confined to `pyproject.toml` and the TOML formatter leaves
   those files to it. If the tool is missing, its files are reported as skipped rather than
   formatted by something else.
-- **Provisioning.** `bin` names an executable; `version` selects a checksummed release; with
-  `install = "auto"` poly downloads it once into its cache and verifies the SHA-256 (of the
-  archive, for a tool shipped in a `.tar.gz` / `.zip`, before extracting only the binary). Pinned
-  releases ship for `checkstyle`, `palantir-java-format`, `buildifier`, `buf`, `actionlint`,
-  `hadolint`, `golangci-lint`, `helm`, `helm-template`, `tflint` and `tofu`, on macOS and Linux
-  (arm64 and x86_64; `checkstyle` is a platform-independent jar). A `version` poly cannot provision
-  makes the tool unavailable with a message — poly never runs a different version from `PATH`.
-  Otherwise a missing tool produces a warning naming the command that installs it.
+- **Provisioning.** `bin` names an executable. With `install = "auto"` poly downloads the tool once into
+  its cache and verifies the SHA-256 (of the archive, for a tool shipped in a `.tar.gz` / `.zip`,
+  before extracting only the binary). `version` is `"latest"` (the default) or any exact upstream
+  version, such as `"2.14.1"`; poly does not need to know it in advance. Downloads are available for
+  `checkstyle`, `palantir-java-format`, `buildifier`, `buf`, `actionlint`, `hadolint`, `golangci-lint`,
+  `helm`, `helm-template`, `tflint` and `tofu`, on macOS and Linux (arm64 and x86_64; `checkstyle` is a
+  platform-independent jar). A version poly cannot provision makes the tool unavailable with a message
+  naming the cause — poly never runs a different version from `PATH`. Without `install = "auto"` a
+  missing tool produces a warning naming the command that installs it.
+- **Releases and `poly.lock`.** `latest` is the newest upstream release, from the GitHub releases API
+  (set `GITHUB_TOKEN` to avoid the anonymous rate limit) or, for get.helm.sh and Maven Central, the
+  host's own listing. The digest comes from the publisher: the API's per-asset `digest`, or its checksum
+  file. `poly lock` writes the resolved version and every platform's URL and SHA-256 into `poly.lock`;
+  `poly lock --upgrade` moves to the newest release and `poly lock --check` reports drift. With a lock
+  entry a run does no lookup at all, and a re-published asset with a different digest is refused. Without
+  one, a resolved `latest` is cached for `resolve_ttl` (default `24h`, `0` always revalidates), revalidated
+  with `If-None-Match`, and kept if a refresh fails. Fetches retry transient failures (connection errors,
+  timeouts, 429, 5xx) with backoff and honour `Retry-After`. With `--offline` / `POLY_OFFLINE` only the
+  lock, the cache and installed binaries are used; a tool with none is reported as skipped.
 - **helm.** `prepare` runs `helm dependency build` once per chart (skipped when `charts/` already
   satisfies `Chart.lock`, or when `POLY_OFFLINE` is set), retried `prepare_attempts` (5) times with
   a doubling `prepare_backoff_secs` (4) plus up to `prepare_jitter_secs` (4) of jitter.
