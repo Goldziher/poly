@@ -39,19 +39,19 @@ pub struct ComponentsArgs {
 
 #[derive(Subcommand)]
 enum ComponentsCommand {
-    /// Every component and whether it is bundled, installed or missing. Never downloads.
+    /// Every component and whether it is bundled, installed, corrupt or missing. Never downloads.
     List,
     /// The components the given paths need and whether they are usable. Never downloads.
     ///
-    /// Exits 1 when a needed component is missing or fails `--verify`.
+    /// Exits 1 when a needed component is missing or corrupt.
     Status {
         /// Files or directories to inspect (default: the current directory).
         paths: Vec<PathBuf>,
-        /// Re-check each installed archive against the lock.
+        /// Mark each installed archive `verified` (a damaged one reads `corrupt` either way).
         #[arg(long)]
         verify: bool,
     },
-    /// Download and verify components: names, presets or `all`.
+    /// Download and verify components: names, presets or `all`. Repairs a corrupt cached copy.
     Install {
         /// Component names or presets.
         #[arg(required = true)]
@@ -70,6 +70,9 @@ enum ComponentsCommand {
         paths: Vec<PathBuf>,
     },
     /// Remove cached archives the lock no longer references.
+    ///
+    /// Also clears staging directories and temporary files an interrupted install left behind,
+    /// once they are an hour old (a younger one may belong to an install running elsewhere).
     Prune {
         /// Remove every cached archive, referenced or not.
         #[arg(long)]
@@ -169,6 +172,8 @@ fn run(args: ComponentsArgs) -> anyhow::Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         ComponentsCommand::Status { paths, verify } => {
+            // Status is how a damaged or misconfigured setup gets inspected, so it must not refuse it.
+            poly_config::v2::skip_components_check();
             let listing = ops::status(&env, &needed(&paths)?, verify);
             render::emit(format, &listing, render::print_listing)?;
             Ok(if listing.ok() {

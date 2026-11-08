@@ -2235,6 +2235,7 @@ dependencies = [
  "anyhow",
  "json5",
  "poly-catalog",
+ "poly-component-index",
  "schemars",
  "serde",
  "serde_json",

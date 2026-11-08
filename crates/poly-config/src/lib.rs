@@ -679,6 +679,8 @@ fn finalize(mut table: toml::Table, typos_dir: &Path) -> anyhow::Result<PolyConf
     config.oxfmt_native = resolve_oxfmt_native(typos_dir);
     config.oxlint_native = resolve_oxlint_native(typos_dir);
     v2::reject_mixed(&config.lint, &config.fmt, &config.engines).map_err(anyhow::Error::msg)?;
+    v2::validate_components(&config.components, &config.lint, &config.fmt, &config.engines)
+        .map_err(|message| anyhow::anyhow!("invalid [components] config: {message}"))?;
     config
         .hooks
         .validate()

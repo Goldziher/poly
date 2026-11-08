@@ -5,13 +5,14 @@
 //! `ensure` did not report present, so the per-file workers, which only ever load, cannot reach
 //! the network: an unensured component fails with a message instead.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use alef_component_runtime::{ComponentError, ComponentStatus};
 
 use crate::host::ComponentHost;
+use crate::integrity::CacheCheck;
 use crate::transport::ComponentTransport;
 
 /// Why a component cannot be used.
@@ -99,6 +100,7 @@ pub(crate) struct Shared {
     pub(crate) gate: bool,
     sealed: AtomicBool,
     ensured: Mutex<HashMap<String, Availability>>,
+    repaired: Mutex<HashSet<String>>,
     connected: Mutex<HashMap<String, Arc<dyn ComponentTransport>>>,
 }
 
@@ -108,6 +110,7 @@ impl Shared {
             gate,
             sealed: AtomicBool::new(false),
             ensured: Mutex::new(HashMap::new()),
+            repaired: Mutex::new(HashSet::new()),
             connected: Mutex::new(HashMap::new()),
         }
     }
@@ -126,6 +129,20 @@ impl Shared {
             .unwrap_or_else(PoisonError::into_inner)
             .insert(id.to_owned(), availability.clone());
         availability
+    }
+
+    fn mark_repaired(&self, id: &str) {
+        self.repaired
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(id.to_owned());
+    }
+
+    fn was_repaired(&self, id: &str) -> bool {
+        self.repaired
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(id)
     }
 
     /// The transport `ensure` already connected, handed over once.
@@ -240,10 +257,21 @@ impl ComponentHost {
                 format!("no artifact for this target: {error}"),
             );
         }
+        let mut repairing = false;
         match self.manager.status(component_id) {
-            Ok(ComponentStatus::Cached | ComponentStatus::Ready | ComponentStatus::Bundled) => {
-                return Availability::Present;
-            }
+            Ok(ComponentStatus::Ready | ComponentStatus::Bundled) => return Availability::Present,
+            Ok(ComponentStatus::Cached) => match self.check_cache(component_id) {
+                Ok(CacheCheck::Intact) => return Availability::Present,
+                Ok(CacheCheck::Corrupt(detail)) => {
+                    if let Some(refusal) = self.refuse_repair(component_id, allow_install, &detail) {
+                        return refusal;
+                    }
+                    repairing = true;
+                    tracing::warn!(component = component_id, "{detail}; downloading it again");
+                }
+                Ok(CacheCheck::NotCached) => {}
+                Err(error) => return Availability::Unavailable(classify(&error, false)),
+            },
             Ok(ComponentStatus::Unsupported { reason }) => return unavailable(UnavailableKind::Incompatible, reason),
             Ok(ComponentStatus::NotDownloaded) => {}
             Err(error) => return Availability::Unavailable(classify(&anyhow::Error::new(error), false)),
@@ -272,6 +300,9 @@ impl ComponentHost {
                         .unwrap_or_else(PoisonError::into_inner)
                         .insert(component_id.to_owned(), transport);
                 }
+                if repairing {
+                    self.shared.mark_repaired(component_id);
+                }
                 Availability::InstalledNow
             }
             // `connect` installs and loads (`ensure_contract`), so a component that downloaded but
@@ -284,6 +315,30 @@ impl ComponentHost {
                 Availability::Unavailable(classify(&error, installed))
             }
         }
+    }
+
+    /// Why a corrupt cached copy cannot be re-downloaded now, or `None` when it can.
+    fn refuse_repair(&self, component_id: &str, allow_install: bool, detail: &str) -> Option<Availability> {
+        let remedy = if self.offline {
+            format!("run `poly components install {component_id}` without --offline to repair it")
+        } else if !allow_install {
+            format!(
+                "run `poly components install {component_id}` to repair it (`[components] install = \"never\"` forbids doing so during a run)"
+            )
+        } else {
+            return None;
+        };
+        Some(unavailable(
+            UnavailableKind::VerifyFailed,
+            format!("{detail}; {remedy}"),
+        ))
+    }
+
+    /// Whether this host found the cached copy of `component_id` corrupt and downloaded it again
+    /// during [`ComponentHost::ensure`].
+    #[must_use]
+    pub fn was_repaired(&self, component_id: &str) -> bool {
+        self.shared.was_repaired(component_id)
     }
 
     /// Refuse every later install: components are ensured before planning and never again.

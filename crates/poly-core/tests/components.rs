@@ -383,6 +383,21 @@ fn a_rejected_archive_is_a_verify_failure() {
 }
 
 #[test]
+fn on_missing_skip_never_swallows_a_verify_failure() {
+    let f = fixture(Mode::Tampered, false);
+    let dir = project();
+    let config = config(ComponentInstallPolicy::Auto, OnMissing::Skip);
+    let run = lint(dir.path(), &config, &inject(f.host, index()));
+    assert_eq!(run.components.missing[0].kind, "verify_failed");
+    assert!(
+        run.components.missing[0].blocking,
+        "a damaged component blocks whatever on_missing says"
+    );
+    assert!(run.components.blocking());
+    assert_eq!(run.errors.len(), 1, "its files fail instead of being skipped");
+}
+
+#[test]
 fn formatting_reports_the_same_account() {
     let installed = fixture(Mode::Works, false);
     let dir = project();

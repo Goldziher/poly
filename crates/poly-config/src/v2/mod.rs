@@ -21,7 +21,10 @@ mod engines;
 mod paths;
 mod workspace;
 
-pub use components::{ComponentInstallPolicy, ComponentsConfig, Enable, OnMissing};
+#[cfg(test)]
+pub(crate) use components::check_components;
+pub(crate) use components::validate_components;
+pub use components::{ComponentInstallPolicy, ComponentsConfig, Enable, OnMissing, skip_components_check};
 pub use detect::{V1Marker, detect_v1, v1_error};
 pub use engines::{EngineTable, LangTable, PhaseTable, RESERVED_ENGINE_KEYS, RuleOverride};
 pub use paths::{BUILTIN_PACK_KEY, RULE_DIRS_KEY};

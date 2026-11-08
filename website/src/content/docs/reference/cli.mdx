@@ -71,7 +71,7 @@ and `--max-skips`.
 | Flag | Effect |
 | --- | --- |
 | `--set <KEY=VALUE>` | Override one config key for this run. Repeatable. A TOML layer applied above `poly.local.toml`, so it beats every file. `KEY` is a dotted TOML path; `VALUE` is parsed as a TOML value (`true`, `3`, `["a/**"]`) and falls back to a plain string. |
-| `--on-missing <fail\|skip>` | What to do when a file needs an engine component that is not installed. Overrides `[components] on_missing`. `fail` (the default) exits `2` when a needed component is not installed; `skip` skips its files and charges them to the skip budget, so `--deny-skips` still fails. A download, verification or compatibility failure is an error either way. |
+| `--on-missing <fail\|skip>` | What to do when a file needs an engine component that is not installed. Overrides `[components] on_missing`. `fail` (the default) exits `2` when a needed component is not installed; `skip` skips its files and charges them to the skip budget, so `--deny-skips` still fails; the run exits `0` otherwise, with a `warning:` on stderr and `summary.missing_components` set. A download, verification or compatibility failure is an error either way. |
 
 `--set discovery.force_exclude=true` applies `[discovery] exclude` to explicitly named files too (the
 default, so it matters only in a repo that set `force_exclude = false`); it replaces
@@ -299,7 +299,7 @@ points at `poly doctor`. A correctly-installed poly finds a single entry and pri
 
 ```sh
 poly components list                      # every component: bundled, installed, not installed
-poly components status [PATHS] [--verify] # what these paths need; --verify re-checks installed archives
+poly components status [PATHS] [--verify] # what these paths need; --verify marks installed archives verified
 poly components install <name|preset|all> # download and verify (also: uninstall)
 poly components sync [PATHS]              # install everything these paths need
 poly components prune [--all] [--dry-run] # drop cached archives the lock no longer references
@@ -312,10 +312,13 @@ documents carry `schema: 1`. Selection, offline use and mirrors are covered in
 
 A build that links every engine family is **bundled**: its components never download, and
 `install` only prints a note. `list` and `status` never download on any build; they read the cache
-and nothing else. `status` exits 1 when a component the paths need is missing or fails `--verify`.
+and nothing else. Both re-verify each cached archive against the lock and show a damaged one as `corrupt`
+(and print each component's locked `version`). `status` exits 1 when a component the paths need is
+missing or corrupt. `install` and `sync` download a corrupt archive again and report `repaired`.
 `install`, `sync` and `import` exit 2 on a failure. `sync --offline` is a check that exits 2 when
 something is missing. `prune` keeps archives the lock references for any target and archives used within
-`--keep-days` (default 30), and clears staging directories an interrupted install left behind;
+`--keep-days` (default 30), and clears the staging directories and temporary files an interrupted
+install left behind once they are an hour old (a younger one may belong to a live install);
 `--all` removes every archive. `--dry-run` lists exactly what a real prune removes. A file a loaded
 library still holds (Windows) is reported as `skipped` and left for a later prune. `sync` covers components only; grammars and
 tool downloads are fetched by the run that needs them. `poly doctor` carries a `components` section
@@ -390,7 +393,7 @@ with no path, the nearest one) without loading or downloading any engine compone
 come from the component index compiled into poly. A key that an engine recognises only by probing
 its own option type is checked in-process when that engine is linked into the binary. Otherwise
 it is accepted, and the engine's component is listed as `partially validated`. Configuring an
-engine whose component is in `[components] disable` is an error. Exit `0` means valid; `2` means
+engine whose component is in `[components] disable` is an error here, though only a warning when a run loads the config. Exit `0` means valid; `2` means
 a problem was found or a file could not be read. `extends` bases are not resolved.
 
 `poly config schema` prints the JSON Schema for `poly.toml` — derived from the same config types
@@ -419,7 +422,7 @@ poly --config /path/to/poly.toml mcp
 | `poly hooks install` | `--hook-type <TYPE>` (repeatable; default: the stages `poly.toml` configures), `--overwrite` (discard an existing hook instead of keeping it as `<hook>.legacy`), `--replace-lefthook` |
 | `poly hooks uninstall` | `--hook-type <TYPE>`; restores a kept `<hook>.legacy` |
 | `poly cache gc` | `--max-age <DAYS>`, `--max-size <SIZE>` (`500M`, `2G`) |
-| `poly cache …` | `--cache-dir <DIR>` operates on another cache directory |
+| `poly cache …` | `--cache-dir <DIR>` operates on another cache directory; `--format pretty\|json\|toon` |
 
 See [Git hooks](/poly/guides/hooks/) for the full `[hooks]` surface, and
 [Agents and MCP](/poly/guides/agents-and-mcp/) for the MCP tool reference. In short: the MCP server

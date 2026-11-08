@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use alef_component_abi::AlefHostApiV1;
 use alef_component_runtime::{
-    ComponentLock, ComponentManager, ComponentStatus, DownloadOptions, HostServices, ProgressCallback,
+    ArtifactCache, ComponentLock, ComponentManager, ComponentStatus, DownloadOptions, HostServices, ProgressCallback,
     target::host_target,
 };
 use anyhow::Context;
@@ -77,6 +77,7 @@ pub struct ComponentHost {
     pub(crate) manager: Arc<ComponentManager>,
     pub(crate) connector: Arc<dyn TransportConnector>,
     pub(crate) offline: bool,
+    pub(crate) verifier: ArtifactCache,
     pub(crate) shared: Arc<Shared>,
     sidecars: HashSet<String>,
     init: InitParams,
@@ -104,6 +105,7 @@ impl ComponentHost {
                 .to_owned(),
         };
         let cache_root = component_cache_dir().unwrap_or(options.cache_root);
+        let verifier = crate::integrity::verifier(&lock, cache_root.clone());
         let mut downloads = DownloadOptions::default();
         if let Some(progress) = options.progress {
             downloads = downloads.with_progress(move |done, total| progress(done, total));
@@ -128,6 +130,7 @@ impl ComponentHost {
             connector: Arc::new(AlefConnector::with_sidecars(options.sidecars.iter().cloned())),
             sidecars: options.sidecars.into_iter().collect(),
             offline: options.offline,
+            verifier,
             shared: Arc::new(Shared::new(options.gate_loads)),
             init: options.init,
             slots: Mutex::new(HashMap::new()),
@@ -154,6 +157,15 @@ impl ComponentHost {
     /// When the lock has no entry for it on this target.
     pub fn status(&self, component_id: &str) -> anyhow::Result<ComponentStatus> {
         Ok(self.manager.status(component_id)?)
+    }
+
+    /// The version `component_id` is locked at for this target, if the lock has an entry.
+    #[must_use]
+    pub fn locked_version(&self, component_id: &str) -> Option<String> {
+        self.manager
+            .lock_entry(component_id)
+            .ok()
+            .map(|entry| entry.identity.version.clone())
     }
 
     /// The lock digest of `component_id` for this target, if the lock has one.

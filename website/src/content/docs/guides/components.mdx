@@ -67,9 +67,36 @@ on_missing = "fail"    # "fail" | "skip"
 | Key | Effect |
 | --- | --- |
 | `enable` | `"auto"` derives components from the discovered files and configured engines. A list names components or presets explicitly. |
-| `disable` | Components never to use, even when `auto` would select them. Configuring an engine whose component is disabled is a config error. |
+| `disable` | Components never to use, even when `auto` would select them. An engine table for a disabled component (`[engines.<id>]`, `[lint.<lang>.<id>]`, `[fmt.<lang>.<id>]`) is ignored and draws a warning; set `enabled = false` in it (or in its `[lint.<lang>]` / `[fmt.<lang>]` table) to silence the warning. |
 | `install` | `"auto"` downloads a missing component when a run needs it. `"never"` forbids downloads. |
 | `on_missing` | `"fail"` exits `2` when a needed component is unavailable. `"skip"` skips the files it would have handled and charges them to the skip budget (`--deny-skips`, `--max-skips`). |
+
+Two problems are config errors for every command that loads the config (`lint`, `fmt`, `components
+sync`, ...), not only for `poly config validate`: exit `2`, nothing is checked. They are a name in
+`enable` that is neither a component nor a preset, and a name in both `enable` and `disable`.
+
+Two others are warnings on stderr, printed once per run, because a config inherited through `extends`,
+a parent monorepo config or `poly.local.toml` may legitimately configure an engine that a child config
+disables: an unknown name in `disable`, and an engine table under a disabled component. The table is
+ignored. To silence the warning, set `enabled = false` in it:
+
+```toml
+[components]
+disable = ["python"]
+
+[engines.ruff]
+enabled = false   # inherited table, switched off here
+```
+
+`poly config validate` still reports both warning cases as errors, since it checks one file on its own.
+`poly config show` and `poly components status` never refuse a config on these checks, so a bad
+`[components]` section can always be inspected, and `components list` and `uninstall` do not read it.
+
+`on_missing = "skip"` is an explicit opt-in, so a run whose components are all missing still exits
+`0` (unless `--deny-skips` or `--max-skips` say otherwise). It is never silent: a `warning:` on stderr
+names each component and says its files were skipped, not checked, and `summary.missing_components`
+in the JSON and TOON documents counts them. A run that must not pass without checking keeps the
+default, `on_missing = "fail"`.
 
 `--on-missing fail|skip` overrides `on_missing` for one run. poly never falls back to the
 tree-sitter tier for a language whose component is missing: output would differ between machines.
@@ -98,7 +125,7 @@ is verified against the lock's checksum before it is loaded.
 
 ```sh
 poly components status .             # what this directory needs, and whether it is usable
-poly components status . --verify    # also re-check installed archives against the lock
+poly components status . --verify    # also mark each installed archive as verified
 poly components sync .               # install everything this directory needs
 poly components install python web   # or: install all
 poly components uninstall ruby
@@ -136,6 +163,30 @@ The archive is verified against the lock the binary carries before it is install
 POLY_COMPONENT_MIRROR=https://artifacts.example.com/poly poly components sync .
 ```
 
+## Damaged installs
+
+A cached component is re-verified against the lock (digest, size, manifest and signature) before a
+run uses it. A copy that fails is not trusted:
+
+- `list` and `status` show it as `corrupt`, and `status` exits `1`.
+- `install` and `sync` download it again and report `repaired`; with `--offline` they fail and say
+  how to repair it.
+- A run does the same: online it downloads the component again and logs a warning, offline or with
+  `install = "never"` it fails with `verify_failed` and the remedy.
+
+poly cannot yet say which check failed, because alef's cache drops that error. Only a failed
+check of the contents counts as damage. If poly cannot read the copy at all (permissions, a failing
+disk, too many open files) the run reports that error and leaves the copy alone rather than
+downloading it again. A check that fails is repeated once after a moment, so a repair running in
+another process is not mistaken for damage.
+
+Tamper detection relies on alef's verified stamp. After a full check, poly records the library's size,
+modification time and, on Unix, inode and change time, and trusts the copy while those still match.
+A modification that preserves all of them is not noticed until the next full verification. To force
+one, remove the copy and install it again (`poly components uninstall <name>`, then
+`poly components install <name>`), which re-downloads it and checks every digest. `status --verify`
+does not do this: it reports the same stamped check a run uses.
+
 ## Cache maintenance
 
 `poly components prune` removes cached archives the lock no longer references:
@@ -147,8 +198,10 @@ poly components prune --all                  # remove every archive
 ```
 
 By default it keeps archives referenced by the lock for any target, and archives used within the last
-30 days. It also clears staging directories that an interrupted install left behind, and reports a
-file that a loaded library still holds (Windows) as `skipped` for a later run.
+30 days. It also clears the staging directories and temporary files an interrupted install left
+behind, once they are an hour old: a younger one may belong to an install running in another
+process, so prune leaves it alone. It reports a file that a loaded library still holds (Windows) as
+`skipped` for a later run.
 
 ## CI
 

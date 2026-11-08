@@ -25,6 +25,10 @@ const TARGET: &str = "test-target";
 /// The `threads` of the last `ProjectCheck` the component saw; 0 when it carried none.
 static SEEN_THREADS: AtomicU32 = AtomicU32::new(u32::MAX);
 
+/// The fake component's name. It borrows a real component's name because loading a config checks
+/// `[components] disable` against the compiled component index, not the injected one.
+const COMPONENT: &str = "sql";
+
 fn desc() -> WireEngineDesc {
     WireEngineDesc {
         name: "checker".into(),
@@ -54,7 +58,7 @@ fn index() -> ComponentIndex {
     ComponentIndex {
         schema: 1,
         components: vec![Component {
-            name: "checker".into(),
+            name: COMPONENT.into(),
             kind: ComponentKind::Engines,
             opt_in: false,
             download_only: false,
@@ -69,7 +73,7 @@ fn index() -> ComponentIndex {
 fn lock() -> String {
     format!(
         r#"{{"schema_version":2,"public_keys":{{}},"artifacts":[{{
-            "identity":{{"crate_name":"c","component":"checker","version":"1.0.0","target":"{TARGET}",
+            "identity":{{"crate_name":"c","component":"{COMPONENT}","version":"1.0.0","target":"{TARGET}",
                          "feature_hash":"{h}","contract_hash":"{h}"}},
             "provides":[],"mode":"download","url":"https://example.invalid/checker.tar.gz",
             "sha256":"{sha}","size":1,"manifest_sha256":"{h}","key_id":"k"}}]}}"#,
@@ -346,7 +350,7 @@ fn a_per_file_component_of_an_ancestor_config_is_neither_ensured_nor_reported() 
     )
     .unwrap();
     assert!(run.errors.is_empty(), "{:?}", run.errors);
-    assert_eq!(run.components.used, ["checker"], "{:?}", run.components);
+    assert_eq!(run.components.used, [COMPONENT], "{:?}", run.components);
     assert!(run.components.missing.is_empty(), "{:?}", run.components);
 }
 
@@ -383,7 +387,7 @@ fn an_ancestor_config_that_owns_a_file_of_the_run_fetches_no_component_for_other
     write("packages/a/a.py", "a = 1\n");
     write(
         "packages/a/sub/poly.toml",
-        "[format]\n[components]\ndisable = [\"checker\"]\n",
+        &format!("[format]\n[components]\ndisable = [\"{COMPONENT}\"]\n"),
     );
     write("packages/a/sub/b.rs", "fn b() {}\n");
     std::fs::create_dir_all(dir.path().join(".git")).unwrap();
