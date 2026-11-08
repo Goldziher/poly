@@ -78,10 +78,35 @@ enum Command {
 #[derive(clap::Args)]
 struct McpArgs {}
 
+/// Exit status of a process whose reader went away, as a shell reports death by SIGPIPE.
+const EXIT_BROKEN_PIPE: i32 = 141;
+
+/// Make a closed stdout (`poly config schema | head`) end the run quietly.
+///
+/// `println!` panics when its reader is gone, and the default hook prints a backtrace-style message for
+/// what is the normal way a pager or `head` stops reading. Every command that prints shares this path, so
+/// one hook covers them all.
+fn exit_quietly_on_broken_pipe() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = info.payload();
+        let message = payload
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| payload.downcast_ref::<&str>().copied())
+            .unwrap_or_default();
+        if message.contains("failed printing to std") && message.contains("Broken pipe") {
+            std::process::exit(EXIT_BROKEN_PIPE);
+        }
+        default_hook(info);
+    }));
+}
+
 /// Parses the process arguments and runs the requested `poly` subcommand.
 ///
 /// Call after any `poly_core::register_engine_provider` registration.
 pub fn main() -> ExitCode {
+    exit_quietly_on_broken_pipe();
     let arguments: Vec<OsString> = std::env::args_os().collect();
     // Emitted before clap parses, so `poly --version` — the command that
     // started two false bug reports against already-fixed code — is covered
