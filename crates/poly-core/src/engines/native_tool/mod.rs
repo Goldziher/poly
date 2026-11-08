@@ -115,7 +115,7 @@
 //! deadlock that can occur for source files larger than the OS pipe buffer
 //! (~64 KB on Linux) when a formatter buffers all input before writing output.
 
-use tracing::info;
+use tracing::warn;
 
 use crate::config::EngineConfig;
 use crate::engine::{
@@ -230,7 +230,7 @@ impl NativeToolEngine {
         {
             let spec = self.role.spec();
             notice.call_once(|| {
-                info!(
+                warn!(
                     language = self.languages()[0].id(),
                     tool = spec.probe_binary(),
                     "{} not found on PATH; formatting via the generic tree-sitter tier (lower fidelity)",
