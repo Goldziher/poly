@@ -54,7 +54,7 @@ pub fn materialize(url: &str, revision: &str, cache_root: &Path, update: bool) -
     let mirror = source_cache.join("mirror.git");
     let resolved;
     let revision = if update {
-        resolved = resolve_remote_revision(url, revision)?;
+        resolved = resolve_remote_revision(url, revision, &source_cache)?;
         resolved.as_str()
     } else {
         revision

@@ -145,7 +145,8 @@ pub fn ensure_mirror(mirror: &Path, url: &str) -> anyhow::Result<()> {
             git_command().args(["init", "--quiet", "--bare"]).arg(&temporary_path),
             "initialize source mirror",
         )?;
-        run_git(&temporary_path, &["remote", "add", "origin", url]).context("configuring source mirror origin")?;
+        run_git(&temporary_path, &["remote", "add", "--", "origin", url])
+            .context("configuring source mirror origin")?;
         std::fs::rename(&temporary_path, mirror)
             .with_context(|| format!("installing source mirror {}", mirror.display()))?;
     }
@@ -166,9 +167,10 @@ pub fn ensure_mirror(mirror: &Path, url: &str) -> anyhow::Result<()> {
 ///
 /// Only that one commit is fetched, at depth 1, and kept reachable under the
 /// branch `refs/heads/poly-pinned/<oid>` — a branch, because the checkout is a
-/// `git clone` of the mirror and a clone copies only branches and tags. A server that refuses a request for an object it
-/// did not advertise (protocol v0 without `uploadpack.allowAnySHA1InWant`)
-/// falls back to fetching every branch and tag.
+/// `git clone` of the mirror and a clone copies only branches and tags. A server
+/// that refuses a request for an object it did not advertise (protocol v0
+/// without `uploadpack.allowAnySHA1InWant`) falls back to fetching every branch
+/// and tag; if that fails too, the error carries both failures.
 pub fn ensure_commit(mirror: &Path, url: &str, revision: &str) -> anyhow::Result<()> {
     if git_object_exists(mirror, revision)? {
         return Ok(());
@@ -179,22 +181,25 @@ pub fn ensure_commit(mirror: &Path, url: &str, revision: &str) -> anyhow::Result
         mirror,
         &["fetch", "--quiet", "--no-tags", "--depth", "1", "origin", &pinned],
     );
-    if shallow.is_err() || !git_object_exists(mirror, revision)? {
-        run_git(
-            mirror,
-            &[
-                "fetch",
-                "--quiet",
-                "--no-tags",
-                "origin",
-                "+refs/heads/*:refs/heads/*",
-                "+refs/tags/*:refs/tags/*",
-            ],
-        )
-        .with_context(|| format!("fetching locked source commit {revision} from {url}"))?;
-    }
+    let shallow = match shallow {
+        Ok(()) if git_object_exists(mirror, revision)? => return Ok(()),
+        Ok(()) => format!("shallow fetch of {revision} did not deliver it"),
+        Err(error) => format!("shallow fetch of {revision} failed: {error:#}"),
+    };
+    run_git(
+        mirror,
+        &[
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            "origin",
+            "+refs/heads/*:refs/heads/*",
+            "+refs/tags/*:refs/tags/*",
+        ],
+    )
+    .with_context(|| format!("fetching locked source commit {revision} from {url} ({shallow})"))?;
     if !git_object_exists(mirror, revision)? {
-        bail!("locked source commit {revision} is unavailable from {url}");
+        bail!("locked source commit {revision} is unavailable from {url} ({shallow})");
     }
     Ok(())
 }
@@ -202,16 +207,25 @@ pub fn ensure_commit(mirror: &Path, url: &str, revision: &str) -> anyhow::Result
 /// Resolve `revision` (a branch, tag, other ref, or full object ID) on `url` to
 /// the commit object ID it names, without downloading the repository.
 ///
-/// A full object ID is returned unchanged and needs no network. Anything else is
+/// A full object ID is returned unchanged and needs no network; the caller
+/// verifies it exists by fetching it ([`ensure_commit`]). Anything else is
 /// looked up with `git ls-remote`, matched the way `git fetch` matches a ref
 /// name, and an annotated tag is peeled to its commit.
-pub fn resolve_remote_revision(url: &str, revision: &str) -> anyhow::Result<String> {
+///
+/// `ls-remote` runs from `neutral_dir` (poly's source cache), with repository
+/// discovery stopped there: run from the consumer's working directory it would
+/// read that repository's `.git/config`, whose `insteadOf`, `sshCommand` or
+/// credential settings could resolve the ref somewhere other than the origin the
+/// cache mirror verifies.
+pub fn resolve_remote_revision(url: &str, revision: &str, neutral_dir: &Path) -> anyhow::Result<String> {
     if validate_locked_revision(revision).is_ok() {
         return Ok(revision.to_owned());
     }
     poly_config::network::require_online(&format!("resolve {revision} on {url}"))?;
     let peeled = format!("{revision}^{{}}");
     let output = git_command()
+        .current_dir(neutral_dir)
+        .env("GIT_CEILING_DIRECTORIES", neutral_dir)
         .args(["ls-remote", "--", url, revision, &peeled])
         .output()
         .context("starting git ls-remote")?;
@@ -354,7 +368,12 @@ mod tests {
     #[test]
     fn full_object_id_resolves_without_the_network() {
         assert_eq!(
-            resolve_remote_revision("https://example.invalid/never-contacted.git", TAG_COMMIT).unwrap(),
+            resolve_remote_revision(
+                "https://example.invalid/never-contacted.git",
+                TAG_COMMIT,
+                &std::env::temp_dir()
+            )
+            .unwrap(),
             TAG_COMMIT
         );
     }

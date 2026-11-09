@@ -94,17 +94,25 @@ pub fn declared_git_keys(hooks: &HooksConfig) -> Vec<(String, String)> {
 /// with it, each declared revision is re-resolved against the remote. Local
 /// `path` sources need no entry.
 ///
-/// Resolution is a `git ls-remote` per source: nothing is downloaded here. The
-/// checkout is materialized, shallowly, the first time the hooks run.
+/// A ref is resolved with `git ls-remote` and nothing is downloaded; the checkout
+/// is materialized, shallowly, the first time the hooks run. A full object ID is
+/// verified by fetching that one commit, so a mistyped one fails here rather
+/// than on every later run.
 pub fn lock_sources(hooks: &HooksConfig, existing: &PolyLock, upgrade: bool) -> anyhow::Result<Vec<LockedHookSource>> {
     let mut locked = Vec::new();
+    let mut cache_root = None;
     for source in hooks.sources.iter().filter(|source| source.path.is_none()) {
         let url = source.git.as_deref().expect("validated Git source");
         if !upgrade && let Some(entry) = existing.hook_source(&source.id, url) {
             locked.push(entry.clone());
             continue;
         }
-        let entry = pin_source(source)?;
+        if cache_root.is_none() {
+            let dir = poly_cache::hook_sources_dir()?;
+            std::fs::create_dir_all(&dir).with_context(|| format!("creating hook source cache {}", dir.display()))?;
+            cache_root = Some(dir);
+        }
+        let entry = pin_source(cache_root.as_deref().expect("cache root set above"), source)?;
         println!(
             "{} {} -> {}",
             entry.source,
@@ -117,12 +125,26 @@ pub fn lock_sources(hooks: &HooksConfig, existing: &PolyLock, upgrade: bool) -> 
 }
 
 /// Resolve a Git hook source's declared revision to the lock entry pinning it.
-fn pin_source(source: &HookSource) -> anyhow::Result<LockedHookSource> {
+///
+/// A declared full object ID is not advertised by `ls-remote`, so it is checked
+/// by fetching it (shallowly) into the source's cache mirror, unless a valid
+/// checkout of it is already cached.
+fn pin_source(cache_root: &Path, source: &HookSource) -> anyhow::Result<LockedHookSource> {
     let url = source.git.as_deref().expect("validated Git source");
     let revision = source.revision.as_deref().expect("validated Git revision");
-    let resolved = resolve_remote_revision(url, revision)
-        .with_context(|| format!("resolving hook source {:?} at {revision}", source.id))?;
+    let context = || format!("resolving hook source {:?} at {revision}", source.id);
+    let resolved = resolve_remote_revision(url, revision, cache_root).with_context(context)?;
     let source_key = poly_cache::hook_source_key(url);
+    if resolved == revision {
+        let source_cache = cache_root.join(&source_key);
+        let _guard = lock_source(&source_cache)?;
+        if !checkout_is_valid(&source_cache.join("checkouts").join(&resolved), &resolved) {
+            let mirror = source_cache.join("mirror.git");
+            ensure_mirror(&mirror, url)
+                .and_then(|()| ensure_commit(&mirror, url, &resolved))
+                .with_context(context)?;
+        }
+    }
     Ok(LockedHookSource {
         id: source.id.clone(),
         source: url.to_string(),
@@ -241,7 +263,7 @@ mod tests {
 
     /// Pin `source` the way `poly lock` does, then provision it from that entry.
     fn pin_and_provision(cache_root: &Path, source: &HookSource) -> (Option<LockedHookSource>, PathBuf) {
-        let entry = pin_source(source).unwrap();
+        let entry = pin_source(cache_root, source).unwrap();
         provision_source(Path::new("."), cache_root, source, Some(std::slice::from_ref(&entry))).unwrap()
     }
 
@@ -448,7 +470,7 @@ run = "printf"
     }
 
     #[test]
-    fn pin_resolves_annotated_tag_branch_and_sha_without_downloading() {
+    fn pin_resolves_refs_without_downloading_and_verifies_a_full_sha() {
         let producer = create_git_source();
         let tagged = git_output(producer.path(), &["rev-parse", "HEAD"]).unwrap();
         run_command(
@@ -474,17 +496,53 @@ run = "printf"
         let tag_object = git_output(producer.path(), &["rev-parse", "v1"]).unwrap();
         assert_ne!(tag_object, tagged, "the fixture tag must be annotated");
 
+        let cache = tempfile::tempdir().unwrap();
         let mut source = git_source(producer.path());
-        for (revision, expected) in [("v1", &tagged), (branch.as_str(), &head), (tagged.as_str(), &tagged)] {
+        let key = poly_cache::hook_source_key(source.git.as_deref().unwrap());
+        for (revision, expected) in [("v1", &tagged), (branch.as_str(), &head)] {
             source.revision = Some(revision.to_string());
-            let entry = pin_source(&source).unwrap();
+            let entry = pin_source(cache.path(), &source).unwrap();
             assert_eq!(&entry.revision, expected, "revision {revision}");
-            let key = poly_cache::hook_source_key(source.git.as_deref().unwrap());
             assert_eq!(entry.path, format!("cache://hook-sources/{key}/{expected}"));
         }
+        assert!(
+            !cache.path().join(&key).exists(),
+            "resolving a ref must not download the source"
+        );
+
+        source.revision = Some(tagged.clone());
+        assert_eq!(pin_source(cache.path(), &source).unwrap().revision, tagged);
+        assert!(cache.path().join(&key).join("mirror.git").is_dir());
 
         source.revision = Some("no-such-ref".to_string());
-        assert!(format!("{:#}", pin_source(&source).unwrap_err()).contains("not found"));
+        assert!(format!("{:#}", pin_source(cache.path(), &source).unwrap_err()).contains("not found"));
+    }
+
+    #[test]
+    fn pin_rejects_a_short_sha() {
+        let producer = create_git_source();
+        let head = git_output(producer.path(), &["rev-parse", "HEAD"]).unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let mut source = git_source(producer.path());
+        source.revision = Some(head[..12].to_string());
+        let error = format!("{:#}", pin_source(cache.path(), &source).unwrap_err());
+        assert!(error.contains("not found"), "{error}");
+    }
+
+    #[test]
+    fn pin_rejects_a_nonexistent_full_sha_at_lock_time() {
+        let producer = create_git_source();
+        let cache = tempfile::tempdir().unwrap();
+        let mut source = git_source(producer.path());
+        let missing = "0123456789abcdef0123456789abcdef01234567";
+        source.revision = Some(missing.to_string());
+        let error = format!("{:#}", pin_source(cache.path(), &source).unwrap_err());
+        assert!(error.contains("resolving hook source \"rules\""), "{error}");
+        assert!(error.contains(missing), "{error}");
+        assert!(
+            error.contains("shallow fetch"),
+            "both fetch failures are reported: {error}"
+        );
     }
 
     #[test]
