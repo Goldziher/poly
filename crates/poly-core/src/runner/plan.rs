@@ -666,6 +666,10 @@ fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<
 /// routed to the `treesitter` engine are prefetched (tier-1 languages handled by
 /// a native backend never touch the pack). A failure is non-fatal: the per-file
 /// path still lazily loads each grammar on first use.
+///
+/// A language the pack has no grammar for (`text`, `csv`) is left out: the
+/// generic tier only normalizes whitespace there, and asking the pack for it
+/// failed the whole prefetch with a warning on every run that saw such a file.
 pub(super) fn prefetch_tier2_grammars(plans: &RunPlan) {
     let grammars: FxHashSet<&str> = plans
         .iter()
@@ -674,6 +678,7 @@ pub(super) fn prefetch_tier2_grammars(plans: &RunPlan) {
             Language::Other(name) => Some(name.as_str()),
             _ => None,
         })
+        .filter(|name| tree_sitter_language_pack::has_language(name))
         .collect();
     if grammars.is_empty() {
         return;

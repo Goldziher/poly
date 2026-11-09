@@ -284,8 +284,9 @@ available per language: a taplo layout key in `[engines.taplo.format]` (`align_e
 `[engines.malva.format]` selects that tool's formatter instead.
 
 Some tools expose no such setting at all. Nix (alejandra) and Ruby (rubyfmt) are zero-configuration
-formatters, so `[engines.alejandra]` and `[engines.rubyfmt]` declare no keys — anything written
-there is reported as `unknown-config-key`.
+formatters, so `[engines.alejandra]` and `[engines.rubyfmt]` declare no keys of their own. Their
+tables accept only the keys every language engine's table does — `enabled`, plus `indent_width` and
+`rules`, which these two ignore — and anything else is reported as `unknown-config-key`.
 
 ## Turning one engine off
 
