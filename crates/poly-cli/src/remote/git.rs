@@ -121,16 +121,20 @@ fn head_lines(text: &str) -> String {
     format!("{} … ({} more lines)", head.join("\n"), total - STDERR_LINE_LIMIT)
 }
 
-/// Ensure a bare `--mirror` clone of `url` exists at `mirror`, then verify its
-/// stored `remote.origin.url` matches `url`.
+/// Ensure a bare repository for `url` exists at `mirror`, then verify its stored
+/// `remote.origin.url` matches `url`.
 ///
-/// The mirror is materialized atomically (clone into a sibling tempdir, then
-/// rename) so a concurrent reader never sees a partial clone. The origin-URL
-/// check reads the raw stored value (bypassing the user's Git `insteadOf`
-/// rewrites) to block a cache-poisoning source substitution.
+/// The repository starts empty: commits are fetched into it one at a time, and
+/// shallowly, by [`ensure_commit`]. Cloning the whole history up front made a
+/// cold `poly lock` download every object the source ever had (issue #157). A
+/// mirror left by an older poly (a full `--mirror` clone) is reused as is.
+///
+/// The repository is materialized atomically (initialized in a sibling tempdir,
+/// then renamed) so a concurrent reader never sees a half-configured one. The
+/// origin-URL check reads the raw stored value (bypassing the user's Git
+/// `insteadOf` rewrites) to block a cache-poisoning source substitution.
 pub fn ensure_mirror(mirror: &Path, url: &str) -> anyhow::Result<()> {
     if !mirror.is_dir() {
-        poly_config::network::require_online(&format!("clone remote source {url}"))?;
         let parent = mirror.parent().context("source mirror has no parent")?;
         let temporary = tempfile::Builder::new()
             .prefix("mirror-")
@@ -138,11 +142,10 @@ pub fn ensure_mirror(mirror: &Path, url: &str) -> anyhow::Result<()> {
             .with_context(|| format!("creating temporary source mirror in {}", parent.display()))?;
         let temporary_path = temporary.path().join("repository.git");
         run_command(
-            git_command()
-                .args(["clone", "--quiet", "--mirror", "--", url])
-                .arg(&temporary_path),
-            "clone source mirror",
+            git_command().args(["init", "--quiet", "--bare"]).arg(&temporary_path),
+            "initialize source mirror",
         )?;
+        run_git(&temporary_path, &["remote", "add", "origin", url]).context("configuring source mirror origin")?;
         std::fs::rename(&temporary_path, mirror)
             .with_context(|| format!("installing source mirror {}", mirror.display()))?;
     }
@@ -160,24 +163,105 @@ pub fn ensure_mirror(mirror: &Path, url: &str) -> anyhow::Result<()> {
 
 /// Ensure `revision` (a full object ID) is present in `mirror`, fetching it from
 /// `url` if the mirror does not already contain the object.
+///
+/// Only that one commit is fetched, at depth 1, and kept reachable under the
+/// branch `refs/heads/poly-pinned/<oid>` — a branch, because the checkout is a
+/// `git clone` of the mirror and a clone copies only branches and tags. A server that refuses a request for an object it
+/// did not advertise (protocol v0 without `uploadpack.allowAnySHA1InWant`)
+/// falls back to fetching every branch and tag.
 pub fn ensure_commit(mirror: &Path, url: &str, revision: &str) -> anyhow::Result<()> {
     if git_object_exists(mirror, revision)? {
         return Ok(());
     }
     poly_config::network::require_online(&format!("fetch locked source commit {revision} from {url}"))?;
-    run_git(mirror, &["fetch", "--quiet", "origin", revision])
+    let pinned = format!("+{revision}:refs/heads/poly-pinned/{revision}");
+    let shallow = run_git(
+        mirror,
+        &["fetch", "--quiet", "--no-tags", "--depth", "1", "origin", &pinned],
+    );
+    if shallow.is_err() || !git_object_exists(mirror, revision)? {
+        run_git(
+            mirror,
+            &[
+                "fetch",
+                "--quiet",
+                "--no-tags",
+                "origin",
+                "+refs/heads/*:refs/heads/*",
+                "+refs/tags/*:refs/tags/*",
+            ],
+        )
         .with_context(|| format!("fetching locked source commit {revision} from {url}"))?;
+    }
     if !git_object_exists(mirror, revision)? {
         bail!("locked source commit {revision} is unavailable from {url}");
     }
     Ok(())
 }
 
-/// Refresh `revision` (a ref or object ID) from `origin` into `mirror` so
-/// `FETCH_HEAD` names it. Always network access, so it fails offline.
-pub fn fetch_revision(mirror: &Path, url: &str, revision: &str) -> anyhow::Result<()> {
-    poly_config::network::require_online(&format!("fetch {revision} from {url}"))?;
-    run_git(mirror, &["fetch", "--quiet", "--force", "origin", revision])
+/// Resolve `revision` (a branch, tag, other ref, or full object ID) on `url` to
+/// the commit object ID it names, without downloading the repository.
+///
+/// A full object ID is returned unchanged and needs no network. Anything else is
+/// looked up with `git ls-remote`, matched the way `git fetch` matches a ref
+/// name, and an annotated tag is peeled to its commit.
+pub fn resolve_remote_revision(url: &str, revision: &str) -> anyhow::Result<String> {
+    if validate_locked_revision(revision).is_ok() {
+        return Ok(revision.to_owned());
+    }
+    poly_config::network::require_online(&format!("resolve {revision} on {url}"))?;
+    let peeled = format!("{revision}^{{}}");
+    let output = git_command()
+        .args(["ls-remote", "--", url, revision, &peeled])
+        .output()
+        .context("starting git ls-remote")?;
+    if !output.status.success() {
+        bail!(
+            "git ls-remote {url} failed: {}",
+            head_lines(&String::from_utf8_lossy(&output.stderr))
+        );
+    }
+    let listing = String::from_utf8_lossy(&output.stdout);
+    let resolved =
+        pick_ls_remote_oid(&listing, revision).with_context(|| format!("revision {revision:?} not found on {url}"))?;
+    validate_locked_revision(resolved)?;
+    Ok(resolved.to_owned())
+}
+
+/// The object ID `git ls-remote` output names for `revision`, peeled.
+///
+/// Candidates are tried in `git fetch`'s own order (`<rev>`, `refs/<rev>`,
+/// `refs/tags/<rev>`, `refs/heads/<rev>`, `refs/remotes/<rev>`,
+/// `refs/remotes/<rev>/HEAD`), and only exact ref names count: `ls-remote`
+/// patterns match ref-name suffixes, so `v5` also lists `refs/heads/release/v5`.
+/// For the first candidate present, its `^{}` line — the commit an annotated tag
+/// points at — wins over the ref's own object.
+pub fn pick_ls_remote_oid<'a>(listing: &'a str, revision: &str) -> Option<&'a str> {
+    let refs: Vec<(&str, &str)> = listing
+        .lines()
+        .filter_map(|line| {
+            let (oid, name) = line.split_once('\t')?;
+            Some((name.trim(), oid.trim()))
+        })
+        .collect();
+    let lookup = |name: &str| {
+        refs.iter()
+            .find(|(candidate, _)| *candidate == name)
+            .map(|(_, oid)| *oid)
+    };
+    [
+        revision.to_owned(),
+        format!("refs/{revision}"),
+        format!("refs/tags/{revision}"),
+        format!("refs/heads/{revision}"),
+        format!("refs/remotes/{revision}"),
+        format!("refs/remotes/{revision}/HEAD"),
+    ]
+    .iter()
+    .find_map(|name| {
+        let own = lookup(name)?;
+        Some(lookup(&format!("{name}^{{}}")).unwrap_or(own))
+    })
 }
 
 /// Whether `revision^{commit}` resolves to an existing object in `repository`.
@@ -222,6 +306,57 @@ mod tests {
             "HOME",
         ]);
         assert_eq!(removed, vec!["GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE"]);
+    }
+
+    const TAG_OBJECT: &str = "bf2bfe868338c42f576707ff6fd94f8d2892ee3e";
+    const TAG_COMMIT: &str = "8c9be46d92a60d5b732d3d17ee4ded2a8863dfe9";
+    const BRANCH: &str = "5cf12807a83f76882552503a51b1108bde33f257";
+    const NESTED: &str = "1111111111111111111111111111111111111111";
+
+    fn listing(lines: &[(&str, &str)]) -> String {
+        lines.iter().map(|(oid, name)| format!("{oid}\t{name}\n")).collect()
+    }
+
+    #[test]
+    fn ls_remote_annotated_tag_is_peeled_to_its_commit() {
+        let output = listing(&[(TAG_OBJECT, "refs/tags/v5"), (TAG_COMMIT, "refs/tags/v5^{}")]);
+        assert_eq!(pick_ls_remote_oid(&output, "v5"), Some(TAG_COMMIT));
+    }
+
+    #[test]
+    fn ls_remote_lightweight_tag_and_branch_resolve_to_their_own_oid() {
+        let output = listing(&[(TAG_COMMIT, "refs/tags/v5"), (BRANCH, "refs/heads/main")]);
+        assert_eq!(pick_ls_remote_oid(&output, "v5"), Some(TAG_COMMIT));
+        assert_eq!(pick_ls_remote_oid(&output, "main"), Some(BRANCH));
+    }
+
+    #[test]
+    fn ls_remote_prefers_tag_over_branch_like_git_fetch() {
+        let output = listing(&[
+            (BRANCH, "refs/heads/v5"),
+            (TAG_OBJECT, "refs/tags/v5"),
+            (TAG_COMMIT, "refs/tags/v5^{}"),
+        ]);
+        assert_eq!(pick_ls_remote_oid(&output, "v5"), Some(TAG_COMMIT));
+        assert_eq!(pick_ls_remote_oid(&output, "refs/heads/v5"), Some(BRANCH));
+        assert_eq!(pick_ls_remote_oid(&output, "heads/v5"), Some(BRANCH));
+    }
+
+    #[test]
+    fn ls_remote_ignores_suffix_matches_and_missing_refs() {
+        // `git ls-remote <url> v5` also lists refs merely ending in `/v5`.
+        let output = listing(&[(NESTED, "refs/heads/release/v5"), (BRANCH, "HEAD")]);
+        assert_eq!(pick_ls_remote_oid(&output, "v5"), None);
+        assert_eq!(pick_ls_remote_oid(&output, "HEAD"), Some(BRANCH));
+        assert_eq!(pick_ls_remote_oid("", "main"), None);
+    }
+
+    #[test]
+    fn full_object_id_resolves_without_the_network() {
+        assert_eq!(
+            resolve_remote_revision("https://example.invalid/never-contacted.git", TAG_COMMIT).unwrap(),
+            TAG_COMMIT
+        );
     }
 
     #[test]

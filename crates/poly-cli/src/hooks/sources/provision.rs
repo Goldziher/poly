@@ -11,7 +11,7 @@ use super::manifest::{load_manifest, reject_legacy_consumer_file};
 use super::select::{ResolvedHook, select_hooks};
 use crate::polylock::{self, LockedHookSource, PolyLock};
 use crate::remote::{
-    checkout_is_valid, ensure_commit, ensure_mirror, fetch_revision, git_output, make_read_only, materialize_checkout,
+    checkout_is_valid, ensure_commit, ensure_mirror, make_read_only, materialize_checkout, resolve_remote_revision,
     validate_locked_revision,
 };
 
@@ -68,7 +68,6 @@ pub fn provision(root: &Path, hooks: &HooksConfig, install: bool) -> anyhow::Res
             &cache_root,
             source,
             existing.as_ref().map(|lock| lock.hook_sources.as_slice()),
-            false,
         )?;
         let manifest = load_manifest(&source_root)?;
         resolved.extend(select_hooks(source, &source_root, manifest, &preferences, install)?);
@@ -94,23 +93,18 @@ pub fn declared_git_keys(hooks: &HooksConfig) -> Vec<(String, String)> {
 /// Without `upgrade`, a source already recorded in `existing` keeps its entry;
 /// with it, each declared revision is re-resolved against the remote. Local
 /// `path` sources need no entry.
+///
+/// Resolution is a `git ls-remote` per source: nothing is downloaded here. The
+/// checkout is materialized, shallowly, the first time the hooks run.
 pub fn lock_sources(hooks: &HooksConfig, existing: &PolyLock, upgrade: bool) -> anyhow::Result<Vec<LockedHookSource>> {
     let mut locked = Vec::new();
-    let mut cache_root = None;
     for source in hooks.sources.iter().filter(|source| source.path.is_none()) {
         let url = source.git.as_deref().expect("validated Git source");
         if !upgrade && let Some(entry) = existing.hook_source(&source.id, url) {
             locked.push(entry.clone());
             continue;
         }
-        if cache_root.is_none() {
-            let dir = poly_cache::hook_sources_dir()?;
-            std::fs::create_dir_all(&dir).with_context(|| format!("creating hook source cache {}", dir.display()))?;
-            cache_root = Some(dir);
-        }
-        let cache_root = cache_root.as_deref().expect("cache root set above");
-        let (entry, _) = provision_source(Path::new("."), cache_root, source, None, true)?;
-        let entry = entry.expect("an update run always pins a Git source");
+        let entry = pin_source(source)?;
         println!(
             "{} {} -> {}",
             entry.source,
@@ -122,12 +116,26 @@ pub fn lock_sources(hooks: &HooksConfig, existing: &PolyLock, upgrade: bool) -> 
     Ok(locked)
 }
 
+/// Resolve a Git hook source's declared revision to the lock entry pinning it.
+fn pin_source(source: &HookSource) -> anyhow::Result<LockedHookSource> {
+    let url = source.git.as_deref().expect("validated Git source");
+    let revision = source.revision.as_deref().expect("validated Git revision");
+    let resolved = resolve_remote_revision(url, revision)
+        .with_context(|| format!("resolving hook source {:?} at {revision}", source.id))?;
+    let source_key = poly_cache::hook_source_key(url);
+    Ok(LockedHookSource {
+        id: source.id.clone(),
+        source: url.to_string(),
+        path: format!("cache://hook-sources/{source_key}/{resolved}"),
+        revision: resolved,
+    })
+}
+
 fn provision_source(
     root: &Path,
     cache_root: &Path,
     source: &HookSource,
     existing: Option<&[LockedHookSource]>,
-    update: bool,
 ) -> anyhow::Result<(Option<LockedHookSource>, PathBuf)> {
     if let Some(path) = &source.path {
         let candidate = if path.is_absolute() {
@@ -149,44 +157,24 @@ fn provision_source(
             .iter()
             .find(|entry| entry.id == source.id && entry.source == url)
     });
-    if !update {
-        let locked = locked.ok_or_else(|| {
-            anyhow::anyhow!(
-                "Git hook source {:?} has no lock entry; run `poly lock` first{}",
-                source.id,
-                polylock::legacy_hint(root)
-            )
-        })?;
-        validate_locked_revision(&locked.revision)?;
-        let checkout = source_cache.join("checkouts").join(&locked.revision);
-        let _guard = lock_source(&source_cache)?;
-        if checkout_is_valid(&checkout, &locked.revision) {
-            make_read_only(&checkout)?;
-            return Ok((Some(locked.clone()), checkout));
-        }
-        ensure_mirror(&mirror, url)?;
-        ensure_commit(&mirror, url, &locked.revision)?;
-        materialize_source_checkout(&mirror, &checkout, &locked.revision, &source.id)?;
+    let locked = locked.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Git hook source {:?} has no lock entry; run `poly lock` first{}",
+            source.id,
+            polylock::legacy_hint(root)
+        )
+    })?;
+    validate_locked_revision(&locked.revision)?;
+    let checkout = source_cache.join("checkouts").join(&locked.revision);
+    let _guard = lock_source(&source_cache)?;
+    if checkout_is_valid(&checkout, &locked.revision) {
+        make_read_only(&checkout)?;
         return Ok((Some(locked.clone()), checkout));
     }
-    let revision = source.revision.as_deref().expect("validated Git revision");
-    let _guard = lock_source(&source_cache)?;
     ensure_mirror(&mirror, url)?;
-    fetch_revision(&mirror, url, revision)?;
-    let resolved = git_output(&mirror, &["rev-parse", "FETCH_HEAD^{commit}"])?;
-    validate_locked_revision(&resolved)?;
-    let checkout = source_cache.join("checkouts").join(&resolved);
-    materialize_source_checkout(&mirror, &checkout, &resolved, &source.id)?;
-    let cache_path = format!("cache://hook-sources/{source_key}/{resolved}");
-    Ok((
-        Some(LockedHookSource {
-            id: source.id.clone(),
-            source: url.to_string(),
-            revision: resolved,
-            path: cache_path,
-        }),
-        checkout,
-    ))
+    ensure_commit(&mirror, url, &locked.revision)?;
+    materialize_source_checkout(&mirror, &checkout, &locked.revision, &source.id)?;
+    Ok((Some(locked.clone()), checkout))
 }
 
 /// Materialize a hook source's checkout, naming poly's own state on failure.
@@ -211,7 +199,7 @@ mod tests {
     use super::super::manifest::PRODUCER_MANIFEST_NAME;
     use super::super::test_support::{preferences, write_catalog, write_consumer};
     use super::*;
-    use crate::remote::{run_command, run_git};
+    use crate::remote::{git_output, run_command, run_git};
 
     fn git_source(repository: &Path) -> HookSource {
         HookSource {
@@ -249,6 +237,12 @@ mod tests {
         )
         .unwrap();
         repository
+    }
+
+    /// Pin `source` the way `poly lock` does, then provision it from that entry.
+    fn pin_and_provision(cache_root: &Path, source: &HookSource) -> (Option<LockedHookSource>, PathBuf) {
+        let entry = pin_source(source).unwrap();
+        provision_source(Path::new("."), cache_root, source, Some(std::slice::from_ref(&entry))).unwrap()
     }
 
     #[cfg_attr(windows, allow(clippy::permissions_set_readonly_false))]
@@ -355,7 +349,7 @@ run = "printf"
             let barrier = barrier.clone();
             workers.push(std::thread::spawn(move || {
                 barrier.wait();
-                provision_source(Path::new("."), &cache_root, &source, None, true).unwrap()
+                pin_and_provision(&cache_root, &source)
             }));
         }
         let first = workers.remove(0).join().unwrap();
@@ -379,13 +373,13 @@ run = "printf"
         let producer = create_git_source();
         let cache = tempfile::tempdir().unwrap();
         let source = git_source(producer.path());
-        let (locked, checkout) = provision_source(Path::new("."), cache.path(), &source, None, true).unwrap();
+        let (locked, checkout) = pin_and_provision(cache.path(), &source);
         let lock = vec![locked.unwrap()];
         make_writable(&checkout);
         std::fs::write(checkout.join(".git/HEAD"), "0000000000000000000000000000000000000000\n").unwrap();
 
         let (_, reconstructed) =
-            provision_source(Path::new("."), cache.path(), &source, Some(lock.as_slice()), false).unwrap();
+            provision_source(Path::new("."), cache.path(), &source, Some(lock.as_slice())).unwrap();
 
         assert_eq!(reconstructed, checkout);
         assert_eq!(git_output(&checkout, &["rev-parse", "HEAD"]).unwrap(), lock[0].revision);
@@ -396,7 +390,7 @@ run = "printf"
         let producer = create_git_source();
         let cache = tempfile::tempdir().unwrap();
         let source = git_source(producer.path());
-        let (locked, checkout) = provision_source(Path::new("."), cache.path(), &source, None, true).unwrap();
+        let (locked, checkout) = pin_and_provision(cache.path(), &source);
         let lock = vec![locked.unwrap()];
         make_writable(&checkout);
         std::fs::write(
@@ -405,7 +399,7 @@ run = "printf"
         )
         .unwrap();
 
-        provision_source(Path::new("."), cache.path(), &source, Some(lock.as_slice()), false).unwrap();
+        provision_source(Path::new("."), cache.path(), &source, Some(lock.as_slice())).unwrap();
 
         assert!(
             !std::fs::read_to_string(checkout.join(PRODUCER_MANIFEST_NAME))
@@ -419,19 +413,100 @@ run = "printf"
         let producer = create_git_source();
         let cache = tempfile::tempdir().unwrap();
         let source = git_source(producer.path());
-        let (locked, checkout) = provision_source(Path::new("."), cache.path(), &source, None, true).unwrap();
+        let (locked, checkout) = pin_and_provision(cache.path(), &source);
         let lock = vec![locked.unwrap()];
         let source_cache = cache
             .path()
             .join(poly_cache::hook_source_key(source.git.as_deref().unwrap()));
         std::fs::remove_dir_all(source_cache.join("mirror.git")).unwrap();
 
-        let (_, reused) =
-            provision_source(Path::new("."), cache.path(), &source, Some(lock.as_slice()), false).unwrap();
+        let (_, reused) = provision_source(Path::new("."), cache.path(), &source, Some(lock.as_slice())).unwrap();
 
         assert_eq!(reused, checkout);
         assert!(!source_cache.join("mirror.git").exists());
         assert!(!checkout.join(".git/objects/info/alternates").exists());
+    }
+
+    fn commit_in(repository: &Path, message: &str) {
+        run_command(
+            Command::new("git").arg("-C").arg(repository).args([
+                "-c",
+                "user.name=Poly Test",
+                "-c",
+                "user.email=poly@example.invalid",
+                "-c",
+                "commit.gpgSign=false",
+                "commit",
+                "--quiet",
+                "--allow-empty",
+                "-m",
+                message,
+            ]),
+            "commit test source",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn pin_resolves_annotated_tag_branch_and_sha_without_downloading() {
+        let producer = create_git_source();
+        let tagged = git_output(producer.path(), &["rev-parse", "HEAD"]).unwrap();
+        run_command(
+            Command::new("git").arg("-C").arg(producer.path()).args([
+                "-c",
+                "user.name=Poly Test",
+                "-c",
+                "user.email=poly@example.invalid",
+                "-c",
+                "tag.gpgSign=false",
+                "tag",
+                "--annotate",
+                "-m",
+                "release",
+                "v1",
+            ]),
+            "tag test source",
+        )
+        .unwrap();
+        commit_in(producer.path(), "after the tag");
+        let head = git_output(producer.path(), &["rev-parse", "HEAD"]).unwrap();
+        let branch = git_output(producer.path(), &["symbolic-ref", "--short", "HEAD"]).unwrap();
+        let tag_object = git_output(producer.path(), &["rev-parse", "v1"]).unwrap();
+        assert_ne!(tag_object, tagged, "the fixture tag must be annotated");
+
+        let mut source = git_source(producer.path());
+        for (revision, expected) in [("v1", &tagged), (branch.as_str(), &head), (tagged.as_str(), &tagged)] {
+            source.revision = Some(revision.to_string());
+            let entry = pin_source(&source).unwrap();
+            assert_eq!(&entry.revision, expected, "revision {revision}");
+            let key = poly_cache::hook_source_key(source.git.as_deref().unwrap());
+            assert_eq!(entry.path, format!("cache://hook-sources/{key}/{expected}"));
+        }
+
+        source.revision = Some("no-such-ref".to_string());
+        assert!(format!("{:#}", pin_source(&source).unwrap_err()).contains("not found"));
+    }
+
+    #[test]
+    fn provisioning_fetches_only_the_pinned_commit() {
+        let producer = create_git_source();
+        commit_in(producer.path(), "second");
+        commit_in(producer.path(), "third");
+        let cache = tempfile::tempdir().unwrap();
+        let source = git_source(producer.path());
+        let (locked, checkout) = pin_and_provision(cache.path(), &source);
+        let revision = locked.unwrap().revision;
+
+        assert_eq!(git_output(&checkout, &["rev-parse", "HEAD"]).unwrap(), revision);
+        let mirror = cache
+            .path()
+            .join(poly_cache::hook_source_key(source.git.as_deref().unwrap()))
+            .join("mirror.git");
+        assert_eq!(
+            git_output(&mirror, &["rev-parse", "--is-shallow-repository"]).unwrap(),
+            "true"
+        );
+        assert_eq!(git_output(&mirror, &["rev-list", "--count", "--all"]).unwrap(), "1");
     }
 
     #[test]
@@ -446,7 +521,7 @@ run = "printf"
             path: "cache://invalid".to_string(),
         }];
 
-        let error = provision_source(Path::new("."), cache.path(), &source, Some(lock.as_slice()), false).unwrap_err();
+        let error = provision_source(Path::new("."), cache.path(), &source, Some(lock.as_slice())).unwrap_err();
 
         assert!(error.to_string().contains("full hexadecimal Git object ID"));
     }
