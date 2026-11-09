@@ -1244,6 +1244,35 @@ jobs:
             git push
           fi
 
+  verify_binstall:
+    name: Verify cargo binstall resolves the release
+    needs: [meta, finalize_release]
+    if: >-
+      !inputs.plugins-only && needs.finalize_release.result == 'success'
+    runs-on: ubuntu-latest
+    # Non-blocking like the registry jobs: the release is already public, and a
+    # resolution failure means binstall users fall through to an error, which a
+    # red job here reports without re-drafting anything.
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - name: Setup mise
+        uses: xberg-io/actions/setup-mise@v1
+
+      # Checks the tagged crate's own metadata against the published archives, so
+      # a pkg-url that no longer matches the asset names fails on the release
+      # that introduced it.
+      - name: Resolve every shipped triple
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mise run verify:binstall crates/poly-cli
+
   publish_npm:
     name: Publish npm (@goldziher/polylint)
     needs: [meta, finalize_release]

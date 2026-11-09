@@ -19,6 +19,8 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Fixed
 
+- **`cargo binstall` resolves the release archives.** The binstall `pkg-url` doubled the archive suffix's dot
+  (`poly-0.34.1-<target>..tar.gz`), so every target failed; a publish job now checks each shipped triple.
 - **Sidecar start-up.** Starting a just-installed sidecar component no longer fails intermittently with `Text file busy`
   on Linux; alef retries the spawn. (#138)
 - **The tree-sitter fallback leaves rustfmt/gofmt output alone.** With `rustfmt`/`gofmt` absent, the generic tier no
