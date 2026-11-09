@@ -1606,7 +1606,7 @@ jobs:
           ls -l pip-package/dist
 
       - name: Verify immutable native PyPI registry payloads
-        run: python3 "$POLY_REGISTRY_GUARD" wheel --expected-count 7 pip-package/dist/*.whl
+        run: python3 "$POLY_REGISTRY_GUARD" wheel --expected-count 6 pip-package/dist/*.whl
 
       - name: Publish to PyPI
         # Trusted publishing (OIDC) — no API token. skip-existing keeps a re-run
