@@ -24,7 +24,7 @@ use poly_config::{
 use poly_hooks::Stage as HookStage;
 use poly_hooks::filter::FilePattern;
 use poly_hooks::identify::TagSet;
-use poly_hooks::model::{CARGO_SERIAL_GROUP, Hook, HookCommand, SHARED_SERIAL_GROUP, StageSpec};
+use poly_hooks::model::{CARGO_SERIAL_GROUP, Hook, HookCache, HookCommand, SHARED_SERIAL_GROUP, StageSpec};
 use poly_hooks::timeout::{ACCEPTED_TIMEOUT_FORMS, HookTimeout, parse_timeout};
 
 use self::builtins::{PathProbe, ToolProbe};
@@ -225,7 +225,7 @@ fn append_builtins(
 
     for (tool, builtin) in [(Tool::Lint, &hooks.builtin.lint), (Tool::Fmt, &hooks.builtin.fmt)] {
         if builtin.enabled {
-            append_scoped_tool(tool, builtin, &poly, hooks, config_stage, cache_mode, out)?;
+            append_scoped_tool(tool, builtin, &poly, hooks, config_stage, out)?;
         }
     }
     if hooks.builtin.commit.enabled
@@ -320,7 +320,6 @@ fn append_scoped_tool(
     poly: &str,
     hooks: &HooksConfig,
     config_stage: ConfigStage,
-    cache_mode: &HookCacheMode,
     out: &mut Vec<Hook>,
 ) -> Result<()> {
     let jobs = if builtin.jobs.is_empty() {
@@ -354,7 +353,14 @@ fn append_scoped_tool(
         hook.priority = job.priority.unwrap_or(builtin.priority);
         hook.stage_fixed = fix;
         hook.serial_group = fix.then(|| FIX_SERIAL_GROUP.to_string());
-        hook.cache = cache::builtin_cache(cache_mode);
+        // Never result-cached at the hook level: the verdict depends on every
+        // config `poly lint` / `poly fmt` reads (nested `poly.toml`s,
+        // `poly.local.toml`, `extends` bases, `pyproject.toml`, `.oxlintrc`,
+        // `.editorconfig`, rule dirs, …), not only on the matched files, so a
+        // matched-files key would replay a stale pass after a config change —
+        // or from another worktree of the repository, which shares the cache.
+        // poly's own per-file cache keys all of those and keeps the run cheap.
+        hook.cache = HookCache::Disabled;
         out.push(hook);
     }
     Ok(())

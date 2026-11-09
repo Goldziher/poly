@@ -39,10 +39,11 @@ pub enum HookCacheMode {
     Off,
     /// Cache hook results only when the hook declares its inputs (default).
     ///
-    /// Builtins (`lint`/`fmt`) are always cached by matched files
-    /// because their footprint equals their input set.  An inline command is
-    /// cached only when it carries a `cache = { inputs = [...] }` declaration;
-    /// otherwise it always reruns.
+    /// An inline command is cached only when it carries a
+    /// `cache = { inputs = [...] }` declaration; otherwise it always reruns.
+    /// The `lint`/`fmt` builtins are never hook-cached in any mode: their verdict
+    /// depends on configuration outside the matched files, and `poly lint` /
+    /// `poly fmt` keep their own per-file cache, which keys it.
     #[default]
     Safe,
     /// Cache based on matched files only, regardless of declared inputs.

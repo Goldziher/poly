@@ -411,6 +411,10 @@ entirely** when its declared inputs are unchanged since the last passing run. Th
 keyed on the Rust source and manifest set out of the box, so a commit touching no Rust skips
 `clippy` / `sort` / `machete` / `deny`. Opt out with `cargo = { cache = false }`.
 
+The `lint` and `fmt` builtins are not hook-cached: their verdict depends on configuration the
+matched files do not carry (`poly.toml`, tool configs, rule directories), so they always run, and
+`poly lint` / `poly fmt` answer unchanged files from their own per-file cache.
+
 Give a custom whole-workspace job the same treatment by declaring its inputs:
 
 ```toml
