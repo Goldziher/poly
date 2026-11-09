@@ -2,15 +2,15 @@
   "source": "plugin/skills",
   "skill_count": 5,
   "files": {
-    "poly-lint-and-format/SKILL.md": "7bba2d7c9796541dd513af0b62a11c560dba49b47a07234c1726877150abd230",
-    "poly-lint-and-format/index.md": "3b651fb3843c8abeed6b53b620f139ef0207f55f3450c4a721316ed6c3c71e9c",
-    "poly-mcp/SKILL.md": "4093c54764054c1962a654965a0eb1c5af7dfe9f15016c6a8c63c0182fc7c49f",
-    "poly-mcp/index.md": "0b5c2d36bb930a462cf8edf8d1af409c4369a2795993233e3596a6abb1efaae0",
-    "poly-orchestrator/SKILL.md": "9064fe80d3627c69916d72af4e182487769006508ee836a010cd5d2015b91438",
-    "poly-orchestrator/index.md": "715cb1f8bfa14d20cacd2596a8b73246a2b3e3affb28f73b6dae0bcd13752c2a",
-    "poly-overview/SKILL.md": "84b62b2c55e07786db4c3ea0d4fbea3de7ed349988efadcf62305c7fdfedadbb",
-    "poly-overview/index.md": "340be2c110ab93c1e6078725291fa32fb9aef9646d064a2e388bc3c563fcde72",
-    "poly-tiers-and-scope/SKILL.md": "6effb06acc72b1561f73dfdb7da02415a602e054825628247cc66555ad2ff53c",
-    "poly-tiers-and-scope/index.md": "0eebd9f3b0474ac775994343b8a915f6f6d44408277c27fac6f0b4098c3901d5"
+    "poly-lint-and-format/SKILL.md": "3b566a7631793cf6191e1ffba5b55c2acdce92c32cc4a4ef8f9286645ad7052f",
+    "poly-lint-and-format/index.md": "c9e8c4dd4842c2e1aba806b2c1b551c9240ca072a3bed4c56ec45d18a56f0893",
+    "poly-mcp/SKILL.md": "01999c4de0fff897731be406b9318716ca039a79b0c56ef27841babaee8af0c8",
+    "poly-mcp/index.md": "600c44c9f0b9cce8d161d3f965a9afae5ef26c85b3cd0a6a2815bceec228449d",
+    "poly-orchestrator/SKILL.md": "c2404e784cd655ee8a8d58c734b38d99740f7a2cd2d486b552d25b0d11a442cc",
+    "poly-orchestrator/index.md": "bef932290e380716d6d218ec81c8f8ff59f2abca377bb31488406a3bd8c03d1c",
+    "poly-overview/SKILL.md": "75d4ae9b976867eb685a280b7d5ec3e69144e7aafc6b17721da098630c2a09bd",
+    "poly-overview/index.md": "bb5c95676e66efae5fbe232b196f87f2d68790891e4c6c400f76555a7dcd9603",
+    "poly-tiers-and-scope/SKILL.md": "e159d6b72b09fe0a22f2e03157bb6e8644bcf9c7f60b49d0a80d09be62cd622d",
+    "poly-tiers-and-scope/index.md": "d7877a0821a63bad1c691f755da7b040ffd9dd6a1c4ffe1d385e61464b1fe722"
   }
 }

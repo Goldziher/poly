@@ -7,6 +7,8 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.34.2] - 2026-11-09
+
 ### Changed
 
 - **`poly hooks install` locks what it needs.** When `poly.lock` is missing an entry the config declares (a Git hook

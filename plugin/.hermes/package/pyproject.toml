@@ -4,7 +4,7 @@ build-backend = 'hatchling.build'
 
 [project]
 name = 'poly-hermes-plugin'
-version = '0.34.1'
+version = '0.34.2'
 description = 'polylint: one linter and formatter for every language in the repository, driven by poly.toml. Runs ruff, oxc, biome and more as signed components fetched on demand, host tools such as rustfmt and gofmt when present, and a tree-sitter tier for everything else. Exposes lint/format/cache tools over MCP with structured JSON output.'
 license = 'MIT'
 requires-python = '>=3.11'
