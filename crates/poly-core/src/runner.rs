@@ -21,6 +21,7 @@ use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 
 mod batch;
+mod debug_record;
 mod edits;
 mod engine_clock;
 mod fast;
@@ -37,6 +38,7 @@ mod write;
 
 use crate::fingerprint::run_fingerprints as config_fingerprints;
 use batch::{BatchPrefill, LintPrefill, PendingLint, prefill, prefill_lint};
+use debug_record::{DebugSource, push_engine_debug};
 use edits::apply_edits;
 use engine_clock::{EngineClock, note_slow_engine};
 use fast::{
@@ -663,24 +665,6 @@ fn should_cache_result(elapsed: std::time::Duration) -> bool {
     elapsed >= MIN_CACHE_DURATION
 }
 
-/// Append one [`EngineDebug`] record when debug collection is active. `started`
-/// is `Some` for an engine that actually ran (timing it) and `None` for a cache
-/// hit (`duration_ms` = 0, `cache_hit` = true).
-fn push_engine_debug(debug: Option<&mut RunDebug>, plan: &EnginePlan, started: Option<std::time::Instant>) {
-    if let Some(debug) = debug {
-        let (duration_ms, cache_hit) = match started {
-            Some(start) => (start.elapsed().as_secs_f64() * 1000.0, false),
-            None => (0.0, true),
-        };
-        debug.engines.push(EngineDebug {
-            engine: plan.engine.name().to_owned(),
-            version: plan.engine.version().to_owned(),
-            duration_ms,
-            cache_hit,
-        });
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn format_one(
     f: &DiscoveredFile,
@@ -816,7 +800,7 @@ fn format_one(
                 && let Some(text) = fmt_entry::decode(&current, &bytes)
             {
                 if record_debug {
-                    push_engine_debug(debug.as_mut(), plan, None);
+                    push_engine_debug(debug.as_mut(), plan, DebugSource::CacheHit);
                 }
                 current = text;
                 continue;
@@ -826,7 +810,7 @@ fn format_one(
             // path, so a stale or mismatched entry falls through to the tool.
             if let Some(out) = prefilled.take(&f.path, plan.engine.name(), &current) {
                 if record_debug {
-                    push_engine_debug(debug.as_mut(), plan, None);
+                    push_engine_debug(debug.as_mut(), plan, DebugSource::Batched);
                 }
                 // Persisted unconditionally, bypassing `should_cache_result`.
                 // That guard refuses results cheaper than 5 ms because an
@@ -858,7 +842,7 @@ fn format_one(
             let time = clock.stop();
             let elapsed = time.wall;
             if record_debug {
-                push_engine_debug(debug.as_mut(), plan, Some(started));
+                push_engine_debug(debug.as_mut(), plan, DebugSource::Ran(started));
             }
             note_slow_engine(&f.path, src.content.len(), plan.engine.name(), time);
             if let Some(key) = &key

@@ -3,12 +3,13 @@
 use std::sync::Arc;
 
 use super::batch::LintPrefill;
+use super::debug_record::{DebugSource, push_engine_debug};
 use super::engine_clock::{EngineClock, note_slow_engine};
 use super::fast::decode_payload;
 use super::fast::encode_payload;
+use super::guard_engine_panic;
 use super::plan::EnginePlan;
 use super::types::RunDebug;
-use super::{guard_engine_panic, push_engine_debug};
 use crate::discover::DiscoveredFile;
 use crate::engine::{Diagnostic, SourceFile};
 
@@ -51,7 +52,7 @@ pub(super) fn lint_content(
         if let Some(payload) = reused
             && let Some(mut diags) = decode_payload(payload)
         {
-            push_engine_debug(debug.as_mut(), plan, None);
+            push_engine_debug(debug.as_mut(), plan, DebugSource::CacheHit);
             if keep {
                 payloads.push(payload.to_vec());
             }
@@ -64,7 +65,7 @@ pub(super) fn lint_content(
         // A batch already computed this engine's answer for exactly this
         // content; recomputing it would cost a process spawn.
         if let Some(mut diags) = prefilled.take(&f.path, plan.engine.name(), content) {
-            push_engine_debug(debug.as_mut(), plan, None);
+            push_engine_debug(debug.as_mut(), plan, DebugSource::Batched);
             if keep {
                 payloads.push(encode_payload(&diags));
             }
@@ -78,7 +79,7 @@ pub(super) fn lint_content(
         let mut diags = guard_engine_panic(plan.engine.name(), &f.path, || plan.engine.lint(&src, &plan.config))?;
         let time = clock.stop();
         note_slow_engine(&f.path, content.len(), plan.engine.name(), time);
-        push_engine_debug(debug.as_mut(), plan, Some(clock.started()));
+        push_engine_debug(debug.as_mut(), plan, DebugSource::Ran(clock.started()));
         // Record raw severities so a later config-only remap can be applied
         // identically on both reuse and recompute.
         if keep {

@@ -116,10 +116,17 @@ pub struct EngineDebug {
     /// Wrapped tool/crate version (matches the cache-key component).
     pub version: String,
     /// Wall-clock time the engine spent on this file, in milliseconds. Zero for
-    /// a cache hit (the engine did not run).
+    /// a cache hit or a batched answer (the engine did not run for this file
+    /// alone).
     pub duration_ms: f64,
-    /// Whether the result came from the content-hash cache.
+    /// Whether the result came from the content-hash cache. Never true under
+    /// `--no-cache`.
     pub cache_hit: bool,
+    /// Whether the result came from one batched invocation covering many files
+    /// (a recipe tool's per-module run), computed in this run rather than read
+    /// from the cache. Omitted from JSON when false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub batched: bool,
 }
 
 /// Per-file debug data surfaced under `--debug`: cache hit/miss and timing for
