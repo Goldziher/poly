@@ -17,11 +17,14 @@
 //!   leading closer pops any bracket opened on that line. Byte ranges covered
 //!   by string-literal and comment CST nodes are excluded: delimiters inside
 //!   them never count toward depth, and any line whose leading whitespace
-//!   begins inside such a range is emitted verbatim. The indent unit is
-//!   per-grammar (tabs for Go, two spaces for Swift/Dart, `indent_width`
-//!   spaces otherwise). Per-language switch/case adjustments apply for Swift
-//!   (case labels align with `switch`), Dart, and C# (case bodies get an
-//!   extra indent level).
+//!   begins inside such a range is emitted verbatim, as is the body of a Rust
+//!   macro invocation. The indent unit is per-grammar (tabs for Go, two spaces
+//!   for Swift/Dart, `indent_width` spaces otherwise); without an explicit
+//!   `indent_width`, a file that consistently indents in another unit (tabs,
+//!   two spaces) keeps it. Per-language switch/case adjustments apply for
+//!   Swift (case labels align with `switch`), Go (labels, statement labels and
+//!   the comments introducing a case align with `switch`), Dart, and C# (case
+//!   bodies get an extra indent level).
 //! - **Query-driven reindent** for grammars with a bundled `indents.scm` or a
 //!   poly built-in indents query (`indent.rs`: Elixir and bash today). This is
 //!   how keyword-delimited block languages — `do`/`end`, `if`/`fi`,
@@ -165,7 +168,7 @@ impl Engine for TreeSitterEngine {
     }
 
     fn version(&self) -> &str {
-        "11+tslp1.24.0"
+        "12+tslp1.24.0"
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
@@ -262,9 +265,22 @@ struct CstFacts {
     /// `switch_entry` (net effect: body stays at bracket depth while the
     /// label is pulled out one level).
     case_body_extra: Vec<(usize, usize)>,
+    /// `(open_byte, close_byte)` of each Rust macro invocation's token tree. A line whose first
+    /// non-whitespace byte lies strictly between the two delimiters is emitted verbatim: rustfmt
+    /// leaves a macro body it cannot parse (`quote! { … }`, a `=>` map literal) exactly as
+    /// written, so no depth the bracket model computes for it is canonical.
+    macro_bodies: Vec<(usize, usize)>,
 }
 
 impl CstFacts {
+    /// Whether the line whose first non-whitespace byte is `byte` lies inside a macro body.
+    /// `macro_bodies` is sorted and non-nested (guaranteed by `collect_cst`), so this is
+    /// O(log n).
+    fn in_macro_body(&self, byte: usize) -> bool {
+        let pos = self.macro_bodies.partition_point(|&(open, _)| open < byte);
+        pos > 0 && byte < self.macro_bodies[pos - 1].1
+    }
+
     /// Whether `byte` falls strictly inside any protected range, i.e. it is an
     /// interior byte of a string or comment (`start < byte < end`). The opening
     /// byte of the range is excluded so the line that opens the node is still
@@ -281,18 +297,18 @@ impl CstFacts {
         byte < end
     }
 
-    /// Net indent-level adjustment for a line whose first byte is `line_start`.
-    /// Returns −1, 0, or +1 based on the per-language case/label ranges.
+    /// Net indent-level adjustment for a line whose first byte is `line_start`: one level per
+    /// case/label range covering it in each direction. Ranges are counted, not merely tested,
+    /// because switches nest — a line in an inner switch's case body sits inside the outer case
+    /// and its body as well as the inner ones, and only the counts net out to the right depth.
     fn case_adjustment(&self, line_start: usize) -> i32 {
-        let dedent = self
-            .case_label_dedent
-            .iter()
-            .any(|&(s, e)| s <= line_start && line_start < e);
-        let extra = self
-            .case_body_extra
-            .iter()
-            .any(|&(s, e)| s <= line_start && line_start < e);
-        (if extra { 1 } else { 0 }) - (if dedent { 1 } else { 0 })
+        let covering = |ranges: &[(usize, usize)]| {
+            ranges
+                .iter()
+                .filter(|&&(s, e)| s <= line_start && line_start < e)
+                .count() as i32
+        };
+        covering(&self.case_body_extra) - covering(&self.case_label_dedent)
     }
 }
 
@@ -304,6 +320,7 @@ impl CstFacts {
 fn collect_cst(root: &Node, grammar_name: &str) -> CstFacts {
     let mut delimiters = Vec::new();
     let mut protected: Vec<(usize, usize)> = Vec::new();
+    let mut macro_bodies: Vec<(usize, usize)> = Vec::new();
     let mut cursor = root.walk();
     loop {
         let node = cursor.node();
@@ -311,6 +328,16 @@ fn collect_cst(root: &Node, grammar_name: &str) -> CstFacts {
         let is_protected = kind.contains("string") || kind.contains("comment");
         if is_protected {
             protected.push((node.start_byte(), node.end_byte()));
+        } else if kind == "token_tree"
+            && grammar_name == "rust"
+            && node.parent().is_some_and(|p| p.kind() == "macro_invocation")
+        {
+            // The walk is pre-order, so starts ascend and a nested macro's body lies inside the
+            // last one recorded; keeping only the outermost lets `in_macro_body` binary-search.
+            let (open, close) = (node.start_byte(), node.end_byte().saturating_sub(1));
+            if macro_bodies.last().is_none_or(|&(_, last_close)| open >= last_close) {
+                macro_bodies.push((open, close));
+            }
         } else if node.child_count() == 0 {
             match kind.as_str() {
                 "(" | "[" | "{" => delimiters.push(Delimiter {
@@ -342,6 +369,7 @@ fn collect_cst(root: &Node, grammar_name: &str) -> CstFacts {
                     protected,
                     case_label_dedent,
                     case_body_extra,
+                    macro_bodies,
                 };
             }
         }
@@ -407,23 +435,32 @@ fn collect_swift_case_adjustments(
 /// Go: gofmt aligns `case` / `default` labels with their `switch` / `select` keyword and indents
 /// the body one level deeper, so a label is pulled out of the enclosing braces' level while the
 /// statements after its `:` are put back.
+///
+/// Two more gofmt placements share the label's level. A statement label (`Loop:`) is outdented one
+/// level from the statement it labels. A comment group introducing a `case` sits with the label:
+/// tree-sitter attaches it either to the switch body (before the first case) or to the tail of the
+/// previous case, so both positions are pulled back. A trailing comment the author wrote at body
+/// depth still stays there, since the reindenter never dedents.
 fn collect_go_case_adjustments(
     root: &Node,
     case_body_extra: &mut Vec<(usize, usize)>,
     case_label_dedent: &mut Vec<(usize, usize)>,
 ) {
+    let kind = root.kind();
     if matches!(
-        root.kind().as_ref(),
+        kind.as_ref(),
         "expression_case" | "default_case" | "type_case" | "communication_case"
     ) {
         case_label_dedent.push((root.start_byte(), root.end_byte()));
         let mut after_colon = false;
+        let mut trailing_comments: Vec<(usize, usize)> = Vec::new();
         let mut cursor = root.walk();
         if cursor.goto_first_child() {
             loop {
                 let child = cursor.node();
                 if after_colon {
                     case_body_extra.push((child.start_byte(), child.end_byte()));
+                    track_trailing_comment(&child, &mut trailing_comments);
                 }
                 if child.kind() == ":" {
                     after_colon = true;
@@ -433,6 +470,27 @@ fn collect_go_case_adjustments(
                 }
             }
         }
+        case_label_dedent.extend(trailing_comments);
+    } else if matches!(
+        kind.as_ref(),
+        "expression_switch_statement" | "type_switch_statement" | "select_statement"
+    ) {
+        let mut cursor = root.walk();
+        if cursor.goto_first_child() {
+            loop {
+                let child = cursor.node();
+                if child.kind() == "comment" {
+                    case_label_dedent.push((child.start_byte(), child.end_byte()));
+                }
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
+    } else if kind == "labeled_statement"
+        && let Some(label) = root.child(0)
+    {
+        case_label_dedent.push((label.start_byte(), label.end_byte()));
     }
     let mut cursor = root.walk();
     if cursor.goto_first_child() {
@@ -442,6 +500,15 @@ fn collect_go_case_adjustments(
                 break;
             }
         }
+    }
+}
+
+/// Keep `trailing` holding the comments that follow the last non-comment node seen so far.
+fn track_trailing_comment(child: &Node, trailing: &mut Vec<(usize, usize)>) {
+    if child.kind() == "comment" {
+        trailing.push((child.start_byte(), child.end_byte()));
+    } else {
+        trailing.clear();
     }
 }
 
@@ -496,21 +563,87 @@ fn indent_unit(grammar_name: &str, indent_width: usize) -> Cow<'static, str> {
     }
 }
 
+/// How one source line is re-emitted.
+enum LinePlan {
+    /// Emitted byte-for-byte: a string/comment interior or a macro body.
+    Verbatim,
+    /// Re-indented to `level` units (never below its existing indentation).
+    Code { level: usize },
+}
+
 /// Re-emit `source` with each line indented by its bracket depth. Uses the
 /// conservative level-keyed-by-open-line model: multiple brackets opened on the
 /// same line coalesce to one level; leading closers release their levels before
 /// the render depth is sampled. Verbatim emission for protected ranges.
 fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConfig) -> String {
+    let plans = plan_lines(source, facts);
     let unit = indent_unit(grammar_name, cfg.indent_width);
+    let unit = match unit {
+        Cow::Owned(_) if !cfg.options.contains_key("indent_width") => {
+            infer_indent_unit(source, &plans).map_or(unit, Cow::Borrowed)
+        }
+        _ => unit,
+    };
     let line_ending = cfg.globals.line_ending.as_str();
-    let delimiters = &facts.delimiters;
+    let trim_end = cfg.globals.trim_trailing_whitespace;
 
     const MAX_PRECOMPUTED_DEPTH: usize = 64;
     let max_indent = unit.repeat(MAX_PRECOMPUTED_DEPTH);
 
     let mut out = String::with_capacity(source.len() + source.len() / 8);
+    for (line_idx, (raw, plan)) in source.split('\n').zip(&plans).enumerate() {
+        let line = raw.strip_suffix('\r').unwrap_or(raw);
+        if line_idx > 0 {
+            out.push_str(line_ending);
+        }
+        let LinePlan::Code {
+            level: structural_level,
+        } = *plan
+        else {
+            out.push_str(line);
+            continue;
+        };
+        let level = if grammar_name == "kotlin" {
+            structural_level.max(existing_indent_level(line, &unit))
+        } else {
+            structural_level
+        };
+        let content = line.trim_start();
+        let content = if trim_end { content.trim_end() } else { content };
+        if content.trim_end().is_empty() {
+            if !trim_end {
+                out.push_str(line);
+            }
+            continue;
+        }
+        let existing = &line[..line.len() - line.trim_start_matches([' ', '\t']).len()];
+        if existing.len() > level * unit.len() {
+            // Never dedent: the bracket model cannot see continuation lines (method chains,
+            // let-chains, wrapped expressions), which a canonical formatter indents deeper
+            // than bracket depth. Under-indented lines are still raised.
+            out.push_str(existing);
+        } else {
+            let indent_bytes = level * unit.len();
+            if indent_bytes <= max_indent.len() {
+                out.push_str(&max_indent[..indent_bytes]);
+            } else {
+                for _ in 0..level {
+                    out.push_str(&unit);
+                }
+            }
+        }
+        out.push_str(content);
+    }
+
+    apply_trailing_newline(&mut out, source, line_ending, cfg.globals.final_newline);
+    out
+}
+
+/// Compute every line's [`LinePlan`] from the bracket stack and the per-language adjustments.
+fn plan_lines(source: &str, facts: &CstFacts) -> Vec<LinePlan> {
+    let delimiters = &facts.delimiters;
+    let mut plans = Vec::new();
     let mut byte = 0usize;
-    let mut first = true;
     let mut raw_stack: Vec<usize> = Vec::new();
     let mut active_levels: Vec<usize> = Vec::new();
     let mut d_cursor = 0usize;
@@ -519,35 +652,23 @@ fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConf
         let line = raw.strip_suffix('\r').unwrap_or(raw);
         let line_start = byte;
         let line_end = byte + line.len();
-
-        if facts.is_interior(line_start) {
-            if !first {
-                out.push_str(line_ending);
-            }
-            first = false;
-            out.push_str(line);
-            let d_line_start = d_cursor;
-            while d_cursor < delimiters.len() && delimiters[d_cursor].byte < line_end {
-                d_cursor += 1;
-            }
-            // A verbatim line (the tail of a raw string or block comment) can still close
-            // brackets opened before it, e.g. `` `}) ``; skipping them would leave the depth
-            // one level too deep for every line after it.
-            track_delimiters(
-                &delimiters[d_line_start..d_cursor],
-                line_idx,
-                &mut raw_stack,
-                &mut active_levels,
-            );
-            byte += raw.len() + 1;
-            continue;
-        }
+        byte += raw.len() + 1;
 
         let d_line_start = d_cursor;
         while d_cursor < delimiters.len() && delimiters[d_cursor].byte < line_end {
             d_cursor += 1;
         }
         let line_delims = &delimiters[d_line_start..d_cursor];
+        let first_byte = line_start + (line.len() - line.trim_start().len());
+
+        if facts.is_interior(line_start) || facts.in_macro_body(first_byte) {
+            // A verbatim line (the tail of a raw string or block comment, a macro body) can still
+            // close brackets opened before it, e.g. `` `}) ``; skipping them would leave the depth
+            // one level too deep for every line after it.
+            track_delimiters(line_delims, line_idx, &mut raw_stack, &mut active_levels);
+            plans.push(LinePlan::Verbatim);
+            continue;
+        }
 
         let leading = count_leading_closers(line, line_start, line_delims);
         for _ in 0..leading {
@@ -559,45 +680,51 @@ fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConf
         }
 
         let base = active_levels.len() as i32;
-        let structural_level =
-            (base + facts.case_adjustment(line_start + (line.len() - line.trim_start().len()))).max(0) as usize;
-        let level = if grammar_name == "kotlin" {
-            structural_level.max(existing_indent_level(line, &unit))
-        } else {
-            structural_level
-        };
-
-        if !first {
-            out.push_str(line_ending);
-        }
-        first = false;
-        let trimmed = line.trim();
-        let existing = &line[..line.len() - line.trim_start_matches([' ', '\t']).len()];
-        if !trimmed.is_empty() && existing.len() > level * unit.len() {
-            // Never dedent: the bracket model cannot see continuation lines (method chains,
-            // let-chains, wrapped expressions), which a canonical formatter indents deeper
-            // than bracket depth. Under-indented lines are still raised.
-            out.push_str(existing);
-            out.push_str(trimmed);
-        } else if !trimmed.is_empty() {
-            let indent_bytes = level * unit.len();
-            if indent_bytes <= max_indent.len() {
-                out.push_str(&max_indent[..indent_bytes]);
-            } else {
-                for _ in 0..level {
-                    out.push_str(&unit);
-                }
-            }
-            out.push_str(trimmed);
-        }
+        let level = (base + facts.case_adjustment(first_byte)).max(0) as usize;
+        plans.push(LinePlan::Code { level });
 
         track_delimiters(&line_delims[leading..], line_idx, &mut raw_stack, &mut active_levels);
-
-        byte += raw.len() + 1;
     }
+    plans
+}
 
-    apply_trailing_newline(&mut out, source, line_ending, cfg.globals.final_newline);
-    out
+/// The indent unit the file already uses, read off the step between a line and the first line of
+/// the level it opens. A canonical formatter configured with `hard_tabs` or a `tab_spaces` other
+/// than the default produces a file indented in its own unit; reindenting it in poly's default
+/// unit would rewrite every line. Only the first line inside a newly opened level is sampled,
+/// since that line is almost never a continuation line indented past bracket depth. Returns
+/// `None` (keep the configured unit) unless a clear majority of the steps is one tab or one run
+/// of two to eight spaces.
+fn infer_indent_unit(source: &str, plans: &[LinePlan]) -> Option<&'static str> {
+    const MIN_SAMPLES: usize = 3;
+    const UNITS: [&str; 8] = ["\t", "  ", "   ", "    ", "     ", "      ", "       ", "        "];
+    let mut counts = [0usize; UNITS.len()];
+    let mut samples = 0usize;
+    let mut previous: Option<(usize, &str)> = None;
+    for (raw, plan) in source.split('\n').zip(plans) {
+        let line = raw.strip_suffix('\r').unwrap_or(raw);
+        let LinePlan::Code { level } = *plan else {
+            previous = None;
+            continue;
+        };
+        if line.trim().is_empty() {
+            continue;
+        }
+        let indent = &line[..line.len() - line.trim_start_matches([' ', '\t']).len()];
+        if let Some((previous_level, previous_indent)) = previous
+            && level == previous_level + 1
+        {
+            samples += 1;
+            if let Some(step) = indent.strip_prefix(previous_indent)
+                && let Some(i) = UNITS.iter().position(|u| *u == step)
+            {
+                counts[i] += 1;
+            }
+        }
+        previous = Some((level, indent));
+    }
+    let (best, &count) = counts.iter().enumerate().max_by_key(|&(_, c)| *c)?;
+    (samples >= MIN_SAMPLES && count * 2 > samples).then_some(UNITS[best])
 }
 
 /// Fold one line's delimiters into the open-bracket stack and the set of lines whose
