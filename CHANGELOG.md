@@ -10,6 +10,8 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 ### Changed
 
 - **Dependencies.** alef 0.129.0 for the component build.
+- **Damaged components name the failed check.** A cached component that fails verification is reported with the
+  check it failed (digest, size, manifest or signature) instead of a generic verification failure.
 
 ### Fixed
 
