@@ -136,10 +136,19 @@ fn edit_manifest(object: &Path) {
 
 type Tamper = fn(&Path);
 
-const TAMPERS: [(&str, Tamper); 3] = [
-    ("flipped library byte", flip_library_byte),
-    ("truncated library", truncate_library),
-    ("edited manifest", edit_manifest),
+/// Each kind of damage, with the failed check alef names for it.
+const TAMPERS: [(&str, Tamper, &str); 3] = [
+    ("flipped library byte", flip_library_byte, "artifact digest mismatch"),
+    (
+        "truncated library",
+        truncate_library,
+        "artifact size mismatch: expected 20 bytes, got 4 bytes",
+    ),
+    (
+        "edited manifest",
+        edit_manifest,
+        "component manifest digest does not match the lock",
+    ),
 ];
 
 #[test]
@@ -155,7 +164,7 @@ fn an_intact_copy_is_present_and_a_missing_one_is_not_cached() {
 
 #[test]
 fn every_kind_of_damage_is_found_and_named_offline() {
-    for (what, tamper) in TAMPERS {
+    for (what, tamper, check) in TAMPERS {
         let f = Fixture::new();
         let host = f.installed();
         tamper(&f.object(&host));
@@ -164,13 +173,17 @@ fn every_kind_of_damage_is_found_and_named_offline() {
             panic!("{what}: not detected");
         };
         assert!(detail.contains("failed verification"), "{what}: {detail}");
+        assert!(
+            detail.contains(check),
+            "{what}: the failed check is not named: {detail}"
+        );
         let Availability::Unavailable(unavailable) = offline.ensure_frontend(ID, true) else {
             panic!("{what}: an offline run used a damaged component");
         };
         assert_eq!(unavailable.kind, UnavailableKind::VerifyFailed, "{what}");
         let reason = unavailable.reason(ID);
         assert!(
-            reason.contains("failed verification") && reason.contains("poly components install demo-component"),
+            reason.contains(check) && reason.contains("poly components install demo-component"),
             "{what}: {reason}"
         );
         assert!(
@@ -198,7 +211,7 @@ fn install_never_refuses_a_damaged_copy_with_the_remedy() {
 
 #[test]
 fn an_online_ensure_repairs_a_damaged_copy_and_says_so() {
-    for (what, tamper) in TAMPERS {
+    for (what, tamper, _) in TAMPERS {
         let f = Fixture::new();
         let host = f.installed();
         tamper(&f.object(&host));
