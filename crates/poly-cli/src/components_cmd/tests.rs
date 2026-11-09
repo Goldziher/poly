@@ -540,6 +540,30 @@ fn prune_removes_old_staging_dirs_and_keeps_young_ones() {
     assert!(young.exists(), "a young staging dir may belong to a live install");
 }
 
+/// Temp files a crashed download or stamp write left behind (`.tmpXXXX`, `.tmp-stamp-*`) go once
+/// they are an hour old; a younger one may still be written by a live install.
+#[test]
+fn prune_removes_old_temp_files_and_keeps_young_ones() {
+    let fixture = Fixture::new(true);
+    let objects = fixture.root().join("sha256");
+    std::fs::create_dir_all(&objects).unwrap();
+    let aged = |name: &str, age: Duration| {
+        let path = objects.join(name);
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_modified(SystemTime::now() - age).unwrap();
+        path
+    };
+    let download = aged(".tmpA1b2C3", Duration::from_secs(2 * 3600));
+    let stamp = aged(".tmp-stamp-x9", Duration::from_secs(2 * 3600));
+    let live = aged(".tmpLive00", Duration::from_secs(60));
+
+    let actions = ops::prune(&fixture.env(), false, false, 30).unwrap();
+
+    assert_eq!(row_names(&actions, "removed"), [".tmp-stamp-x9", ".tmpA1b2C3"]);
+    assert!(!download.exists() && !stamp.exists());
+    assert!(live.exists(), "a young temp file may belong to a live install");
+}
+
 #[test]
 fn dry_run_names_exactly_what_a_real_prune_removes() {
     let fixture = Fixture::new(true);
