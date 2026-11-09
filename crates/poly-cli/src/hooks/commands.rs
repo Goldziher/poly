@@ -104,6 +104,12 @@ pub struct InstallArgs {
     /// outright. `poly hooks uninstall` restores whichever was kept.
     #[arg(long)]
     pub replace_lefthook: bool,
+
+    /// Never write `poly.lock`: fail when a hook source or remote `extends` base
+    /// has no lock entry instead of resolving and recording it. Also set by
+    /// `POLY_LOCKED=1`.
+    #[arg(long)]
+    pub locked: bool,
 }
 
 /// `poly hooks uninstall` arguments.
@@ -288,6 +294,10 @@ fn resolve_run_stage(requested: Option<&str>, hooks: &poly_config::HooksConfig) 
 
 fn install(args: InstallArgs) -> Result<ExitCode> {
     let root = repository_root()?;
+    if !crate::auto_lock::locked(args.locked) {
+        crate::auto_lock::lock_missing("poly hooks install")
+            .context("locking missing poly.lock entries (pass --locked to skip)")?;
+    }
     let config = load_config(None)?;
     super::sources::provision(&root, &config.hooks, true).context("provisioning hook sources")?;
     let hooks_dir = poly_hooks::git::get_git_hooks_dir().context("failed to resolve the git hooks directory")?;
