@@ -13,9 +13,15 @@ description = "polylint: a universal polyglot linter and formatter (`poly lint`,
 keywords = ["linter", "formatter", "polyglot", "universal", "lint"]
 categories = ["development-tools", "command-line-utilities"]
 
+# `{ archive-suffix }` carries its own leading dot, so it follows `{ target }` directly.
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/poly-{ version }-{ target }.{ archive-suffix }"
-bin-dir = "."
+pkg-url = "{ repo }/releases/download/v{ version }/poly-{ version }-{ target }{ archive-suffix }"
+pkg-fmt = "tgz"
+bin-dir = "{ bin }{ binary-ext }"
+disabled-strategies = ["quick-install", "compile"]
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
 
 [lib]
 name = "poly_cli"
