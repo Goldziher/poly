@@ -7,6 +7,15 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Dependencies.** alef 0.129.0 for the component build.
+
+### Fixed
+
+- **Sidecar start-up.** Starting a just-installed sidecar component no longer fails intermittently with `Text file busy`
+  on Linux; alef retries the spawn. (#138)
+
 ## [0.34.1] - 2026-11-09
 
 ### Added

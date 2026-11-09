@@ -18,7 +18,7 @@ shfmt = "3.14.1"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
 "go:github.com/google/go-licenses/v2" = "2.0.1"
 # The component build tool; keep in step with alef-component-abi/runtime in Cargo.toml.
-"github:xberg-io/alef" = "0.128.0"
+"github:xberg-io/alef" = "0.129.0"
 
 [vars]
 # Tasks run the bundled poly (core plus the web, biome and ruby engines, built from components/) from this

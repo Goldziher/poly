@@ -122,6 +122,9 @@ impl ComponentHost {
         for id in &options.sidecars {
             manager = manager.with_stdio_component(id.clone());
         }
+        // alef respawns a dead sidecar once by default, but replays no session (`Init`, registered
+        // configs) unless given one; keep a dead sidecar stopped, as `SidecarTransport` documents.
+        manager = manager.with_sidecar_restart_budget(0);
         if let Some(timeout) = options.sidecar_timeout {
             manager = manager.with_sidecar_timeout(timeout);
         }
