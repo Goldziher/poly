@@ -524,6 +524,7 @@ fn lint_pretty_debug_prefixes_v_only_to_a_bare_version_number() {
         version: version.to_string(),
         duration_ms: 1.0,
         cache_hit: false,
+        batched: false,
     };
     let results = vec![LintResult {
         suppressed: Vec::new(),
