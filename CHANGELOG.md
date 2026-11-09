@@ -13,6 +13,8 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   source, a remote `extends` base, an `install = "auto"` tool), install resolves and records it instead of failing with
   "run `poly lock` first", keeping every existing pin and printing one line per entry added. `--locked` (or
   `POLY_LOCKED=1`) keeps the old failure and never writes the lock. Hook runs stay strict. (#158)
+- **gitfluff 0.11.1.** Header-shape errors and plain AI banner detection now come from gitfluff itself, replacing
+  poly's own hint and exclude rule.
 - **Dependencies.** alef 0.129.0 for the component build.
 - **Damaged components name the failed check.** A cached component that fails verification is reported with the
   check it failed (digest, size, manifest or signature) instead of a generic verification failure.
