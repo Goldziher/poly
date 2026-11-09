@@ -15,6 +15,11 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   `POLY_LOCKED=1`) keeps the old failure and never writes the lock. Hook runs stay strict. (#158)
 - **gitfluff 0.11.1.** Header-shape errors and plain AI banner detection now come from gitfluff itself, replacing
   poly's own hint and exclude rule.
+- **Worktrees share the result cache.** The result cache is keyed by the repository's git common dir instead of
+  the checkout path, so every `git worktree` of a repository shares one cache and a new worktree's first run reuses
+  results for byte-identical files instead of re-running every engine. The common dir is read from `.git` /
+  `commondir` without spawning git; a directory outside git keys by its own path as before. The hook staged snapshot
+  stays per worktree. Cache format 6: existing caches start cold once. (#159)
 - **Dependencies.** alef 0.129.0 for the component build.
 - **Damaged components name the failed check.** A cached component that fails verification is reported with the
   check it failed (digest, size, manifest or signature) instead of a generic verification failure.

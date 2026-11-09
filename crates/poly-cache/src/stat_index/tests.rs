@@ -190,7 +190,7 @@ fn a_corrupt_or_foreign_file_loads_as_empty() {
     let mut truncated = std::fs::read(dir.path().join("index").join("lint.idx")).unwrap();
     truncated.truncate(truncated.len() - 3);
 
-    for bytes in [&b"garbage"[..], b"PSI2\x01\x02", b"", &truncated] {
+    for bytes in [&b"garbage"[..], b"PSI3\x01\x02", b"PSI2\x01\x02", b"", &truncated] {
         std::fs::write(&file, bytes).unwrap();
         assert!(StatIndex::load(file.clone()).get(&path("a.py")).is_none());
     }

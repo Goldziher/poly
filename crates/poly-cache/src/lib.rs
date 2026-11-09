@@ -4,7 +4,11 @@
 //!
 //! [`ResultCache`] is a blake3 content-hash result cache backed by files under a
 //! per-user cache directory (`<platform-cache>/poly/<repo-key>/`, see
-//! [`repo_cache_dir`]). It generalises the single-file key that `poly-core` uses
+//! [`repo_cache_dir`]). The repo key names the *repository* — its git common
+//! dir — so every `git worktree` of one repository shares one result cache,
+//! while the hook staged snapshot lives in a per-checkout slot
+//! (`<platform-cache>/poly/<checkout-key>/staged`, see [`checkout_cache_dir`]);
+//! the [`checkout`] module explains the split. It generalises the single-file key that `poly-core` uses
 //! for lint and format results into a **file-set digest** ([`InputDigest`]),
 //! enabling multi-file caching for hook results without changing the single-file
 //! path.
@@ -18,7 +22,7 @@
 //! it; see [`permissions`] for the full rationale and the [`DirOrigin`] split.
 //!
 //! ```text
-//! <platform-cache>/poly/<repo-key>/
+//! <platform-cache>/poly/<repo-key>/     — keyed by the git common dir (shared by worktrees)
 //!   VERSION              — format-version sentinel; bump CACHE_FORMAT_VERSION on
 //!                          breaking layout changes so GC can detect stale trees
 //!   .lock                — advisory lock PLACEHOLDER for GC/clean ops; routine
@@ -31,6 +35,9 @@
 //!     hook/<hex-key>     — JSON-encoded hook outcome
 //!   index/
 //!     lint.idx, fmt.idx  — stat-validated per-file records; see [`StatIndex`]
+//!
+//! <platform-cache>/poly/<checkout-key>/ — keyed by the checkout root (one per worktree)
+//!   staged/, staged-sparse/ — the hook staged snapshot (poly-hooks)
 //!
 //! <platform-cache>/poly/hook-sources/
 //!   <url-key>/mirror.git/             — shared bare Git mirror
@@ -120,10 +127,12 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 
+pub mod checkout;
 mod maintenance;
 pub mod permissions;
 mod stat_index;
 
+pub use checkout::{checkout_cache_dir, git_common_dir, repository_identity};
 pub use maintenance::{CacheStats, NamespaceStats};
 pub use permissions::{DirOrigin, create_dir_all_private, ensure_private_dir};
 pub use stat_index::{
@@ -136,6 +145,10 @@ pub use stat_index::{
 /// as `poly cache gc` compare the sentinel against this value to decide whether
 /// an existing tree is safe to reuse.
 ///
+/// Bumped to `6` when the result cache became shared by every worktree of a
+/// repository: [`PathKey`]s became checkout-relative and a [`FileStat`] records
+/// the checkout it was taken in, so the index encoding changed.
+///
 /// Bumped to `5` when `poly lint` moved its per-engine entries into the
 /// [`StatIndex`] and fmt entries gained a leading tag byte, so entries written
 /// by an older build are neither misread nor left behind.
@@ -144,7 +157,7 @@ pub use stat_index::{
 /// preamble: every pre-existing entry became unreachable in one step, and the
 /// bump reclaims that dead weight on the first run instead of leaving it for a
 /// later `gc`.
-pub const CACHE_FORMAT_VERSION: &str = "5";
+pub const CACHE_FORMAT_VERSION: &str = "6";
 
 /// The running binary's build identity, folded into every result-cache key.
 ///
@@ -231,7 +244,7 @@ pub fn cache_home() -> anyhow::Result<PathBuf> {
 /// substituted for the platform default, the two are indistinguishable paths on
 /// disk. So the origin travels out with the path, to every caller that may
 /// harden the directory it names (see [`permissions`]).
-fn cache_home_with_origin() -> anyhow::Result<(PathBuf, DirOrigin)> {
+pub(crate) fn cache_home_with_origin() -> anyhow::Result<(PathBuf, DirOrigin)> {
     if let Some(dir) = std::env::var_os(CACHE_HOME_ENV) {
         return Ok((PathBuf::from(dir), DirOrigin::UserConfigured));
     }
@@ -275,11 +288,13 @@ pub fn remote_source_key(url: &str) -> String {
     blake3::hash(url.as_bytes()).to_hex()[..32].to_string()
 }
 
-/// A stable, filesystem-safe key for the repository rooted at `anchor`.
+/// A stable, filesystem-safe key for the directory `anchor`.
 ///
 /// The first 16 hex chars of `blake3(canonical(anchor))` — canonicalizing the
-/// root path so the same repository maps to the same cache slot regardless of
-/// the working directory (or symlink) poly was invoked through.
+/// path so the same directory maps to the same cache slot regardless of the
+/// working directory (or symlink) poly was invoked through. The result cache
+/// passes the repository's git common dir ([`repository_identity`]); the
+/// staged snapshot passes the checkout root.
 pub fn repo_key(anchor: &Path) -> String {
     let canonical = dunce::canonicalize(anchor).unwrap_or_else(|_| anchor.to_path_buf());
     let digest = blake3::hash(canonical.to_string_lossy().as_bytes());
@@ -287,8 +302,10 @@ pub fn repo_key(anchor: &Path) -> String {
 }
 
 /// The per-repo cache directory for the repository containing `start`:
-/// `<cache_home>/<repo-key>`. Result-cache entries live under `results/` here
-/// and the hook staged snapshot under `staged/`.
+/// `<cache_home>/<repo-key>`, keyed by the repository's git common dir so every
+/// worktree of one repository resolves to the same directory. Result-cache
+/// entries live under `results/` here; the hook staged snapshot does not (see
+/// [`checkout_cache_dir`]).
 ///
 /// Two best-effort side effects, so callers get a directory that is safe to
 /// write into rather than a bare path:
@@ -296,11 +313,7 @@ pub fn repo_key(anchor: &Path) -> String {
 /// - any legacy in-repo `.polylint/` directory is removed, so an upgrade cleans
 ///   up after the previous layout;
 /// - the directory itself is created owner-only, and an existing one poly owns
-///   is tightened to match ([`ensure_private_dir`]). This is the choke point
-///   every consumer resolves through, including the hook staged snapshot, so
-///   hardening here means a snapshot of the repository's source can never land
-///   in a directory other local users can traverse — even when the result cache
-///   is disabled and never creates its own tree.
+///   is tightened to match ([`ensure_private_dir`]).
 ///
 /// Creation failures are logged and ignored: this resolver has always returned
 /// a path, and the caller that actually writes reports the error with its own
@@ -314,11 +327,16 @@ pub fn repo_cache_dir(start: &Path) -> anyhow::Result<PathBuf> {
 /// answer to "is this poly's to harden?".
 fn ensure_repo_cache_dir(start: &Path) -> anyhow::Result<(PathBuf, DirOrigin)> {
     let (dir, origin) = resolve_repo_cache_dir(start)?;
+    Ok(ensure_slot(dir, origin))
+}
+
+/// Best-effort owner-only creation of a cache slot, plus the cache-home tag.
+pub(crate) fn ensure_slot(dir: PathBuf, origin: DirOrigin) -> (PathBuf, DirOrigin) {
     if let Err(error) = permissions::ensure_private_dir(&dir, origin) {
         tracing::debug!(dir = %dir.display(), "could not pre-create the cache directory: {error}");
     }
     mark_cache_home();
-    Ok((dir, origin))
+    (dir, origin)
 }
 
 /// Write the cache directory tag at the root of poly's cache home, once it
@@ -364,7 +382,7 @@ fn resolve_repo_cache_dir(start: &Path) -> anyhow::Result<(PathBuf, DirOrigin)> 
     let anchor = repo_anchor(start);
     remove_legacy_cache(&anchor);
     let (home, origin) = cache_home_with_origin()?;
-    Ok((home.join(repo_key(&anchor)), origin))
+    Ok((home.join(repo_key(&repository_identity(&anchor))), origin))
 }
 
 /// Best-effort removal of a legacy in-repo `.polylint/` cache directory left by
@@ -589,6 +607,11 @@ pub struct ResultCache {
     enabled: bool,
     present: Arc<PresenceIndex>,
     stat_indexes: Arc<[OnceLock<StatIndex>; 3]>,
+    /// The checkout the run's files live in, when the cache was opened from
+    /// one ([`ResultCache::open_from`]): stat-index records are then keyed by
+    /// checkout-relative path, so another worktree of the repository can reuse
+    /// them. `None` keys by absolute path.
+    checkout: Option<Arc<checkout::Checkout>>,
 }
 
 impl ResultCache {
@@ -643,6 +666,7 @@ impl ResultCache {
             enabled,
             present: Arc::new(PresenceIndex::empty()),
             stat_indexes: Arc::new(std::array::from_fn(|_| OnceLock::new())),
+            checkout: None,
         }
     }
 
@@ -661,7 +685,9 @@ impl ResultCache {
     /// [`open_healed`]: ResultCache::open_healed
     pub fn open_from(start: &Path, enabled: bool) -> anyhow::Result<Self> {
         let (root, origin) = Self::resolve_root(start, enabled)?;
-        Self::open_healed(root, enabled, origin)
+        let mut cache = Self::open_healed(root, enabled, origin)?;
+        cache.checkout = Some(Arc::new(checkout::Checkout::new(&repo_anchor(start))));
+        Ok(cache)
     }
 
     /// Resolve the cache root for `start` and the origin of its location,
@@ -913,6 +939,29 @@ impl ResultCache {
             } else {
                 StatIndex::disabled()
             }
+        })
+    }
+
+    /// The [`StatIndex`] key for `path`: relative to the checkout this cache was
+    /// opened from when `path` lies inside it, so the same file in another
+    /// worktree of the repository finds the same record; absolute otherwise.
+    pub fn path_key(&self, path: &Path) -> PathKey {
+        PathKey::within(path, self.checkout.as_deref())
+    }
+
+    /// `stat` `path` for a [`StatIndex`] record, tagged with the checkout this
+    /// cache was opened from.
+    ///
+    /// Worktrees share records by relative path, and a `stat` taken in one
+    /// checkout must never vouch for a file in another: on a platform without
+    /// inode numbers, two different files could otherwise match on size and
+    /// mtime alone. Another worktree's record is still reused, but only after
+    /// its content digest is checked.
+    pub fn file_stat(&self, path: &Path) -> std::io::Result<FileStat> {
+        let stat = FileStat::of(path)?;
+        Ok(match &self.checkout {
+            Some(checkout) => stat.in_checkout(checkout.id()),
+            None => stat,
         })
     }
 

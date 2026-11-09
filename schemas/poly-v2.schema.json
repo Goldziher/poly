@@ -1638,7 +1638,7 @@
           "default": true
         },
         "dir": {
-          "description": "Override the cache root directory.\n\nWhen absent the cache lives in the per-user cache home (see\n`poly_cache::root_from`): `<platform-cache>/poly/<repo-key>`, keyed by the\nnearest `.git` / `poly.toml` ancestor.",
+          "description": "Override the cache root directory.\n\nWhen absent the cache lives in the per-user cache home (see\n`poly_cache::root_from`): `<platform-cache>/poly/<repo-key>`, keyed by the\ngit common dir of the nearest `.git` ancestor (so every worktree of one\nrepository shares it), else by the nearest `poly.toml` ancestor.",
           "type": ["string", "null"],
           "default": null
         },

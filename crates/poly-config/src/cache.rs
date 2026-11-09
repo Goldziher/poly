@@ -140,7 +140,8 @@ pub struct CacheConfig {
     ///
     /// When absent the cache lives in the per-user cache home (see
     /// `poly_cache::root_from`): `<platform-cache>/poly/<repo-key>`, keyed by the
-    /// nearest `.git` / `poly.toml` ancestor.
+    /// git common dir of the nearest `.git` ancestor (so every worktree of one
+    /// repository shares it), else by the nearest `poly.toml` ancestor.
     pub dir: Option<String>,
     /// Tier-1 result-cache configuration.
     pub results: ResultsCacheConfig,

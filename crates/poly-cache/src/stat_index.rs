@@ -55,7 +55,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const MAGIC: &[u8; 4] = b"PSI2";
+use crate::checkout::Checkout;
+
+const MAGIC: &[u8; 4] = b"PSI3";
 const HEADER_LEN: usize = MAGIC.len();
 const ID_LEN: usize = 16;
 
@@ -73,13 +75,15 @@ fn truncated(hash: &blake3::Hash) -> Id {
     id
 }
 
-/// What `stat` reports about a file, compared whole.
+/// What `stat` reports about a file, compared whole, plus the checkout it was
+/// taken in (see [`FileStat::in_checkout`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FileStat {
     size: u64,
     mtime_ns: i64,
     ctime_ns: i64,
     ino: u64,
+    checkout: u64,
 }
 
 impl FileStat {
@@ -98,6 +102,7 @@ impl FileStat {
                 mtime_ns: metadata.mtime().saturating_mul(1_000_000_000) + metadata.mtime_nsec(),
                 ctime_ns: metadata.ctime().saturating_mul(1_000_000_000) + metadata.ctime_nsec(),
                 ino: metadata.ino(),
+                checkout: 0,
             }
         }
         #[cfg(not(unix))]
@@ -107,8 +112,16 @@ impl FileStat {
                 mtime_ns: metadata.modified().map_or(0, system_time_ns),
                 ctime_ns: 0,
                 ino: 0,
+                checkout: 0,
             }
         }
+    }
+
+    /// This stat tagged with the checkout it was taken in, so a record written
+    /// from one worktree is never vouched for by `stat` in another.
+    #[must_use]
+    pub fn in_checkout(self, checkout: u64) -> Self {
+        Self { checkout, ..self }
     }
 
     /// A stat no real file has: a record carrying it is never vouched for by
@@ -118,6 +131,7 @@ impl FileStat {
         mtime_ns: i64::MIN,
         ctime_ns: i64::MIN,
         ino: u64::MAX,
+        checkout: u64::MAX,
     };
 
     #[cfg(test)]
@@ -127,6 +141,7 @@ impl FileStat {
             mtime_ns,
             ctime_ns,
             ino,
+            checkout: 0,
         }
     }
 
@@ -155,10 +170,26 @@ fn now_ns() -> i64 {
 pub struct PathKey(Id);
 
 impl PathKey {
-    /// Key `path`.
+    /// Key `path` by its absolute form.
     pub fn of(path: &Path) -> Self {
         let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
         Self(truncated(&blake3::hash(absolute.as_os_str().as_encoded_bytes())))
+    }
+
+    /// Key `path` relative to `checkout` when it lies inside it, so the same
+    /// file in two worktrees of one repository is one key; by its absolute form
+    /// otherwise. The two forms are domain-separated and cannot collide.
+    pub(crate) fn within(path: &Path, checkout: Option<&Checkout>) -> Self {
+        let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+        match checkout.and_then(|checkout| checkout.relative(&absolute)) {
+            Some(relative) => {
+                let mut hasher = blake3::Hasher::new();
+                hasher.update(b"checkout-relative\0");
+                hasher.update(relative.as_os_str().as_encoded_bytes());
+                Self(truncated(&hasher.finalize()))
+            }
+            None => Self(truncated(&blake3::hash(absolute.as_os_str().as_encoded_bytes()))),
+        }
     }
 }
 
@@ -397,9 +428,9 @@ fn read_records(file: &Path) -> HashMap<PathKey, Record> {
     let Some(mut rest) = bytes.strip_prefix(MAGIC.as_slice()) else {
         return HashMap::new();
     };
-    // A record with one segment is 104 bytes before its payload, so this sizes the
+    // A record with one segment is 112 bytes before its payload, so this sizes the
     // map once instead of rehashing it through every doubling on a large index.
-    let mut records = HashMap::with_capacity(rest.len() / 104);
+    let mut records = HashMap::with_capacity(rest.len() / 112);
     while !rest.is_empty() {
         let Some((path, record, after)) = decode(rest) else {
             return HashMap::new();
@@ -450,6 +481,7 @@ fn decode(bytes: &[u8]) -> Option<(PathKey, Record, &[u8])> {
         mtime_ns: cursor.u64()? as i64,
         ctime_ns: cursor.u64()? as i64,
         ino: cursor.u64()?,
+        checkout: cursor.u64()?,
     };
     let verdict = Verdict::from_byte(cursor.u8()?)?;
     let replayable = cursor.u8()? != 0;
@@ -482,6 +514,7 @@ fn encode(out: &mut Vec<u8>, path: &PathKey, record: &Record) -> Option<()> {
     out.extend_from_slice(&record.stat.mtime_ns.to_le_bytes());
     out.extend_from_slice(&record.stat.ctime_ns.to_le_bytes());
     out.extend_from_slice(&record.stat.ino.to_le_bytes());
+    out.extend_from_slice(&record.stat.checkout.to_le_bytes());
     out.push(record.verdict.to_byte());
     out.push(u8::from(record.replayable));
     out.extend_from_slice(&u16::try_from(record.segments.len()).ok()?.to_le_bytes());
