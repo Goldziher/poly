@@ -198,13 +198,7 @@ impl<'a> FastPath<'a> {
         if record.digest != ContentDigest::of(&bytes) {
             return None;
         }
-        self.index.put(
-            probe.path,
-            Record {
-                stat: probe.stat,
-                ..record.clone()
-            },
-        );
+        self.index.vouch(probe.path, probe.stat, record.digest);
         Some((record, VouchedBy::Content))
     }
 

@@ -191,8 +191,9 @@ is sourced straight from the git **index blob** — never copied from the worktr
 edit can never leak in regardless of git's stat-cache state. A file is re-materialized only when
 its staged object id changed since the last snapshot, tracked by a path-to-OID manifest, so
 unchanged files are left untouched and cargo / pyrefly / `tsc` incremental caches stay warm. Files
-that left the tree are pruned while tool caches inside the snapshot are preserved. It self-heals
-and is purgeable like any cache (`poly cache clean`).
+that left the tree are pruned while tool caches inside the snapshot are preserved. It self-heals;
+`poly cache clean` clears only the result cache, so to purge a snapshot delete its `staged/`
+directory.
 
 A **sparse-checkout worktree is supported**. An entry omitted from the live checkout (git's
 `skip-worktree` bit, set by `git sparse-checkout` or `git update-index --skip-worktree`) is still

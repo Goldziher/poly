@@ -453,6 +453,33 @@ fn worktrees_of_one_repository_share_the_result_cache_but_not_the_snapshot_slot(
     );
 }
 
+/// The result cache an older poly kept per checkout is reclaimed on the first
+/// open of the shared one; the snapshot beside it stays.
+#[test]
+fn opening_the_shared_cache_reclaims_the_legacy_one_in_the_checkout_slot() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    let checkout_slot = RealCheckoutSlot::of(&repo);
+    let shared = RealCacheSlot::of(&repo);
+    std::fs::create_dir_all(checkout_slot.0.join("results/lint")).unwrap();
+    std::fs::create_dir_all(checkout_slot.0.join("staged")).unwrap();
+    std::fs::write(checkout_slot.0.join("VERSION"), "5").unwrap();
+
+    ResultCache::open_from(&repo, true).expect("open cache");
+
+    assert!(
+        !checkout_slot.0.join("results").exists(),
+        "the legacy result cache is removed"
+    );
+    assert!(!checkout_slot.0.join("VERSION").exists());
+    assert!(checkout_slot.0.join("staged").is_dir(), "the staged snapshot is kept");
+    assert!(
+        shared.path().join("results/lint").is_dir(),
+        "the shared cache is the live one"
+    );
+}
+
 /// A directory outside any repository keys by itself, as before.
 #[test]
 fn a_directory_outside_git_keys_its_result_cache_by_its_own_path() {
@@ -495,6 +522,60 @@ fn stat_index_records_are_keyed_relative_to_the_checkout() {
             .unwrap()
             .in_checkout(main_checkout_id(&main))
     );
+}
+
+/// Each worktree writes its own stat index; a worktree without one yet is
+/// seeded from another's, and maintenance sees every worktree's index.
+#[test]
+fn each_checkout_has_its_own_stat_index_seeded_from_a_sibling() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (repo, linked) = repo_and_linked_worktree(&tmp);
+    let cache_dir = tmp.path().join("cache");
+    let mut main = ResultCache::open(cache_dir.clone(), true).unwrap();
+    main.checkout = Some(Arc::new(checkout::Checkout::new(&repo)));
+    let mut other = ResultCache::open(cache_dir, true).unwrap();
+    other.checkout = Some(Arc::new(checkout::Checkout::new(&linked)));
+    assert_ne!(
+        main.stat_index_path(Namespace::Lint),
+        other.stat_index_path(Namespace::Lint)
+    );
+
+    let file = repo.join("a.py");
+    let record = Record {
+        stat: main.file_stat(&file).unwrap(),
+        scope: PlanKey::builder(Namespace::Lint).finish(),
+        digest: ContentDigest::of(&std::fs::read(&file).unwrap()),
+        verdict: Verdict::Clean,
+        replayable: true,
+        segments: Vec::new(),
+    };
+    main.stat_index(Namespace::Lint).put(main.path_key(&file), record);
+    main.flush_stat_indexes().unwrap();
+
+    let seeded = other
+        .stat_index(Namespace::Lint)
+        .get(&other.path_key(&linked.join("a.py")))
+        .expect("the linked worktree is seeded from the main one");
+    assert!(!seeded.trusts(&other.file_stat(&linked.join("a.py")).unwrap()));
+    assert!(main.stats().unwrap().per_namespace[0].entries >= 1);
+    other.stat_index(Namespace::Lint).vouch(
+        other.path_key(&linked.join("a.py")),
+        other.file_stat(&linked.join("a.py")).unwrap(),
+        seeded.digest,
+    );
+    other.flush_stat_indexes().unwrap();
+    assert!(other.stat_index_path(Namespace::Lint).is_file());
+
+    let reclaimed = ResultCache::open(main.root().to_path_buf(), true)
+        .unwrap()
+        .clean()
+        .unwrap();
+    assert!(reclaimed > 0);
+    assert!(
+        !main.stat_index_path(Namespace::Lint).exists(),
+        "clean reaches every checkout's index"
+    );
+    assert!(!other.stat_index_path(Namespace::Lint).exists());
 }
 
 fn main_checkout_id(cache: &ResultCache) -> u64 {

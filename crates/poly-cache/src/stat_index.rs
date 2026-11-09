@@ -21,6 +21,17 @@
 //!   engine's configuration re-runs only that engine, and a touched-but-identical
 //!   file re-runs none.
 //!
+//! # Worktrees
+//!
+//! Every checkout of a repository (each `git worktree`) has its own index file,
+//! because one record per path cannot serve two checkouts at once: an engine
+//! whose key folds in an absolute path records different segments in each, and
+//! a shared record would make every alternating run a miss. A checkout's first
+//! run is *seeded* read-only from the most recently written sibling index, keyed
+//! by checkout-relative path, so byte-identical files reuse the other
+//! checkout's segments. A seeded record is never trusted by `stat` — a
+//! [`FileStat`] names the checkout it was taken in — only by its digest.
+//!
 //! The engine key folds in the cache format, the build identity, the engine's id,
 //! version and arguments, and its declared cross-file inputs, so a config edit,
 //! an engine upgrade or a changed sibling `__init__.py` is a miss, never a stale
@@ -42,7 +53,8 @@
 //!
 //! # Storage
 //!
-//! One file per namespace, `<root>/index/<namespace>.idx`: a 4-byte magic and
+//! One file per namespace and checkout, `<root>/index/<checkout>/<namespace>.idx`
+//! (`<root>/index/<namespace>.idx` for a cache opened without one): a 4-byte magic and
 //! length-prefixed records sorted by path key. A clean file costs ~100 bytes plus
 //! 20 per engine, rather than one filesystem entry per engine. Reads load the
 //! whole file once; writes merge this run's records into the loaded set (or, if
@@ -57,7 +69,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::checkout::Checkout;
 
-const MAGIC: &[u8; 4] = b"PSI3";
+const MAGIC: &[u8; 4] = b"PSI4";
+
 const HEADER_LEN: usize = MAGIC.len();
 const ID_LEN: usize = 16;
 
@@ -317,7 +330,7 @@ pub struct Record {
 }
 
 impl Record {
-    /// Whether the recorded `stat` vouches for a file that now looks like `stat`.
+    /// Whether a recorded `stat` vouches for a file that now looks like `stat`.
     pub fn trusts(&self, stat: &FileStat) -> bool {
         self.stat == *stat
     }
@@ -333,8 +346,18 @@ impl Record {
 pub struct StatIndex {
     file: Option<PathBuf>,
     loaded: HashMap<PathKey, Record>,
+    /// Another checkout's records, consulted only where this one has none.
+    seed: HashMap<PathKey, Record>,
     seen: Option<FileFingerprint>,
     pending: Mutex<HashMap<PathKey, Record>>,
+    vouched: Mutex<HashMap<PathKey, Vouch>>,
+}
+
+/// A content check that vouched for an existing record under a new `stat`.
+#[derive(Debug, Clone, Copy)]
+struct Vouch {
+    stat: FileStat,
+    digest: ContentDigest,
 }
 
 /// Enough of a file's metadata to tell whether another process replaced it.
@@ -358,27 +381,38 @@ impl StatIndex {
         Self {
             file: None,
             loaded: HashMap::new(),
+            seed: HashMap::new(),
             seen: None,
             pending: Mutex::new(HashMap::new()),
+            vouched: Mutex::new(HashMap::new()),
         }
     }
 
     /// Load the index stored at `file`; a missing, truncated or foreign file is
     /// an empty index rather than an error.
     pub fn load(file: PathBuf) -> Self {
+        Self::load_seeded(file, None)
+    }
+
+    /// [`load`](Self::load), with `seed` — another checkout's index of the same
+    /// repository — answering for paths `file` has no record of yet.
+    pub fn load_seeded(file: PathBuf, seed: Option<&Path>) -> Self {
         let seen = fingerprint(&file);
         let loaded = read_records(&file);
         Self {
             file: Some(file),
             loaded,
+            seed: seed.map(read_records).unwrap_or_default(),
             seen,
             pending: Mutex::new(HashMap::new()),
+            vouched: Mutex::new(HashMap::new()),
         }
     }
 
-    /// The record loaded for `path`, if any.
+    /// The record loaded for `path`, if any: this checkout's own, else the
+    /// seed's.
     pub fn get(&self, path: &PathKey) -> Option<&Record> {
-        self.loaded.get(path)
+        self.loaded.get(path).or_else(|| self.seed.get(path))
     }
 
     /// Remember `record` for `path`, observed with a `stat` taken **before** the
@@ -402,21 +436,48 @@ impl StatIndex {
             .insert(path, record);
     }
 
+    /// Re-record the loaded record for `path` (this checkout's own, or the
+    /// seed's) under a new `stat`, after a content check found its bytes still
+    /// digest to `digest`.
+    ///
+    /// Cheaper than [`put`](Self::put) with a copy of the record: nothing but the
+    /// `stat` is held until [`flush`](Self::flush), which writes it only onto a
+    /// record that still has that digest.
+    pub fn vouch(&self, path: PathKey, stat: FileStat, digest: ContentDigest) {
+        self.vouch_at(now_ns(), path, stat, digest);
+    }
+
+    pub(crate) fn vouch_at(&self, now_ns: i64, path: PathKey, stat: FileStat, digest: ContentDigest) {
+        if self.file.is_none() {
+            return;
+        }
+        let stat = if stat.is_racy(now_ns) {
+            FileStat::UNTRUSTED
+        } else {
+            stat
+        };
+        self.vouched
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(path, Vouch { stat, digest });
+    }
+
     /// Merge this run's records into the file on disk and replace it atomically.
-    /// Does nothing when no record was added.
+    /// Does nothing when no record was added or vouched for.
     pub fn flush(&self) -> anyhow::Result<()> {
         let Some(file) = &self.file else {
             return Ok(());
         };
         let pending = std::mem::take(&mut *self.pending.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
-        if pending.is_empty() {
+        let vouched = std::mem::take(&mut *self.vouched.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
+        if pending.is_empty() && vouched.is_empty() {
             return Ok(());
         }
         if fingerprint(file) == self.seen {
-            write_records(file, [&self.loaded, &pending].into_iter().flatten(), &pending)
+            write_records(file, &self.loaded, &self.seed, &pending, &vouched)
         } else {
             let on_disk = read_records(file);
-            write_records(file, [&on_disk, &pending].into_iter().flatten(), &pending)
+            write_records(file, &on_disk, &self.seed, &pending, &vouched)
         }
     }
 }
@@ -506,15 +567,16 @@ fn decode(bytes: &[u8]) -> Option<(PathKey, Record, &[u8])> {
     Some((path, record, cursor.0))
 }
 
-fn encode(out: &mut Vec<u8>, path: &PathKey, record: &Record) -> Option<()> {
+/// Encode `record` for `path`, under `stat` rather than its own.
+fn encode(out: &mut Vec<u8>, path: &PathKey, record: &Record, stat: &FileStat) -> Option<()> {
     out.extend_from_slice(&path.0);
     out.extend_from_slice(&record.scope.0);
     out.extend_from_slice(&record.digest.0);
-    out.extend_from_slice(&record.stat.size.to_le_bytes());
-    out.extend_from_slice(&record.stat.mtime_ns.to_le_bytes());
-    out.extend_from_slice(&record.stat.ctime_ns.to_le_bytes());
-    out.extend_from_slice(&record.stat.ino.to_le_bytes());
-    out.extend_from_slice(&record.stat.checkout.to_le_bytes());
+    out.extend_from_slice(&stat.size.to_le_bytes());
+    out.extend_from_slice(&stat.mtime_ns.to_le_bytes());
+    out.extend_from_slice(&stat.ctime_ns.to_le_bytes());
+    out.extend_from_slice(&stat.ino.to_le_bytes());
+    out.extend_from_slice(&stat.checkout.to_le_bytes());
     out.push(record.verdict.to_byte());
     out.push(u8::from(record.replayable));
     out.extend_from_slice(&u16::try_from(record.segments.len()).ok()?.to_le_bytes());
@@ -526,22 +588,38 @@ fn encode(out: &mut Vec<u8>, path: &PathKey, record: &Record) -> Option<()> {
     Some(())
 }
 
-/// Write `records` sorted by path key, so the file's bytes depend only on its
-/// contents. `overrides` wins over a same-path entry in `records`, which may
-/// list a path twice (once stale, once from this run).
-fn write_records<'a>(
+/// Write `base` with `pending` replacing same-path entries and each `vouched`
+/// stat applied to the record it vouched for — from `base`, else from `seed` —
+/// sorted by path key so the file's bytes depend only on its contents.
+fn write_records(
     file: &Path,
-    records: impl Iterator<Item = (&'a PathKey, &'a Record)>,
-    overrides: &HashMap<PathKey, Record>,
+    base: &HashMap<PathKey, Record>,
+    seed: &HashMap<PathKey, Record>,
+    pending: &HashMap<PathKey, Record>,
+    vouched: &HashMap<PathKey, Vouch>,
 ) -> anyhow::Result<()> {
-    let mut ordered: Vec<(&PathKey, &Record)> = records
-        .filter(|(path, record)| overrides.get(path).is_none_or(|fresh| std::ptr::eq(fresh, *record)))
+    let from_seed = vouched
+        .iter()
+        .filter(|(path, _)| !pending.contains_key(path) && !base.contains_key(path))
+        .filter_map(|(path, vouch)| {
+            seed.get_key_value(path)
+                .filter(|(_, record)| record.digest == vouch.digest)
+        });
+    let mut ordered: Vec<(&PathKey, &Record)> = base
+        .iter()
+        .filter(|(path, _)| !pending.contains_key(path))
+        .chain(pending.iter())
+        .chain(from_seed)
         .collect();
     ordered.sort_unstable_by_key(|(path, _)| path.0);
     let mut out = Vec::with_capacity(HEADER_LEN + ordered.len() * 200);
     out.extend_from_slice(MAGIC);
     for (path, record) in ordered {
-        if encode(&mut out, path, record).is_none() {
+        let stat = vouched
+            .get(path)
+            .filter(|vouch| vouch.digest == record.digest)
+            .map_or(&record.stat, |vouch| &vouch.stat);
+        if encode(&mut out, path, record, stat).is_none() {
             tracing::debug!("a record exceeded the index encoding limits and was dropped");
         }
     }

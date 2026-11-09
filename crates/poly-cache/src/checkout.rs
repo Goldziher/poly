@@ -72,6 +72,35 @@ pub fn checkout_cache_dir(start: &Path) -> anyhow::Result<PathBuf> {
     Ok(crate::ensure_slot(home.join(crate::repo_key(&anchor)), origin).0)
 }
 
+/// What a result cache keeps at its root. Before the result cache was shared
+/// by worktrees, it lived in the per-checkout slot beside the staged snapshot.
+const LEGACY_RESULT_ENTRIES: [&str; 5] = ["results", "index", "VERSION", "LAST_SWEEP", ".lock"];
+
+/// Remove the result cache an older poly kept in `checkout_slot`, now that the
+/// result cache lives at `shared_root`.
+///
+/// Best-effort migration hygiene, like the legacy in-repo `.polylint/`: only the
+/// result-cache entries go, never the staged snapshot beside them, and nothing
+/// happens when the two slots are one directory (a checkout outside git).
+pub(crate) fn remove_legacy_results(checkout_slot: &Path, shared_root: &Path) {
+    if checkout_slot == shared_root || !checkout_slot.join("results").is_dir() {
+        return;
+    }
+    for entry in LEGACY_RESULT_ENTRIES {
+        let path = checkout_slot.join(entry);
+        let removed = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        if let Err(error) = removed
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::debug!(path = %path.display(), "could not remove a legacy result cache: {error}");
+        }
+    }
+}
+
 /// The checkout a [`ResultCache`](crate::ResultCache) opened for, so per-path
 /// records can be keyed relative to it and told apart from another worktree's.
 #[derive(Debug)]
@@ -108,6 +137,52 @@ impl Checkout {
     pub(crate) fn id(&self) -> u64 {
         self.id
     }
+
+    /// The directory under `index/` holding this checkout's stat indexes.
+    pub(crate) fn index_dir_name(&self) -> String {
+        format!("{:016x}", self.id)
+    }
+}
+
+/// The file name of `namespace`'s stat index.
+pub(crate) fn index_file_name(namespace: crate::Namespace) -> String {
+    format!("{}.idx", namespace.as_dir())
+}
+
+/// The most recently written stat index of `namespace` from another checkout
+/// of the repository, to seed a checkout whose own index is `own`
+/// (`<root>/index/<checkout>/<namespace>.idx`).
+pub(crate) fn newest_sibling_index(own: &Path, namespace: crate::Namespace) -> Option<PathBuf> {
+    let own_dir = own.parent()?;
+    let index_root = own_dir.parent()?;
+    let name = index_file_name(namespace);
+    std::fs::read_dir(index_root)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|dir| dir != own_dir)
+        .map(|dir| dir.join(&name))
+        .filter_map(|file| Some((std::fs::metadata(&file).ok()?.modified().ok()?, file)))
+        .max_by_key(|(modified, _)| *modified)
+        .map(|(_, file)| file)
+}
+
+/// Every stat index of `namespace` under `<root>/index`: the top-level one a
+/// cache without a checkout writes, and one per checkout.
+pub(crate) fn index_files(root: &Path, namespace: crate::Namespace) -> Vec<PathBuf> {
+    let index_root = root.join("index");
+    let name = index_file_name(namespace);
+    let per_checkout = std::fs::read_dir(&index_root)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .map(|dir| dir.join(&name));
+    std::iter::once(index_root.join(&name))
+        .chain(per_checkout)
+        .filter(|file| file.is_file())
+        .collect()
 }
 
 #[cfg(test)]
@@ -215,6 +290,35 @@ mod tests {
         std::os::unix::fs::symlink(&repo, &link).unwrap();
 
         assert_eq!(git_common_dir(&link), git_common_dir(&repo));
+    }
+
+    #[test]
+    fn a_legacy_result_cache_in_the_checkout_slot_is_removed_but_the_snapshot_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let slot = tmp.path().join("checkout-slot");
+        for dir in ["results/lint", "index", "staged/src", "staged-sparse"] {
+            std::fs::create_dir_all(slot.join(dir)).unwrap();
+        }
+        std::fs::write(slot.join("VERSION"), "5").unwrap();
+        std::fs::write(slot.join("LAST_SWEEP"), "").unwrap();
+
+        remove_legacy_results(&slot, &tmp.path().join("shared"));
+
+        for gone in ["results", "index", "VERSION", "LAST_SWEEP"] {
+            assert!(!slot.join(gone).exists(), "{gone} must be removed");
+        }
+        assert!(slot.join("staged/src").is_dir(), "the staged snapshot is never touched");
+        assert!(slot.join("staged-sparse").is_dir());
+    }
+
+    #[test]
+    fn a_slot_that_is_the_shared_root_is_left_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("results")).unwrap();
+
+        remove_legacy_results(tmp.path(), tmp.path());
+
+        assert!(tmp.path().join("results").is_dir());
     }
 
     #[test]

@@ -19,7 +19,9 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   the checkout path, so every `git worktree` of a repository shares one cache and a new worktree's first run reuses
   results for byte-identical files instead of re-running every engine. The common dir is read from `.git` /
   `commondir` without spawning git; a directory outside git keys by its own path as before. The hook staged snapshot
-  stays per worktree. Cache format 6: existing caches start cold once. (#159)
+  stays per worktree, and so does the stat index behind the warm-run fast path: a new worktree's index is seeded from
+  another's, so runs alternating between worktrees never evict each other. The result cache an older poly kept per
+  checkout is removed on first use. Cache format 6: existing caches start cold once. (#159)
 - **Dependencies.** alef 0.129.0 for the component build.
 - **Damaged components name the failed check.** A cached component that fails verification is reported with the
   check it failed (digest, size, manifest or signature) instead of a generic verification failure.

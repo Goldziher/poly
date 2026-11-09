@@ -33,8 +33,9 @@
 //!                          `poly lint`, which records per-engine output in index/)
 //!     fmt/<hex-key>      — a tag byte, then the formatted text (tag 0: unchanged, no text)
 //!     hook/<hex-key>     — JSON-encoded hook outcome
-//!   index/
-//!     lint.idx, fmt.idx  — stat-validated per-file records; see [`StatIndex`]
+//!   index/<checkout>/
+//!     lint.idx, fmt.idx  — stat-validated per-file records, one set per worktree;
+//!                          see [`StatIndex`]
 //!
 //! <platform-cache>/poly/<checkout-key>/ — keyed by the checkout root (one per worktree)
 //!   staged/, staged-sparse/ — the hook staged snapshot (poly-hooks)
@@ -685,8 +686,12 @@ impl ResultCache {
     /// [`open_healed`]: ResultCache::open_healed
     pub fn open_from(start: &Path, enabled: bool) -> anyhow::Result<Self> {
         let (root, origin) = Self::resolve_root(start, enabled)?;
+        let anchor = repo_anchor(start);
+        if enabled {
+            checkout::remove_legacy_results(&cache_home_with_origin()?.0.join(repo_key(&anchor)), &root);
+        }
         let mut cache = Self::open_healed(root, enabled, origin)?;
-        cache.checkout = Some(Arc::new(checkout::Checkout::new(&repo_anchor(start))));
+        cache.checkout = Some(Arc::new(checkout::Checkout::new(&anchor)));
         Ok(cache)
     }
 
@@ -926,8 +931,14 @@ impl ResultCache {
     }
 
     /// Where the stat-validated verdict index for `namespace` lives.
+    /// One per checkout; a cache opened without one keeps the top-level file.
     pub(crate) fn stat_index_path(&self, namespace: Namespace) -> PathBuf {
-        self.root.join("index").join(format!("{}.idx", namespace.as_dir()))
+        let index = self.root.join("index");
+        let index = match &self.checkout {
+            Some(checkout) => index.join(checkout.index_dir_name()),
+            None => index,
+        };
+        index.join(checkout::index_file_name(namespace))
     }
 
     /// The stat-validated verdict index for `namespace`, loaded on first use.
@@ -935,28 +946,27 @@ impl ResultCache {
     pub fn stat_index(&self, namespace: Namespace) -> &StatIndex {
         self.stat_indexes[namespace.slot()].get_or_init(|| {
             if self.enabled {
-                StatIndex::load(self.stat_index_path(namespace))
+                let own = self.stat_index_path(namespace);
+                let seed = self
+                    .checkout
+                    .as_ref()
+                    .and_then(|_| checkout::newest_sibling_index(&own, namespace));
+                StatIndex::load_seeded(own, seed.as_deref())
             } else {
                 StatIndex::disabled()
             }
         })
     }
 
-    /// The [`StatIndex`] key for `path`: relative to the checkout this cache was
-    /// opened from when `path` lies inside it, so the same file in another
-    /// worktree of the repository finds the same record; absolute otherwise.
+    /// The [`StatIndex`] key for `path`: checkout-relative inside the checkout this
+    /// cache was opened from, so another worktree finds it; absolute otherwise.
     pub fn path_key(&self, path: &Path) -> PathKey {
         PathKey::within(path, self.checkout.as_deref())
     }
 
-    /// `stat` `path` for a [`StatIndex`] record, tagged with the checkout this
-    /// cache was opened from.
-    ///
-    /// Worktrees share records by relative path, and a `stat` taken in one
-    /// checkout must never vouch for a file in another: on a platform without
-    /// inode numbers, two different files could otherwise match on size and
-    /// mtime alone. Another worktree's record is still reused, but only after
-    /// its content digest is checked.
+    /// `stat` `path` for a [`StatIndex`] record, tagged with this cache's checkout
+    /// so a seeded record from another worktree is reused only after its digest
+    /// is checked, never on size and mtime alone (no inode numbers on Windows).
     pub fn file_stat(&self, path: &Path) -> std::io::Result<FileStat> {
         let stat = FileStat::of(path)?;
         Ok(match &self.checkout {
