@@ -20,13 +20,14 @@
 //! linter that found nothing.
 
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use poly_catalog::{Asset, Recipe, Release, ReleaseKind, Tool};
 use poly_config::{InstallPolicy, ToolConfig};
 
-use super::install;
 use super::resolve::cache;
 use super::resolve::{self, Network, Request, Resolver, Scope};
+use super::{install, progress};
 
 /// How to start the tool: a program and the arguments that precede its own.
 #[derive(Debug, Clone)]
@@ -367,9 +368,13 @@ fn provision(tool: &Tool, config: &ToolConfig, pin: &Pinned) -> Result<PathBuf, 
             pin.version
         ));
     }
+    progress::downloading(&tool.name, &pin.version, &pin.asset.url);
+    let started = Instant::now();
     install::ensure(&path, &pin.asset, pin.kind)
-        .map(|()| path)
-        .map_err(|error| format!("installing release {} failed: {error:#}", pin.version))
+        .map_err(|error| format!("installing release {} failed: {error:#}", pin.version))?;
+    let bytes = std::fs::metadata(&path).ok().map(|meta| meta.len());
+    progress::installed(&tool.name, &pin.version, bytes, started.elapsed());
+    Ok(path)
 }
 
 /// The message for a `version` pin poly cannot honour. A pin that falls back to

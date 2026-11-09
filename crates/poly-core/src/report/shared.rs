@@ -82,7 +82,13 @@ impl Verbosity {
 /// Render the dim per-file debug block (engine version, cache hit/miss, timing).
 pub(super) fn render_debug_block(out: &mut String, debug: &RunDebug) {
     for e in &debug.engines {
-        let status = if e.cache_hit { "cache hit" } else { "ran" };
+        let status = if e.cache_hit {
+            "cache hit"
+        } else if e.batched {
+            "batched"
+        } else {
+            "ran"
+        };
         let line = format!(
             "[debug] {} v{}  {}  {:.2}ms",
             e.engine, e.version, status, e.duration_ms

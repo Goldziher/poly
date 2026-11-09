@@ -58,10 +58,19 @@ pub fn init_logging() {
 /// Because the subscriber is first-call-wins, callers that honor `--debug` must
 /// invoke this **after** argument parsing — see the binary entry points.
 pub fn init_logging_with(debug: bool) {
+    init_logging_at(debug, false);
+}
+
+/// [`init_logging_with`], also honoring `--quiet`: the poly crates drop to
+/// warn-only, so info notices such as a recipe tool's download and progress
+/// notes are not printed. Warnings and errors still are.
+pub fn init_logging_at(debug: bool, quiet: bool) {
     use tracing_subscriber::{EnvFilter, fmt};
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         let directives = if debug {
             "warn,poly_core=debug,poly_hooks=debug,poly_cache=debug,poly_cli=debug"
+        } else if quiet {
+            "warn"
         } else {
             "warn,poly_core=info,poly_hooks=info,poly_cache=info,poly_cli=info"
         };
@@ -303,7 +312,7 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     let force_workspace = args.workspace == WorkspaceMode::Always;
     let common = args.common;
     let flags = global();
-    init_logging_with(flags.debug);
+    init_logging_at(flags.debug, flags.quiet);
     apply_color();
     let verbosity = Verbosity::from_flags(flags.quiet, flags.verbose, flags.debug);
     let (paths, config, mut opts) = match prepare(&common) {
@@ -567,7 +576,7 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     }
     let common = &args.common;
     let flags = global();
-    init_logging_with(flags.debug);
+    init_logging_at(flags.debug, flags.quiet);
     apply_color();
     let verbosity = Verbosity::from_flags(flags.quiet, flags.verbose, flags.debug);
     let (paths, config, opts) = match prepare(common) {

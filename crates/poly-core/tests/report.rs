@@ -419,12 +419,14 @@ fn format_json_run_reports_a_serialization_failure_instead_of_a_clean_document()
     assert_render_failed(report::report_format_json_run(&run), "json");
 }
 
-/// `--debug` pretty output: the dim `[debug] <engine> v<ver>  ran|cache hit
+/// `--debug` pretty output: the dim `[debug] <engine> v<ver>  ran|cache hit|batched
 /// <ms>` block must render after the diagnostic lines for each file.
 ///
 /// Two engine entries are used:
 ///   - `ruff v0.11.0` with `cache_hit = false` → "ran"
 ///   - `typos v1.32.0` with `cache_hit = true` → "cache hit"
+///   - `golangci-lint v2.6.1` with `batched = true` → "batched": a batched
+///     answer computed this run is not a cache hit (true under `--no-cache`)
 ///
 /// `duration_ms` values are fixed constants so the snapshot is deterministic.
 /// The result also has one diagnostic (to verify diagnostics and the debug
@@ -464,12 +466,21 @@ fn lint_pretty_debug_renders_engine_timing_block() {
                     version: "0.11.0".to_string(),
                     duration_ms: 1.00_f64,
                     cache_hit: false,
+                    batched: false,
                 },
                 EngineDebug {
                     engine: "typos".to_string(),
                     version: "1.32.0".to_string(),
                     duration_ms: 0.00_f64,
                     cache_hit: true,
+                    batched: false,
+                },
+                EngineDebug {
+                    engine: "golangci-lint".to_string(),
+                    version: "2.6.1".to_string(),
+                    duration_ms: 0.00_f64,
+                    cache_hit: false,
+                    batched: true,
                 },
             ],
         }),
@@ -494,6 +505,10 @@ fn lint_pretty_debug_renders_engine_timing_block() {
     assert!(
         text.contains("cache hit"),
         "--debug must render 'cache hit' for cache_hit=true; got:\n{text}"
+    );
+    assert!(
+        text.contains("[debug] golangci-lint v2.6.1  batched"),
+        "--debug must label a batched answer 'batched', not 'cache hit'; got:\n{text}"
     );
 
     insta::assert_snapshot!("lint_pretty_debug", text);
