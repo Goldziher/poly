@@ -9,6 +9,7 @@ use poly_core::{Config, LintResult, RunOptions, Severity, Verbosity, report};
 
 use crate::config_sources::RemoteExtendsResolver;
 
+pub mod auto_lock;
 pub mod cache_cmd;
 pub mod cli;
 pub mod commit;

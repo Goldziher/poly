@@ -339,6 +339,14 @@ symbolic ref to its latest object ID and every `latest` tool to its newest relea
 `poly.lock` replaces `poly-config.lock`, `poly-hooks.lock`, `poly config update` and
 `poly hooks update`; commands read only `poly.lock`.
 
+`poly hooks install` does the plain run itself when `poly.lock` is missing an entry the config
+declares, the way `cargo build` writes `Cargo.lock`: it resolves only what is missing, keeps every
+pin already recorded, and prints one line per entry it adds. Pass `--locked` (or set
+`POLY_LOCKED=1`) to forbid that and fail on a missing entry instead, as CI should. `poly hooks run`
+and the installed git hooks never write `poly.lock`; a missing entry fails them with a pointer to
+`poly lock`. `poly components install` is unaffected: components are pinned by the lock compiled
+into the binary, not by `poly.lock`.
+
 ## `poly config` — what did poly actually parse?
 
 ```text
@@ -419,7 +427,7 @@ poly --config /path/to/poly.toml mcp
 | --- | --- |
 | `poly commit` | `--exclude REGEX[->MESSAGE]` (reject matching messages; `->` separates the custom error text, so `:` stays part of the regex), `--cleanup FIND->REPLACE` (both repeatable) |
 | `poly hooks run [STAGE]` | `--all-files` (the whole tracked tree, not the staged files), `--message-file <PATH>` (required to run `commit-msg` / `prepare-commit-msg` directly), `-j <N>`, `--no-cache`, `--no-sccache` (and the global `-v`, `--config`) |
-| `poly hooks install` | `--hook-type <TYPE>` (repeatable; default: the stages `poly.toml` configures), `--overwrite` (discard an existing hook instead of keeping it as `<hook>.legacy`), `--replace-lefthook` |
+| `poly hooks install` | `--hook-type <TYPE>` (repeatable; default: the stages `poly.toml` configures), `--overwrite` (discard an existing hook instead of keeping it as `<hook>.legacy`), `--replace-lefthook`, `--locked` (never write `poly.lock`; fail on a missing entry, also `POLY_LOCKED=1`) |
 | `poly hooks uninstall` | `--hook-type <TYPE>`; restores a kept `<hook>.legacy` |
 | `poly cache gc` | `--max-age <DAYS>`, `--max-size <SIZE>` (`500M`, `2G`) |
 | `poly cache …` | `--cache-dir <DIR>` operates on another cache directory; `--format pretty\|json\|toon` |

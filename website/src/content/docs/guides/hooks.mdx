@@ -427,7 +427,8 @@ isolation. For Rust compile times, enable `[cache.sccache]` to content-cache `ru
 
 Hooks can also come from local or Git **producer catalogs**. Git refs are resolved into
 `poly.lock`; normal runs stay on the locked commit, and `poly lock --upgrade` refreshes
-configured branches or tags.
+configured branches or tags. `poly hooks install` locks a newly declared source itself, keeping
+every existing pin; `poly hooks install --locked` (or `POLY_LOCKED=1`) fails on it instead.
 
 ```toml title="poly.toml — the consumer"
 [[hooks.sources]]
@@ -442,7 +443,7 @@ path = "../ai-rulez"
 hooks = ["ai-rulez-validate"]
 ```
 
-Exactly one of `git` or `path` is required. Git sources require a revision and a committed lock;
+Exactly one of `git` or `path` is required. Git sources require a revision and a lock entry;
 local sources accept relative, parent-relative or absolute paths, remain unlocked, and reload on
 every run. The `hooks` list explicitly selects producer hook IDs, so new producer hooks never
 become active without a consumer configuration change.
@@ -499,8 +500,9 @@ path sources bypass the global cache.
 <Aside type="danger" title="Producer catalogs are trusted code">
     `poly hooks install` validates every selected hook path before installing git shims. Treat
     producer catalogs, and their checks and commands, as trusted code: they execute with your user
-    permissions. Normal runs never resolve git refs or modify the lock — review changes and run
-    `poly lock` explicitly.
+    permissions. Hook runs never resolve git refs or modify the lock; only `poly lock` and
+    `poly hooks install` (for entries the lock is missing) write it — review `poly.lock` changes
+    before committing them.
 </Aside>
 
 ## Skipping hooks

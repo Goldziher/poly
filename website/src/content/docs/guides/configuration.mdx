@@ -579,8 +579,8 @@ inheritance, and it applies to `exclude` only — rule selections, `[engines.ast
 every other array still replace.
 
 A `git` base pinned to a full commit OID needs no lock; a branch or tag ref requires running
-`poly lock` first, which resolves it into `poly.lock` and prints the `[hooks]` /
-`[tools]` the base introduces. `extends` is forbidden in `poly.local.toml`.
+`poly lock` first (or `poly hooks install`, which locks missing entries itself), which resolves it
+into `poly.lock` and prints the `[hooks]` / `[tools]` the base introduces. `extends` is forbidden in `poly.local.toml`.
 
 <Aside type="danger" title="A remote base is a dependency">
     Extending a remote base means trusting that repository to run code on your machine. Treat it
