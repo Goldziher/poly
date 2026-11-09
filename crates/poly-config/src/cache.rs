@@ -39,10 +39,11 @@ pub enum HookCacheMode {
     Off,
     /// Cache hook results only when the hook declares its inputs (default).
     ///
-    /// Builtins (`lint`/`fmt`) are always cached by matched files
-    /// because their footprint equals their input set.  An inline command is
-    /// cached only when it carries a `cache = { inputs = [...] }` declaration;
-    /// otherwise it always reruns.
+    /// An inline command is cached only when it carries a
+    /// `cache = { inputs = [...] }` declaration; otherwise it always reruns.
+    /// The `lint`/`fmt` builtins are never hook-cached in any mode: their verdict
+    /// depends on configuration outside the matched files, and `poly lint` /
+    /// `poly fmt` keep their own per-file cache, which keys it.
     #[default]
     Safe,
     /// Cache based on matched files only, regardless of declared inputs.
@@ -140,7 +141,8 @@ pub struct CacheConfig {
     ///
     /// When absent the cache lives in the per-user cache home (see
     /// `poly_cache::root_from`): `<platform-cache>/poly/<repo-key>`, keyed by the
-    /// nearest `.git` / `poly.toml` ancestor.
+    /// git common dir of the nearest `.git` ancestor (so every worktree of one
+    /// repository shares it), else by the nearest `poly.toml` ancestor.
     pub dir: Option<String>,
     /// Tier-1 result-cache configuration.
     pub results: ResultsCacheConfig,

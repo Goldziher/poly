@@ -1,21 +1,11 @@
-//! Result-cache eligibility: map a builtin or inline job onto its tier-1
-//! [`HookCache`] policy, given the global `[cache.results] hooks` mode.
+//! Result-cache eligibility: map an inline job onto its tier-1 [`HookCache`]
+//! policy, given the global `[cache.results] hooks` mode. The `lint` / `fmt`
+//! builtins are never hook-cached (see `append_scoped_tool`).
 
 use anyhow::{Context, Result};
 use poly_config::{HookCacheMode, Job};
 use poly_hooks::filter::FilePattern;
 use poly_hooks::model::HookCache;
-
-/// The result-cache policy for a builtin (`lint` / `fmt`).
-///
-/// Builtins are deterministic over their matched inputs, so they are cached by
-/// matched files in every mode except `Off`.
-pub(super) fn builtin_cache(mode: &HookCacheMode) -> HookCache {
-    match mode {
-        HookCacheMode::Off => HookCache::Disabled,
-        HookCacheMode::Safe | HookCacheMode::Aggressive => HookCache::MatchedFiles,
-    }
-}
 
 /// The result-cache policy for an inline job, resolving the job's `cache.mode`
 /// override (else the global `cache_mode`) against its declared `cache.inputs`:
@@ -114,18 +104,18 @@ mod tests {
             .cache
     }
 
+    /// `poly lint` / `poly fmt` read configuration the matched files do not
+    /// carry, so a matched-files hook key would replay a pass after `poly.toml`
+    /// (or a tool config) changed, and from another worktree sharing the cache.
     #[test]
-    fn builtin_lint_caches_matched_files_in_safe_mode() {
-        let hooks = hooks_from("[hooks.builtin]\nlint = true\n");
-        let cache = cache_of(&hooks, HookStage::PreCommit, "lint", &HookCacheMode::Safe);
-        assert!(matches!(cache, HookCache::MatchedFiles));
-    }
-
-    #[test]
-    fn builtin_fmt_caches_matched_files_in_safe_mode() {
-        let hooks = hooks_from("[hooks.builtin]\nfmt = true\n");
-        let cache = cache_of(&hooks, HookStage::PreCommit, "fmt", &HookCacheMode::Safe);
-        assert!(matches!(cache, HookCache::MatchedFiles));
+    fn builtin_lint_and_fmt_are_never_hook_cached() {
+        let hooks = hooks_from("[hooks.builtin]\nlint = true\nfmt = true\n");
+        for mode in [HookCacheMode::Safe, HookCacheMode::Aggressive] {
+            for id in ["lint", "fmt"] {
+                let cache = cache_of(&hooks, HookStage::PreCommit, id, &mode);
+                assert!(matches!(cache, HookCache::Disabled), "{id} under {mode:?}");
+            }
+        }
     }
 
     #[test]

@@ -185,13 +185,15 @@ A job that needs the untracked `node_modules` cannot find it in the snapshot. `p
 `isolate = false`.
 
 The snapshot is a persistent cache in the per-user cache directory
-(`<platform-cache>/poly/<repo-key>/staged`, outside the repo), refreshed in place each run. Content
+(`<platform-cache>/poly/<checkout-key>/staged`, outside the repo and one per worktree, unlike the
+shared result cache), refreshed in place each run. Content
 is sourced straight from the git **index blob** — never copied from the worktree — so an unstaged
 edit can never leak in regardless of git's stat-cache state. A file is re-materialized only when
 its staged object id changed since the last snapshot, tracked by a path-to-OID manifest, so
 unchanged files are left untouched and cargo / pyrefly / `tsc` incremental caches stay warm. Files
-that left the tree are pruned while tool caches inside the snapshot are preserved. It self-heals
-and is purgeable like any cache (`poly cache clean`).
+that left the tree are pruned while tool caches inside the snapshot are preserved. It self-heals;
+`poly cache clean` clears only the result cache, so to purge a snapshot delete its `staged/`
+directory.
 
 A **sparse-checkout worktree is supported**. An entry omitted from the live checkout (git's
 `skip-worktree` bit, set by `git sparse-checkout` or `git update-index --skip-worktree`) is still
@@ -409,6 +411,10 @@ Hook results are cached (`[cache.results] hooks = "safe"` by default): a hook is
 entirely** when its declared inputs are unchanged since the last passing run. The `cargo` group is
 keyed on the Rust source and manifest set out of the box, so a commit touching no Rust skips
 `clippy` / `sort` / `machete` / `deny`. Opt out with `cargo = { cache = false }`.
+
+The `lint` and `fmt` builtins are not hook-cached: their verdict depends on configuration the
+matched files do not carry (`poly.toml`, tool configs, rule directories), so they always run, and
+`poly lint` / `poly fmt` answer unchanged files from their own per-file cache.
 
 Give a custom whole-workspace job the same treatment by declaring its inputs:
 

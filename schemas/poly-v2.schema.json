@@ -1075,7 +1075,7 @@
           "const": "off"
         },
         {
-          "description": "Cache hook results only when the hook declares its inputs (default).\n\nBuiltins (`lint`/`fmt`) are always cached by matched files\nbecause their footprint equals their input set.  An inline command is\ncached only when it carries a `cache = { inputs = [...] }` declaration;\notherwise it always reruns.",
+          "description": "Cache hook results only when the hook declares its inputs (default).\n\nAn inline command is cached only when it carries a\n`cache = { inputs = [...] }` declaration; otherwise it always reruns.\nThe `lint`/`fmt` builtins are never hook-cached in any mode: their verdict\ndepends on configuration outside the matched files, and `poly lint` /\n`poly fmt` keep their own per-file cache, which keys it.",
           "type": "string",
           "const": "safe"
         },
@@ -1638,7 +1638,7 @@
           "default": true
         },
         "dir": {
-          "description": "Override the cache root directory.\n\nWhen absent the cache lives in the per-user cache home (see\n`poly_cache::root_from`): `<platform-cache>/poly/<repo-key>`, keyed by the\nnearest `.git` / `poly.toml` ancestor.",
+          "description": "Override the cache root directory.\n\nWhen absent the cache lives in the per-user cache home (see\n`poly_cache::root_from`): `<platform-cache>/poly/<repo-key>`, keyed by the\ngit common dir of the nearest `.git` ancestor (so every worktree of one\nrepository shares it), else by the nearest `poly.toml` ancestor.",
           "type": ["string", "null"],
           "default": null
         },

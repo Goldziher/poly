@@ -190,7 +190,14 @@ fn a_corrupt_or_foreign_file_loads_as_empty() {
     let mut truncated = std::fs::read(dir.path().join("index").join("lint.idx")).unwrap();
     truncated.truncate(truncated.len() - 3);
 
-    for bytes in [&b"garbage"[..], b"PSI2\x01\x02", b"", &truncated] {
+    for bytes in [
+        &b"garbage"[..],
+        b"PSI4\x01\x02",
+        b"PSI3\x01\x02",
+        b"PSI2\x01\x02",
+        b"",
+        &truncated,
+    ] {
         std::fs::write(&file, bytes).unwrap();
         assert!(StatIndex::load(file.clone()).get(&path("a.py")).is_none());
     }
@@ -220,4 +227,120 @@ fn the_index_file_is_byte_stable_across_flushes() {
     again.flush().unwrap();
 
     assert_eq!(std::fs::read(&file).unwrap(), first);
+}
+
+const CHECKOUT_A: u64 = 0xA;
+const CHECKOUT_B: u64 = 0xB;
+
+/// A stat with no inode number (as on Windows), so size and mtime alone would
+/// match a different file in another worktree.
+fn inode_less(checkout: u64) -> FileStat {
+    FileStat::synthetic(10, NOW - 2 * HOUR_NS, 0, 0).in_checkout(checkout)
+}
+
+/// Checkout `name`'s own index file, under the shared `index/` directory.
+fn checkout_file(dir: &TempDir, name: &str) -> std::path::PathBuf {
+    dir.path().join("index").join(name).join("lint.idx")
+}
+
+/// Checkout B's index, seeded from checkout A's.
+fn seeded_b(dir: &TempDir) -> StatIndex {
+    StatIndex::load_seeded(checkout_file(dir, "b"), Some(&checkout_file(dir, "a")))
+}
+
+fn index_a(dir: &TempDir) -> StatIndex {
+    StatIndex::load(checkout_file(dir, "a"))
+}
+
+fn vouch(index: &StatIndex, name: &str, stat: FileStat, bytes: &[u8]) {
+    index.vouch_at(NOW, path(name), stat, ContentDigest::of(bytes));
+}
+
+/// Another worktree's identical-looking stat never vouches by itself; once its
+/// content check passes, the record is written to its own index under its own
+/// stat, and the first checkout's index is left as it was.
+#[test]
+fn a_stat_from_another_checkout_is_trusted_only_after_a_content_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = index_a(&dir);
+    put(&a, "a.py", record(inode_less(CHECKOUT_A), b"x"));
+    a.flush().unwrap();
+
+    let b = seeded_b(&dir);
+    let seeded = b.get(&path("a.py")).expect("B is seeded from A");
+    assert!(
+        !seeded.trusts(&inode_less(CHECKOUT_B)),
+        "equal size and mtime from another checkout must not vouch"
+    );
+    vouch(&b, "a.py", inode_less(CHECKOUT_B), b"x");
+    b.flush().unwrap();
+
+    let own = StatIndex::load(checkout_file(&dir, "b"))
+        .get(&path("a.py"))
+        .cloned()
+        .unwrap();
+    assert!(own.trusts(&inode_less(CHECKOUT_B)), "the content check vouched for B");
+    assert_eq!(own.segments, seeded.segments, "B reuses A's segments");
+    assert!(
+        index_a(&dir)
+            .get(&path("a.py"))
+            .unwrap()
+            .trusts(&inode_less(CHECKOUT_A))
+    );
+}
+
+/// Runs alternating A, B, A each stay on the `stat` fast path: neither
+/// checkout's run touches the other's index.
+#[test]
+fn alternating_checkouts_keep_their_own_stats() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = index_a(&dir);
+    put(&a, "a.py", record(inode_less(CHECKOUT_A), b"x"));
+    a.flush().unwrap();
+    let b = seeded_b(&dir);
+    let mut in_b = record(inode_less(CHECKOUT_B), b"x");
+    in_b.segments[0].key = key("ruff with B's absolute paths");
+    put(&b, "a.py", in_b);
+    b.flush().unwrap();
+
+    let a_again = index_a(&dir);
+    let stored = a_again.get(&path("a.py")).unwrap();
+    assert!(stored.trusts(&inode_less(CHECKOUT_A)), "A's third run is a stat hit");
+    assert!(
+        stored.has_keys(&[key("ruff")]),
+        "B's differently keyed run left A's record alone"
+    );
+}
+
+/// A vouch only lands on the bytes it checked.
+#[test]
+fn a_vouch_for_other_bytes_copies_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = index_a(&dir);
+    put(&a, "a.py", record(inode_less(CHECKOUT_A), b"new"));
+    a.flush().unwrap();
+
+    let b = seeded_b(&dir);
+    vouch(&b, "a.py", inode_less(CHECKOUT_B), b"old");
+    b.flush().unwrap();
+
+    assert!(StatIndex::load(checkout_file(&dir, "b")).get(&path("a.py")).is_none());
+}
+
+/// A checkout's own record shadows the seed's, and the seed is never written
+/// back wholesale: only what this checkout vouched for or recorded.
+#[test]
+fn the_own_record_shadows_the_seed_and_the_seed_is_not_copied() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = index_a(&dir);
+    put(&a, "a.py", record(inode_less(CHECKOUT_A), b"from a"));
+    put(&a, "b.py", record(inode_less(CHECKOUT_A), b"only in a"));
+    a.flush().unwrap();
+    let b = seeded_b(&dir);
+    put(&b, "a.py", record(inode_less(CHECKOUT_B), b"from b"));
+    b.flush().unwrap();
+
+    let b = seeded_b(&dir);
+    assert_eq!(b.get(&path("a.py")).unwrap().digest, ContentDigest::of(b"from b"));
+    assert!(StatIndex::load(checkout_file(&dir, "b")).get(&path("b.py")).is_none());
 }

@@ -67,8 +67,8 @@
 //! # Persistent, incremental cache
 //!
 //! The snapshot is a **persistent cache** at a stable path outside the repo
-//! (`<platform-cache>/poly/<repo-key>/staged`), not a throwaway per-run
-//! directory. Each run *refreshes it in place* so every tool's native
+//! (`<platform-cache>/poly/<checkout-key>/staged`, one per worktree), not a
+//! throwaway per-run directory. Each run *refreshes it in place* so every tool's native
 //! incremental cache — cargo's `target/`, `.mypy_cache`, tsc's build-info —
 //! persists across runs and stays warm:
 //!
@@ -168,7 +168,9 @@ pub struct StagedSnapshot {
 impl StagedSnapshot {
     /// Create or refresh the staged snapshot for the repository at `root`.
     ///
-    /// Lives at `<platform-cache>/poly/<repo-key>/staged`, outside the repo tree.
+    /// Lives at `<platform-cache>/poly/<checkout-key>/staged`, outside the repo
+    /// tree and per checkout: unlike the result cache, it is not shared by the
+    /// repository's other worktrees, which may be committing at the same time.
     /// The first call materializes the whole staged tree; later calls only touch
     /// what changed (see the module docs).
     pub fn create(root: &Path, includes: &[String]) -> Result<Self, Error> {
@@ -181,7 +183,7 @@ impl StagedSnapshot {
     /// only the staged files and their directory context, so a one-file commit
     /// writes a handful of files instead of the whole tree.
     pub fn create_scoped(root: &Path, includes: &[String], scope: SnapshotScope<'_>) -> Result<Self, Error> {
-        let cache_dir = poly_cache::repo_cache_dir(root).map_err(|e| Error::CacheDir(e.to_string()))?;
+        let cache_dir = poly_cache::checkout_cache_dir(root).map_err(|e| Error::CacheDir(e.to_string()))?;
         Self::create_scoped_in(&cache_dir, root, includes, scope)
     }
 

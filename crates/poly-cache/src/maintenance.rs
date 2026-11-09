@@ -177,20 +177,25 @@ impl ResultCache {
                 modified,
             });
         }
-        entries.extend(self.index_entry(namespace));
+        entries.extend(self.index_entries(namespace));
         Ok(entries)
     }
 
-    /// The namespace's stat-validated verdict index, counted as one entry so
-    /// `stats`, `size`, `gc` and `clean` see — and can reclaim — its bytes.
-    fn index_entry(&self, namespace: Namespace) -> Option<Entry> {
-        let path = self.stat_index_path(namespace);
-        let metadata = std::fs::metadata(&path).ok().filter(std::fs::Metadata::is_file)?;
-        Some(Entry {
-            path,
-            size: metadata.len(),
-            modified: metadata.modified().unwrap_or_else(|_| SystemTime::now()),
-        })
+    /// The namespace's stat-validated verdict indexes — one per checkout of the
+    /// repository — each counted as one entry so `stats`, `size`, `gc` and
+    /// `clean` see, and can reclaim, their bytes. Age eviction is what retires
+    /// the index of a worktree that no longer exists.
+    fn index_entries(&self, namespace: Namespace) -> impl Iterator<Item = Entry> {
+        crate::checkout::index_files(self.root(), namespace)
+            .into_iter()
+            .filter_map(|path| {
+                let metadata = std::fs::metadata(&path).ok()?;
+                Some(Entry {
+                    size: metadata.len(),
+                    modified: metadata.modified().unwrap_or_else(|_| SystemTime::now()),
+                    path,
+                })
+            })
     }
 
     /// Snapshot the cache's on-disk footprint: per-namespace entry counts and

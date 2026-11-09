@@ -384,13 +384,223 @@ fn cache_root_lives_under_cache_home_not_in_repo() {
     std::fs::create_dir_all(&pkg).unwrap();
 
     let cache_root = root_from(&pkg).expect("root_from");
-    let expected = cache_home().unwrap().join(repo_key(root));
+    let expected = cache_home().unwrap().join(repo_key(&root.join(".git")));
     assert_eq!(cache_root, expected);
     assert!(
         !cache_root.starts_with(root),
         "cache must live outside the repo, got {}",
         cache_root.display()
     );
+}
+
+/// Run `git` in `dir` and fail the test if it fails.
+fn git(dir: &Path, args: &[&str]) {
+    let status = std::process::Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .status()
+        .expect("run git");
+    assert!(status.success(), "git {args:?} failed");
+}
+
+/// A repository with one commit at `<tmp>/repo` and a linked worktree of it at
+/// `<tmp>/linked`, returned in that order.
+fn repo_and_linked_worktree(tmp: &TempDir) -> (PathBuf, PathBuf) {
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q"]);
+    git(&repo, &["config", "user.email", "test@example.com"]);
+    git(&repo, &["config", "user.name", "Test"]);
+    git(&repo, &["config", "commit.gpgsign", "false"]);
+    std::fs::write(repo.join("a.py"), "x = 1\n").unwrap();
+    git(&repo, &["add", "a.py"]);
+    git(&repo, &["commit", "-qm", "init"]);
+    let linked = tmp.path().join("linked");
+    git(
+        &repo,
+        &["worktree", "add", "-q", linked.to_str().unwrap(), "-b", "other"],
+    );
+    (repo, linked)
+}
+
+/// The point of keying by the git common dir: a fresh worktree starts warm.
+#[test]
+fn worktrees_of_one_repository_share_the_result_cache_but_not_the_snapshot_slot() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (repo, linked) = repo_and_linked_worktree(&tmp);
+
+    let (main_root, _) = resolve_repo_cache_dir(&repo.join("sub")).unwrap();
+    let (linked_root, _) = resolve_repo_cache_dir(&linked).unwrap();
+    assert_eq!(
+        main_root, linked_root,
+        "both worktrees must resolve to one result cache"
+    );
+    assert_eq!(
+        main_root,
+        cache_home().unwrap().join(repo_key(&repo.join(".git"))),
+        "the key is the common dir's"
+    );
+
+    let main_slot = RealCheckoutSlot::of(&repo);
+    let linked_slot = RealCheckoutSlot::of(&linked);
+    assert_ne!(
+        main_slot.0, linked_slot.0,
+        "the staged snapshot is per-run working state and must stay per checkout"
+    );
+    assert_ne!(
+        main_slot.0, main_root,
+        "the snapshot never shares the result cache's slot"
+    );
+}
+
+/// The result cache an older poly kept per checkout is reclaimed on the first
+/// open of the shared one; the snapshot beside it stays.
+#[test]
+fn opening_the_shared_cache_reclaims_the_legacy_one_in_the_checkout_slot() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    let checkout_slot = RealCheckoutSlot::of(&repo);
+    let shared = RealCacheSlot::of(&repo);
+    std::fs::create_dir_all(checkout_slot.0.join("results/lint")).unwrap();
+    std::fs::create_dir_all(checkout_slot.0.join("staged")).unwrap();
+    std::fs::write(checkout_slot.0.join("VERSION"), "5").unwrap();
+
+    ResultCache::open_from(&repo, true).expect("open cache");
+
+    assert!(
+        !checkout_slot.0.join("results").exists(),
+        "the legacy result cache is removed"
+    );
+    assert!(!checkout_slot.0.join("VERSION").exists());
+    assert!(checkout_slot.0.join("staged").is_dir(), "the staged snapshot is kept");
+    assert!(
+        shared.path().join("results/lint").is_dir(),
+        "the shared cache is the live one"
+    );
+}
+
+/// A directory outside any repository keys by itself, as before.
+#[test]
+fn a_directory_outside_git_keys_its_result_cache_by_its_own_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("poly.toml"), b"").unwrap();
+
+    let (root, _) = resolve_repo_cache_dir(tmp.path()).unwrap();
+
+    assert_eq!(root, cache_home().unwrap().join(repo_key(tmp.path())));
+}
+
+/// A stat-index record written from one worktree is found by path from the
+/// other, but its `stat` never vouches for the other's file.
+#[test]
+fn stat_index_records_are_keyed_relative_to_the_checkout() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (repo, linked) = repo_and_linked_worktree(&tmp);
+    let cache_dir = tmp.path().join("cache");
+    let mut main = ResultCache::open(cache_dir.clone(), true).unwrap();
+    main.checkout = Some(Arc::new(checkout::Checkout::new(&repo)));
+    let mut other = ResultCache::open(cache_dir, true).unwrap();
+    other.checkout = Some(Arc::new(checkout::Checkout::new(&linked)));
+
+    assert_eq!(
+        main.path_key(&repo.join("a.py")),
+        other.path_key(&linked.join("a.py")),
+        "the same relative path must be one record"
+    );
+    assert_ne!(main.path_key(&repo.join("a.py")), PathKey::of(&repo.join("a.py")));
+
+    let main_stat = main.file_stat(&repo.join("a.py")).unwrap();
+    let as_other = other.file_stat(&repo.join("a.py")).unwrap();
+    assert_ne!(
+        main_stat, as_other,
+        "a stat from another checkout must not compare equal"
+    );
+    assert_eq!(
+        main_stat,
+        FileStat::of(&repo.join("a.py"))
+            .unwrap()
+            .in_checkout(main_checkout_id(&main))
+    );
+}
+
+/// Each worktree writes its own stat index; a worktree without one yet is
+/// seeded from another's, and maintenance sees every worktree's index.
+#[test]
+fn each_checkout_has_its_own_stat_index_seeded_from_a_sibling() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (repo, linked) = repo_and_linked_worktree(&tmp);
+    let cache_dir = tmp.path().join("cache");
+    let mut main = ResultCache::open(cache_dir.clone(), true).unwrap();
+    main.checkout = Some(Arc::new(checkout::Checkout::new(&repo)));
+    let mut other = ResultCache::open(cache_dir, true).unwrap();
+    other.checkout = Some(Arc::new(checkout::Checkout::new(&linked)));
+    assert_ne!(
+        main.stat_index_path(Namespace::Lint),
+        other.stat_index_path(Namespace::Lint)
+    );
+
+    let file = repo.join("a.py");
+    let record = Record {
+        stat: main.file_stat(&file).unwrap(),
+        scope: PlanKey::builder(Namespace::Lint).finish(),
+        digest: ContentDigest::of(&std::fs::read(&file).unwrap()),
+        verdict: Verdict::Clean,
+        replayable: true,
+        segments: Vec::new(),
+    };
+    main.stat_index(Namespace::Lint).put(main.path_key(&file), record);
+    main.flush_stat_indexes().unwrap();
+
+    let seeded = other
+        .stat_index(Namespace::Lint)
+        .get(&other.path_key(&linked.join("a.py")))
+        .expect("the linked worktree is seeded from the main one");
+    assert!(!seeded.trusts(&other.file_stat(&linked.join("a.py")).unwrap()));
+    assert!(main.stats().unwrap().per_namespace[0].entries >= 1);
+    other.stat_index(Namespace::Lint).vouch(
+        other.path_key(&linked.join("a.py")),
+        other.file_stat(&linked.join("a.py")).unwrap(),
+        seeded.digest,
+    );
+    other.flush_stat_indexes().unwrap();
+    assert!(other.stat_index_path(Namespace::Lint).is_file());
+
+    let reclaimed = ResultCache::open(main.root().to_path_buf(), true)
+        .unwrap()
+        .clean()
+        .unwrap();
+    assert!(reclaimed > 0);
+    assert!(
+        !main.stat_index_path(Namespace::Lint).exists(),
+        "clean reaches every checkout's index"
+    );
+    assert!(!other.stat_index_path(Namespace::Lint).exists());
+}
+
+fn main_checkout_id(cache: &ResultCache) -> u64 {
+    cache.checkout.as_ref().unwrap().id()
+}
+
+/// The per-checkout slot [`checkout_cache_dir`] creates in the real cache home,
+/// removed again when the test ends.
+struct RealCheckoutSlot(PathBuf);
+
+impl RealCheckoutSlot {
+    fn of(checkout: &Path) -> Self {
+        Self(checkout_cache_dir(checkout).expect("resolve checkout slot"))
+    }
+
+    #[cfg(unix)]
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for RealCheckoutSlot {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 #[test]
@@ -622,12 +832,12 @@ mod unix_permissions {
     }
 
     #[test]
-    fn repo_cache_dir_creates_an_owner_only_slot_for_the_staged_snapshot() {
+    fn checkout_cache_dir_creates_an_owner_only_slot_for_the_staged_snapshot() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path().join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
 
-        let slot = RealCacheSlot::of(&repo);
+        let slot = RealCheckoutSlot::of(&repo);
 
         assert!(slot.path().is_dir(), "the per-repo slot must exist after resolution");
         assert_eq!(
@@ -649,7 +859,7 @@ mod unix_permissions {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path().join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
-        let expected = cache_home().unwrap().join(repo_key(&repo));
+        let expected = cache_home().unwrap().join(repo_key(&repo.join(".git")));
 
         let cache = ResultCache::open_from(&repo, false).expect("open disabled");
 

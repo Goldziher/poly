@@ -297,6 +297,12 @@ diagnostics, and are described in [Tool catalog](/poly/reference/catalog/#tools-
 | `[cache.sccache] dir` | string | — | sccache storage directory. |
 | `[cache.sccache] max_size` | string | — | Maximum cache size (e.g. `"10G"`). |
 
+Without `dir`, the result cache lives in the per-user cache directory (`POLY_CACHE_HOME`, else
+`~/.cache/poly` on Linux, `~/Library/Caches/poly` on macOS, `%LOCALAPPDATA%\poly` on Windows), in a
+slot keyed by the repository's git common dir. Every `git worktree` of one repository therefore shares
+one result cache, and a new worktree's first run reuses what the others already computed. The hook
+staged snapshot is per-run working state, so it stays in a separate slot per worktree.
+
 ## `[commit]`
 
 | Key | Type | Meaning |

@@ -50,6 +50,7 @@ enum VouchedBy {
 }
 
 pub(super) struct FastPath<'a> {
+    cache: &'a ResultCache,
     index: &'a StatIndex,
     tally: Tally,
     plan: &'a RunPlan,
@@ -115,6 +116,7 @@ impl<'a> FastPath<'a> {
             engine_keys.insert(key, engines.iter().map(|engine| base_key(namespace, engine)).collect());
         }
         Some(Self {
+            cache,
             index: cache.stat_index(namespace),
             tally: Tally::default(),
             plan,
@@ -126,7 +128,7 @@ impl<'a> FastPath<'a> {
 
     /// The stat and keys for `file`, without consulting the index.
     pub(super) fn probe(&self, file: &DiscoveredFile) -> Option<Probe<'a>> {
-        let stat = FileStat::of(&file.path).ok()?;
+        let stat = self.cache.file_stat(&file.path).ok()?;
         let pair = (file.config_id, file.language.clone());
         let scope = *self.scopes.get(&pair)?;
         let engines = self.plan.engines(file.config_id, &file.language);
@@ -142,7 +144,7 @@ impl<'a> FastPath<'a> {
                 },
             )
             .collect();
-        let path = PathKey::of(&file.path);
+        let path = self.cache.path_key(&file.path);
         let prior = self.index.get(&path).filter(|record| record.scope == scope);
         Some(Probe {
             path,
@@ -196,13 +198,7 @@ impl<'a> FastPath<'a> {
         if record.digest != ContentDigest::of(&bytes) {
             return None;
         }
-        self.index.put(
-            probe.path,
-            Record {
-                stat: probe.stat,
-                ..record.clone()
-            },
-        );
+        self.index.vouch(probe.path, probe.stat, record.digest);
         Some((record, VouchedBy::Content))
     }
 
