@@ -1284,3 +1284,241 @@ fn gofmt_clean_source_is_left_byte_identical() {
         "fallback rewrote gofmt-clean source (case labels align with switch)"
     );
 }
+
+fn format_go(input: &str) -> String {
+    let s = src("main.go", Language::Other("go".into()), input);
+    formatted_text(TreeSitterEngine.format(&s, &cfg(4)).unwrap(), input)
+}
+
+fn format_rust(input: &str, cfg: &EngineConfig) -> String {
+    let s = src("lib.rs", Language::Other("rust".into()), input);
+    formatted_text(TreeSitterEngine.format(&s, cfg).unwrap(), input)
+}
+
+/// gofmt aligns every `case` with its own `switch`, however deeply switches nest. The label
+/// adjustment is counted per enclosing case, so an inner switch's labels sit one level under the
+/// outer case body rather than at the body's level.
+#[test]
+fn go_nested_switch_case_labels_align_with_their_switch() {
+    let input = concat!(
+        "package main\n",
+        "\n",
+        "func f(a, b int) int {\n",
+        "switch a {\n",
+        "case 1:\n",
+        "switch b {\n",
+        "case 2:\n",
+        "return 2\n",
+        "default:\n",
+        "return 3\n",
+        "}\n",
+        "}\n",
+        "return 0\n",
+        "}\n",
+    );
+    let expected = concat!(
+        "package main\n",
+        "\n",
+        "func f(a, b int) int {\n",
+        "\tswitch a {\n",
+        "\tcase 1:\n",
+        "\t\tswitch b {\n",
+        "\t\tcase 2:\n",
+        "\t\t\treturn 2\n",
+        "\t\tdefault:\n",
+        "\t\t\treturn 3\n",
+        "\t\t}\n",
+        "\t}\n",
+        "\treturn 0\n",
+        "}\n",
+    );
+    assert_eq!(format_go(input), expected);
+    assert_eq!(
+        format_go(expected),
+        expected,
+        "gofmt-clean nested switch must be untouched"
+    );
+}
+
+/// gofmt outdents a statement label one level from the statement it labels.
+#[test]
+fn go_labels_are_outdented_one_level() {
+    let input = concat!(
+        "package main\n",
+        "\n",
+        "func f() {\n",
+        "Outer:\n",
+        "for {\n",
+        "if true {\n",
+        "Inner:\n",
+        "for {\n",
+        "break Inner\n",
+        "}\n",
+        "break Outer\n",
+        "}\n",
+        "}\n",
+        "}\n",
+    );
+    let expected = concat!(
+        "package main\n",
+        "\n",
+        "func f() {\n",
+        "Outer:\n",
+        "\tfor {\n",
+        "\t\tif true {\n",
+        "\t\tInner:\n",
+        "\t\t\tfor {\n",
+        "\t\t\t\tbreak Inner\n",
+        "\t\t\t}\n",
+        "\t\t\tbreak Outer\n",
+        "\t\t}\n",
+        "\t}\n",
+        "}\n",
+    );
+    assert_eq!(format_go(input), expected);
+    assert_eq!(format_go(expected), expected, "gofmt-clean labels must be untouched");
+}
+
+/// A comment group that introduces a `case` sits at the label's level in gofmt output, whether
+/// tree-sitter attaches it to the switch body or to the tail of the previous case.
+#[test]
+fn go_comment_before_case_keeps_the_label_level() {
+    let expected = concat!(
+        "package main\n",
+        "\n",
+        "func f(a int) int {\n",
+        "\tswitch a {\n",
+        "\t// Cases:\n",
+        "\n",
+        "\t// The first one.\n",
+        "\tcase 1:\n",
+        "\t\treturn 1\n",
+        "\n",
+        "\t// The second one.\n",
+        "\t// More text.\n",
+        "\tcase 2:\n",
+        "\t\treturn 2\n",
+        "\t// case 3:\n",
+        "\t//\tnot handled\n",
+        "\tdefault:\n",
+        "\t\t// A body comment stays in the body.\n",
+        "\t\treturn 0\n",
+        "\t}\n",
+        "}\n",
+    );
+    assert_eq!(format_go(expected), expected);
+}
+
+/// A file indented with tabs (rustfmt `hard_tabs = true`) keeps its tabs: without an explicit
+/// `indent_width`, the fallback reindents in the unit the file already uses.
+#[test]
+fn rust_hard_tab_source_keeps_its_indent_unit() {
+    let input = concat!(
+        "fn main() {\n",
+        "\tlet x = match y {\n",
+        "\t\tSome(v) => {\n",
+        "\t\t\tv\n",
+        "\t\t},\n",
+        "\t\tNone => 0,\n",
+        "\t};\n",
+        "\tprintln!(\"{x}\");\n",
+        "}\n",
+    );
+    assert_eq!(format_rust(input, &cfg(4)), input);
+    let flat = input.replace('\t', "");
+    let spaced = input.replace('\t', "    ");
+    assert_eq!(
+        format_rust(&flat, &cfg(4)),
+        spaced,
+        "no indented lines: the configured unit applies"
+    );
+}
+
+/// `tab_spaces = 2` source keeps two-space indentation, and lines below their depth are raised in
+/// that unit rather than in the configured default.
+#[test]
+fn rust_two_space_source_keeps_its_indent_unit() {
+    let input = concat!(
+        "#[cfg_attr(\n",
+        "  feature = \"nightly_docs\",\n",
+        "  doc(cfg(all(\n",
+        "    feature = \"a\",\n",
+        "    feature = \"b\"\n",
+        "  )))\n",
+        ")]\n",
+        "impl Foo {\n",
+        "  fn f(&self) -> u32 {\n",
+        "    let a = 1;\n",
+        "  let b = 2;\n",
+        "    a + b\n",
+        "  }\n",
+        "}\n",
+    );
+    let expected = input.replace("\n  let b", "\n    let b");
+    assert_eq!(format_rust(input, &cfg(4)), expected);
+}
+
+/// An explicit `indent_width` is the user's decision and wins over the file's own unit.
+#[test]
+fn rust_explicit_indent_width_overrides_the_inferred_unit() {
+    let input = "fn main() {\n  let a = 1;\n  let b = 2;\n  let c = 3;\n}\n";
+    let mut explicit = cfg(4);
+    explicit.options.insert("indent_width".into(), toml::Value::Integer(4));
+    assert_eq!(
+        format_rust(input, &explicit),
+        "fn main() {\n    let a = 1;\n    let b = 2;\n    let c = 3;\n}\n"
+    );
+}
+
+/// rustfmt leaves a macro body it cannot parse (a `quote!` block, a `=>` map literal) exactly as
+/// written, so the fallback must not raise its lines to bracket depth either.
+#[test]
+fn rust_macro_token_tree_interior_is_left_verbatim() {
+    let input = concat!(
+        "fn f() -> TokenStream {\n",
+        "    let ctx = hash!(\n",
+        "    \"field\" => display(&name),\n",
+        "    \"example\" => display(example));\n",
+        "    quote! {\n",
+        "       if let Some(v) = self.#ident {\n",
+        "           #join;\n",
+        "       }\n",
+        "    }\n",
+        "}\n",
+    );
+    assert_eq!(format_rust(input, &cfg(4)), input);
+}
+
+/// `trim_trailing_whitespace = false` is honoured on reindented lines, as it is by whitespace
+/// normalization: trailing whitespace a canonical formatter left in a comment survives.
+#[test]
+fn reindent_respects_trim_trailing_whitespace_false() {
+    let input = "//! impl Foo {\n//!     \n//! }\nfn main() {\nlet a = 1; \n}\n";
+    let mut keep = cfg(4);
+    keep.globals.trim_trailing_whitespace = false;
+    assert_eq!(
+        format_rust(input, &keep),
+        "//! impl Foo {\n//!     \n//! }\nfn main() {\n    let a = 1; \n}\n"
+    );
+    assert_eq!(
+        format_rust(input, &cfg(4)),
+        "//! impl Foo {\n//!\n//! }\nfn main() {\n    let a = 1;\n}\n"
+    );
+}
+
+/// A macro nested inside another macro's body does not end the outer body: lines after the inner
+/// invocation closes are still inside the outer one and stay verbatim.
+#[test]
+fn rust_nested_macro_bodies_stay_verbatim_after_the_inner_one_closes() {
+    let input = concat!(
+        "fn f() {\n",
+        "    quote! {\n",
+        "      let a = vec![\n",
+        "        1,\n",
+        "      ];\n",
+        "      let b = 2;\n",
+        "    }\n",
+        "}\n",
+    );
+    assert_eq!(format_rust(input, &cfg(4)), input);
+}

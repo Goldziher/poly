@@ -17,6 +17,10 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 - **Sidecar start-up.** Starting a just-installed sidecar component no longer fails intermittently with `Text file busy`
   on Linux; alef retries the spawn. (#138)
+- **The tree-sitter fallback leaves rustfmt/gofmt output alone.** With `rustfmt`/`gofmt` absent, the generic tier no
+  longer re-indents nested `switch` cases, statement labels or the comments introducing a `case` in Go, the bodies of
+  Rust macro invocations, or files indented with tabs or two spaces (when `indent_width` is not set). Reindented lines
+  now honor `trim_trailing_whitespace = false`. (#142)
 
 ## [0.34.1] - 2026-11-09
 
