@@ -80,6 +80,10 @@ impl Verbosity {
 }
 
 /// Render the dim per-file debug block (engine version, cache hit/miss, timing).
+///
+/// An engine's version is its cache-key identity and often names the tool already
+/// (`ruff-0.17.4+…`, `google-java-format: Version 2.0.0`), so the `v` goes only in
+/// front of a bare version number rather than reading `vruff-…`.
 pub(super) fn render_debug_block(out: &mut String, debug: &RunDebug) {
     for e in &debug.engines {
         let status = if e.cache_hit {
@@ -89,8 +93,13 @@ pub(super) fn render_debug_block(out: &mut String, debug: &RunDebug) {
         } else {
             "ran"
         };
+        let prefix = if e.version.starts_with(|c: char| c.is_ascii_digit()) {
+            "v"
+        } else {
+            ""
+        };
         let line = format!(
-            "[debug] {} v{}  {}  {:.2}ms",
+            "[debug] {} {prefix}{}  {}  {:.2}ms",
             e.engine, e.version, status, e.duration_ms
         );
         let _ = writeln!(out, "      {}", Theme::STDOUT.secondary(line));

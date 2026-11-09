@@ -514,6 +514,55 @@ fn lint_pretty_debug_renders_engine_timing_block() {
     insta::assert_snapshot!("lint_pretty_debug", text);
 }
 
+/// An engine version that already names its tool is printed as is: the `v`
+/// prefix belongs to a bare version number, not in front of `ruff-0.17.4+…`.
+#[test]
+fn lint_pretty_debug_prefixes_v_only_to_a_bare_version_number() {
+    owo_colors::set_override(false);
+    let engine = |engine: &str, version: &str| EngineDebug {
+        engine: engine.to_string(),
+        version: version.to_string(),
+        duration_ms: 1.0,
+        cache_hit: false,
+    };
+    let results = vec![LintResult {
+        suppressed: Vec::new(),
+        config: 0,
+        path: PathBuf::from("src/Main.java"),
+        fix_withheld_generated: false,
+        fixed: 0,
+        skipped: None,
+        error: None,
+        diagnostics: vec![Diagnostic {
+            engine: "quality".to_string(),
+            code: Some("file-too-long".to_string()),
+            severity: Severity::Warning,
+            title: "file too long".to_string(),
+            description: None,
+            span: None,
+            url: None,
+            fix: vec![],
+            metadata: BTreeMap::new(),
+        }],
+        debug: Some(RunDebug {
+            engines: vec![
+                engine("ruff", "ruff-0.17.4+pkgroot"),
+                engine("google-java-format", "google-java-format: Version 2.0.0"),
+                engine("typos", "1.32.0"),
+            ],
+        }),
+    }];
+
+    let (text, _) = report::render_lint_pretty(&results, Verbosity::new(false, true));
+
+    assert!(text.contains("[debug] ruff ruff-0.17.4+pkgroot  ran"), "{text}");
+    assert!(
+        text.contains("[debug] google-java-format google-java-format: Version 2.0.0  ran"),
+        "{text}"
+    );
+    assert!(text.contains("[debug] typos v1.32.0  ran"), "{text}");
+}
+
 /// A file every backend declined used to be counted as scanned and reported
 /// exactly like one that was checked and found clean, so `All formatted.` could
 /// not distinguish "I verified everything" from "I declined to look". The
