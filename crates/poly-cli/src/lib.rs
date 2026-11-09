@@ -76,11 +76,31 @@ pub fn init_logging_at(debug: bool, quiet: bool) {
         };
         EnvFilter::new(directives)
     });
+    let ansi = log_ansi(
+        global().color,
+        std::io::IsTerminal::is_terminal(&std::io::stderr()),
+        std::env::var_os("NO_COLOR").is_some(),
+    );
     let _ = fmt()
         .with_env_filter(filter)
         .with_target(false)
+        .with_ansi(ansi)
         .with_writer(std::io::stderr)
         .try_init();
+}
+
+/// Whether log lines on stderr carry ANSI styling.
+///
+/// The subscriber styles unconditionally by default, so escape codes reached a
+/// pipe, a CI log and a `--color never` run. Logs follow the same rule as the
+/// report: `--color` decides, and under `auto` only a terminal without
+/// `NO_COLOR` is styled.
+fn log_ansi(choice: ColorChoice, stderr_is_terminal: bool, no_color: bool) -> bool {
+    match choice {
+        ColorChoice::Always => true,
+        ColorChoice::Never => false,
+        ColorChoice::Auto => stderr_is_terminal && !no_color,
+    }
 }
 
 /// Output rendering format.
@@ -797,6 +817,18 @@ mod tests {
     use super::*;
     use poly_core::Diagnostic;
     use poly_core::components::{ComponentsReport, MissingComponent};
+
+    #[test]
+    fn log_lines_are_styled_only_where_the_report_would_be() {
+        assert!(log_ansi(ColorChoice::Auto, true, false));
+        assert!(
+            !log_ansi(ColorChoice::Auto, false, false),
+            "a pipe gets no escape codes"
+        );
+        assert!(!log_ansi(ColorChoice::Auto, true, true), "NO_COLOR wins under auto");
+        assert!(!log_ansi(ColorChoice::Never, true, false));
+        assert!(log_ansi(ColorChoice::Always, false, true));
+    }
 
     #[test]
     fn a_skipped_component_is_a_warning_and_a_blocking_one_an_error() {
