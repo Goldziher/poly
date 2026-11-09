@@ -873,7 +873,7 @@ fn format_one(
     if !settled {
         anyhow::bail!(
             "formatting did not settle after {MAX_FORMAT_PASSES} passes; the file is still changing, \
-             so `poly fmt --check` will keep reporting it. This is a backend that does not converge \
+             so `poly fmt` will keep reporting it. This is a backend that does not converge \
              on this input, not a problem with the file"
         );
     }
