@@ -64,7 +64,7 @@ class PluginDispatchTests(unittest.TestCase):
             self.assertIn("registry-controller", blocks[name])
             self.assertIn('python3 "$POLY_REGISTRY_GUARD"', blocks[name])
         self.assertIn("wheel --expected-count 1 dist-hermes/*.whl", blocks["publish_plugin_hermes"])
-        self.assertIn("wheel --expected-count 7 pip-package/dist/*.whl", blocks["publish_pypi"])
+        self.assertIn("wheel --expected-count 6 pip-package/dist/*.whl", blocks["publish_pypi"])
         self.assertLess(native.index("Incomplete npm platform inventory"), native.index('for dir in "${platforms[@]}"'))
 
     def test_metadata_rejects_version_mismatch_and_unsafe_ref(self) -> None:
