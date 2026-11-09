@@ -418,14 +418,15 @@ fn custom_pattern_notice_names_the_commit_rules_table() {
 #[test]
 fn a_header_without_type_and_subject_says_what_shape_it_needs() {
     let dir = tempdir().unwrap();
-    for message in ["added stuff", "feat:no space"] {
+    for (message, expected) in [
+        ("added stuff", "header must be `type(scope): subject`"),
+        ("feat:no space", "header must have a space after the colon"),
+    ] {
         let output = poly_commit(dir.path(), &["--message", message]);
         assert_eq!(output.status.code(), Some(1), "{message}");
         let text = stderr(&output);
-        assert!(
-            text.contains("hint: the header must be `type(scope): subject`") && text.contains("space after the colon"),
-            "{message}: {text}"
-        );
+        assert!(text.contains(expected), "{message}: {text}");
+        assert!(!text.contains("may not be empty"), "{message}: {text}");
     }
 }
 
