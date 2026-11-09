@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 
 use anyhow::anyhow;
 use poly_catalog::{Findings, Group};
@@ -13,7 +14,7 @@ use rayon::prelude::*;
 use super::argv::{Items, Template};
 use super::mirror::Mirror;
 use super::output::{self, Finding};
-use super::{RecipeTool, exec, paths, unit};
+use super::{RecipeTool, exec, paths, progress, unit};
 use crate::engine::{Diagnostic, Edit, SourceFile, Span};
 
 /// One answer per input file, in order.
@@ -411,7 +412,14 @@ impl RecipeTool {
                 .expect("invocation memo poisoned");
             Arc::clone(memo.entry(key).or_default())
         };
-        cell.get_or_init(|| self.execute(&argv, &unit.root)).clone()
+        cell.get_or_init(|| {
+            progress::unit_started(&self.tool.name, template.items(), items.len(), &unit.dir);
+            let started = Instant::now();
+            let outcome = self.execute(&argv, &unit.root);
+            progress::unit_finished(&self.tool.name, &unit.dir, started.elapsed());
+            outcome
+        })
+        .clone()
     }
 
     /// Run once, or once per configured `GOOS` with the findings merged.

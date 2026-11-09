@@ -35,6 +35,7 @@ mod mirror;
 mod net;
 mod output;
 mod paths;
+mod progress;
 pub(super) mod resolve;
 mod salt;
 #[cfg(test)]

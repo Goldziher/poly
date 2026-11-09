@@ -1,6 +1,5 @@
 ---
 source: crates/poly-cli/tests/cli_surface.rs
-assertion_line: 40
 expression: "help(&[\"--help\"])"
 ---
 polylint: one linter & formatter for every language in your repository
@@ -48,7 +47,9 @@ Options:
           Every count and reason stays — the summary still reports how many files were linted, how
           many were skipped and why, and what discovery excluded. Only the itemised list of paths
           goes away. Findings still print and exit codes are unchanged. No effect on the `--format
-          json`/`toon` document. Mutually exclusive with `--verbose` and `--debug`.
+          json`/`toon` document. Also silences poly's info-level notices on stderr (a recipe tool's
+          download and run progress); warnings still print. Mutually exclusive with `--verbose` and
+          `--debug`.
 
   -v, --verbose
           Show extra per-finding detail in `pretty` output: description, rule URL, and metadata, and

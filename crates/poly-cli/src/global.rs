@@ -63,6 +63,8 @@ pub struct GlobalArgs {
     /// were linted, how many were skipped and why, and what discovery excluded.
     /// Only the itemised list of paths goes away. Findings still print and exit
     /// codes are unchanged. No effect on the `--format json`/`toon` document.
+    /// Also silences poly's info-level notices on stderr (a recipe tool's
+    /// download and run progress); warnings still print.
     /// Mutually exclusive with `--verbose` and `--debug`.
     #[arg(short = 'q', long, global = true, conflicts_with_all = ["verbose", "debug"])]
     pub quiet: bool,
