@@ -8,7 +8,7 @@
 //! The layout under a per-URL `<source>` directory is:
 //!
 //! ```text
-//! <source>/mirror.git              bare `--mirror` clone (origin URL verified)
+//! <source>/mirror.git              bare repository of fetched commits (origin URL verified)
 //! <source>/checkouts/<oid>/        detached, read-only working tree per revision
 //! ```
 //!
@@ -30,19 +30,18 @@ use anyhow::Context;
 
 pub use checkout::{checkout_is_valid, make_read_only, make_writable, materialize_checkout};
 pub use git::{
-    ensure_commit, ensure_mirror, fetch_revision, git_command, git_env_to_remove, git_object_exists, git_output,
-    run_command, run_git, validate_locked_revision,
+    ensure_commit, ensure_mirror, git_command, git_env_to_remove, git_object_exists, git_output, pick_ls_remote_oid,
+    resolve_remote_revision, run_command, run_git, validate_locked_revision,
 };
 
 /// Materialize a read-only checkout of `url` at `revision` under `cache_root`.
 ///
 /// Returns the checkout directory (`<cache_root>/<url-key>/checkouts/<oid>`).
 ///
-/// When `update` is true, `revision` is treated as a fetchable ref: the mirror
-/// is refreshed, the ref fetched, and resolved to the object ID that keys the
-/// checkout. When `update` is false, `revision` must already be a full object ID
-/// (a locked revision); a valid existing checkout is reused without touching the
-/// network, otherwise the mirror is refreshed only enough to supply the commit.
+/// When `update` is true, `revision` is treated as a ref and resolved to its
+/// commit with `git ls-remote` ([`resolve_remote_revision`]). Either way the
+/// checkout is keyed by that full object ID: a valid existing checkout is reused
+/// without touching the network, otherwise only that commit is fetched, shallowly.
 ///
 /// # Errors
 ///
@@ -53,15 +52,13 @@ pub fn materialize(url: &str, revision: &str, cache_root: &Path, update: bool) -
     std::fs::create_dir_all(&source_cache)
         .with_context(|| format!("creating source cache {}", source_cache.display()))?;
     let mirror = source_cache.join("mirror.git");
-    if update {
-        ensure_mirror(&mirror, url)?;
-        fetch_revision(&mirror, url, revision)?;
-        let resolved = git_output(&mirror, &["rev-parse", "FETCH_HEAD^{commit}"])?;
-        validate_locked_revision(&resolved)?;
-        let checkout = source_cache.join("checkouts").join(&resolved);
-        materialize_checkout(&mirror, &checkout, &resolved)?;
-        return Ok(checkout);
-    }
+    let resolved;
+    let revision = if update {
+        resolved = resolve_remote_revision(url, revision, &source_cache)?;
+        resolved.as_str()
+    } else {
+        revision
+    };
     validate_locked_revision(revision)?;
     let checkout = source_cache.join("checkouts").join(revision);
     if checkout_is_valid(&checkout, revision) {

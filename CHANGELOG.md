@@ -29,6 +29,10 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   longer re-indents nested `switch` cases, statement labels or the comments introducing a `case` in Go, the bodies of
   Rust macro invocations, or files indented with tabs or two spaces (when `indent_width` is not set). Reindented lines
   now honor `trim_trailing_whitespace = false`. (#142)
+- **`poly lock` on a cold cache.** Pinning a Git hook source resolves its ref with `git ls-remote` instead of cloning the
+  whole repository, and a hook source or remote `extends` base is fetched as only the pinned commit, at depth 1. A cold
+  `poly lock --upgrade` for one hook source drops from about 40 s to 2–3 s and downloads nothing; the first hook run
+  that materializes it drops from about 50 s to 8 s, with a 80 MB cache instead of 560 MB. (#157)
 
 ## [0.34.1] - 2026-11-09
 
