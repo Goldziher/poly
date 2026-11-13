@@ -96,13 +96,11 @@ class Polylint < Formula
   version "@@VERSION@@"
   license "MIT"
 
+  # Homebrew validates the stable URL even on platforms excluded by requirements.
+  url "@@BASE_URL@@/@@MACOS_ARM_ASSET@@"
+  sha256 "@@MACOS_ARM_SHA@@"
+
   on_macos do
-    on_arm do
-      url "@@BASE_URL@@/@@MACOS_ARM_ASSET@@"
-      sha256 "@@MACOS_ARM_SHA@@"
-    end
-    # No Intel macOS archive is published; fail with a stated reason instead of an
-    # opaque missing-url error.
     depends_on arch: :arm64
   end
 
